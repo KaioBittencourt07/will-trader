@@ -75,6 +75,14 @@ async function fetchTwelveData(fetchImpl, url, options) {
   }
 }
 
+function httpError(operation, response) {
+  const error = new Error(`Twelve Data ${operation} HTTP ${response.status}`);
+  error.status = response.status;
+  const retryAfter = Number(response.headers?.get?.('retry-after'));
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) error.retryAfterMs = retryAfter * 1_000;
+  return error;
+}
+
 /**
  * Converts price movement into a scale-free representation.  A 0.02% move
  * means something very different in EUR/USD and BTC/USD; its size relative to
@@ -169,8 +177,8 @@ export function createTwelveDataProvider({
         fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${symbol}`, { headers, cache: 'no-store' }),
         fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${symbol}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' })
       ]);
-      if (!quoteResponse.ok) throw new Error(`Twelve Data quote HTTP ${quoteResponse.status}`);
-      if (!seriesResponse.ok) throw new Error(`Twelve Data time_series HTTP ${seriesResponse.status}`);
+      if (!quoteResponse.ok) throw httpError('quote', quoteResponse);
+      if (!seriesResponse.ok) throw httpError('time_series', seriesResponse);
 
       const [quote, series] = await Promise.all([quoteResponse.json(), seriesResponse.json()]);
       return snapshotFromApi(asset, timeframe, quote, series, maxAgeMs);
@@ -190,8 +198,8 @@ export function createTwelveDataProvider({
         fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${joinedSymbols}`, { headers, cache: 'no-store' }),
         fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${joinedSymbols}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' })
       ]);
-      if (!quoteResponse.ok) throw new Error(`Twelve Data quote HTTP ${quoteResponse.status}`);
-      if (!seriesResponse.ok) throw new Error(`Twelve Data time_series HTTP ${seriesResponse.status}`);
+      if (!quoteResponse.ok) throw httpError('quote', quoteResponse);
+      if (!seriesResponse.ok) throw httpError('time_series', seriesResponse);
       const [quotes, seriesBySymbol] = await Promise.all([quoteResponse.json(), seriesResponse.json()]);
       return symbols.map((asset) => {
         try {

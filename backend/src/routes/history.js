@@ -65,7 +65,7 @@ router.post('/history/resolve', async (req, res) => {
     for (const record of open) {
       const resolverStartedAt = Date.now();
       const snapshot = await getLocalRelaySnapshot(record.asset, record.timeframe || '1min', 50);
-      const outcome = resolveProspectiveOutcome(record, { price: snapshot.price, timestamp: snapshot.timestamp });
+      const outcome = resolveProspectiveOutcome(record, { price: snapshot.price, timestamp: snapshot.timestamp, valid: snapshot.valid, status: snapshot.status });
       if (!outcome.resolved) {
         pending.push({ id: record.id, reason: outcome.reason, dueAt: outcome.dueAt });
         continue;
@@ -75,7 +75,8 @@ router.post('/history/resolve', async (req, res) => {
         source: 'market-relay-prospective-paper',
         referenceTimestamp: outcome.referenceTimestamp,
         dueAt: outcome.dueAt,
-        resolverLatencyMs: Date.now() - resolverStartedAt
+        resolverLatencyMs: Date.now() - resolverStartedAt,
+        resolutionReason: outcome.reason ?? null
       }));
     }
     return res.json({ ok: true, resolved, pending });

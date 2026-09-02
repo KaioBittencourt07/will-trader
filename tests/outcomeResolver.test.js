@@ -29,3 +29,10 @@ test('resolver anchors expiry and entry price to the executed trade when availab
   assert.equal(outcome.entryPrice, 101);
   assert.equal(outcome.outcome, 'WIN');
 });
+
+test('resolver records DATA_INVALID instead of inventing a settlement from bad data', () => {
+  const invalid = resolveProspectiveOutcome(record, { price: null, timestamp: '2026-09-02T12:01:00.000Z', valid: false, status: 'STALE' }, Date.parse('2026-09-02T12:01:01.000Z'));
+  assert.equal(invalid.resolved, true);
+  assert.equal(invalid.outcome, 'DATA_INVALID');
+  assert.equal(invalid.reason, 'RESOLUTION_DATA_STALE');
+});

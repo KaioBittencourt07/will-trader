@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID']);
+const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
 
 function version(value, fallback) {
   const normalized = String(value ?? fallback).trim();
@@ -27,6 +27,19 @@ function dataQuality(data = {}, context = {}) {
     candleTimestamp: data.candleTimestamp ?? null,
     candleCount: Number.isFinite(data.candleCount) ? data.candleCount : null,
     requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null
+  };
+}
+
+function provenance(data = {}, context = {}) {
+  return {
+    provider: data.provider ?? data.source ?? null,
+    symbol: data.symbol ?? data.asset ?? null,
+    eventTimestamp: data.eventTimestamp ?? data.timestamp ?? null,
+    receiveTimestamp: data.receiveTimestamp ?? null,
+    ingestTimestamp: context.ingestTimestamp ?? null,
+    source: data.source ?? null,
+    payloadHash: data.payloadHash ?? null,
+    sequence: data.sequence ?? null
   };
 }
 
@@ -69,6 +82,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       metadata: {
         blockReasons: Array.isArray(decision.blockReasons) ? [...decision.blockReasons] : [],
         dataQuality: dataQuality(data, context),
+        provenance: provenance(data, context),
         featureSnapshot: structuredClone(featureSnapshot(data, decision)),
         context: {
           expirySeconds: context.expirySeconds ?? null,

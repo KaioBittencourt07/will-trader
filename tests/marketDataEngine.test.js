@@ -69,7 +69,8 @@ test('records provider errors, 429s and upstream latency without turning them in
   const engine = createMarketDataEngine({
     provider: { getSnapshot: async () => { time += 17; throw new Error('Twelve Data HTTP 429'); } },
     now: () => time,
-    minRequestIntervalMs: 0
+    minRequestIntervalMs: 0,
+    maxRetries: 0
   });
   await assert.rejects(() => engine.getSnapshot('EUR/USD'), /429/);
   const metrics = engine.getMetrics();
@@ -77,4 +78,35 @@ test('records provider errors, 429s and upstream latency without turning them in
   assert.equal(metrics.provider429, 1);
   assert.equal(metrics.upstreamLatencySamples, 1);
   assert.equal(metrics.upstreamLatencyMsAverage, 17);
+});
+
+test('honors Retry-After and recovers provider state only after a real success', async () => {
+  let calls = 0;
+  const waits = [];
+  const engine = createMarketDataEngine({
+    provider: { getSnapshot: async () => { calls += 1; if (calls === 1) { const error = new Error('HTTP 429'); error.status = 429; error.retryAfterMs = 700; throw error; } return { price: 1 }; } },
+    minRequestIntervalMs: 0,
+    wait: async (ms) => waits.push(ms)
+  });
+  assert.deepEqual(await engine.getSnapshot('EUR/USD'), { price: 1 });
+  assert.deepEqual(waits, [700]);
+  assert.equal(engine.getMetrics().retries, 1);
+  assert.equal(engine.getMetrics().providerState, 'HEALTHY');
+});
+
+test('bounds exponential backoff and exposes retry exhaustion without synthetic data', async () => {
+  const waits = [];
+  const engine = createMarketDataEngine({
+    provider: { getSnapshot: async () => { throw new Error('network timeout'); } },
+    minRequestIntervalMs: 0,
+    maxRetries: 1,
+    retryBaseMs: 100,
+    retryMaxMs: 120,
+    random: () => 1,
+    wait: async (ms) => waits.push(ms)
+  });
+  await assert.rejects(() => engine.getSnapshot('EUR/USD'), /timeout/);
+  assert.deepEqual(waits, [120]);
+  assert.equal(engine.getMetrics().retryExhausted, 1);
+  assert.equal(engine.getMetrics().providerState, 'DEGRADED');
 });
