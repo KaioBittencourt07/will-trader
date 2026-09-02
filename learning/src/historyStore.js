@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { attributeOutcome } from './errorAttribution.js';
 import { assessFamiliarity, createStateFingerprint } from './stateFingerprint.js';
+import { assessSignalLifecycle } from '../../engine/src/signalLifecycle.js';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
 
@@ -63,6 +64,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
   function recordDecision({ decision = {}, data = {}, audit = {}, context = {} } = {}) {
     const stateFingerprint = createStateFingerprint({ data, decision, context });
     const familiarityEvidence = assessFamiliarity(stateFingerprint, records);
+    const lifecycle = assessSignalLifecycle({ snapshot: data, decision, now: Date.now() });
     const direction = decision.direction ?? 'WAIT';
     const executable = (direction === 'BUY' || direction === 'SELL') && !decision.blocked && decision.executable !== false;
     const record = {
@@ -108,6 +110,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
         },
         marketContext: context.marketContext ? structuredClone(context.marketContext) : null
         ,stateFingerprint, familiarityEvidence
+        ,lifecycle
       }
     };
     records.push(record);
