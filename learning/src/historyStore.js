@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { attributeOutcome } from './errorAttribution.js';
+import { assessFamiliarity, createStateFingerprint } from './stateFingerprint.js';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
 
@@ -60,6 +61,8 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     fs.renameSync(temporary, filePath);
   }
   function recordDecision({ decision = {}, data = {}, audit = {}, context = {} } = {}) {
+    const stateFingerprint = createStateFingerprint({ data, decision, context });
+    const familiarityEvidence = assessFamiliarity(stateFingerprint, records);
     const direction = decision.direction ?? 'WAIT';
     const executable = (direction === 'BUY' || direction === 'SELL') && !decision.blocked && decision.executable !== false;
     const record = {
@@ -104,6 +107,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
           decisionLatencyMs: Number.isFinite(Number(context.decisionLatencyMs)) ? Number(context.decisionLatencyMs) : null
         },
         marketContext: context.marketContext ? structuredClone(context.marketContext) : null
+        ,stateFingerprint, familiarityEvidence
       }
     };
     records.push(record);
