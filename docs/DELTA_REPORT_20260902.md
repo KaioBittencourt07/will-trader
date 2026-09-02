@@ -61,4 +61,3 @@ Executar **WILL 3.0-C/D incrementalmente** sobre o workspace reconciliado:
 ## Nota de sincronização
 
 O Git local disponível neste ambiente não possui o helper HTTPS, portanto não foi usado para sobrescrever ou clonar a árvore. A publicação do workspace deve ser feita pela conexão GitHub autenticada em commits revisáveis na branch da PR, sem incluir segredos, histórico local ou dependências.
-
