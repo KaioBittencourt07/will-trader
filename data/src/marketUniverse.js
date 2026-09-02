@@ -38,6 +38,7 @@ export function createMarketUniverseScheduler({ universes = MARKET_UNIVERSES, no
   function take({ assetClass = 'ALL', limit = 4 } = {}) {
     const selectedClass = className(assetClass);
     const universe = selectedClass === 'ALL' ? Object.values(universes).flat() : universes[selectedClass];
+    if (!universe.length) return { assetClass: selectedClass, assets: [], totalAssets: 0, nextAsset: null, completesCycle: true, deferredAssets: 0 };
     const requested = Math.max(1, Math.min(Number(limit) || 1, universe.length));
     const start = cursors.get(selectedClass) ?? 0;
     const assets = [];

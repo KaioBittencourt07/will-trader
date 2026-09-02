@@ -10,8 +10,8 @@ import { assessScannerCandidate, adaptiveScanPriority, scannerTelemetry } from '
 
 const router = Router();
 const avalonCatalog = createAvalonCatalog();
-const scheduler = createMarketUniverseScheduler({ universes: avalonCatalog.universes });
-const relayScheduler = createMarketUniverseScheduler({ universes: avalonCatalog.universes });
+const scheduler = createMarketUniverseScheduler({ universes: avalonCatalog.operationalUniverses });
+const relayScheduler = createMarketUniverseScheduler({ universes: avalonCatalog.operationalUniverses });
 let localRelayRequired = false;
 
 function scanLimit() {
@@ -29,7 +29,7 @@ router.get('/opportunities', async (req, res) => {
     : null;
   let explicitAssets;
   try {
-    explicitAssets = requestedAssets ? avalonCatalog.assertAllowed(requestedAssets) : null;
+    explicitAssets = requestedAssets ? avalonCatalog.assertAllowed(requestedAssets).filter((asset) => avalonCatalog.resolve(asset).brokerTradable) : null;
   } catch (error) {
     return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
   }
@@ -50,6 +50,12 @@ router.get('/opportunities', async (req, res) => {
     entryWindowStartSeconds: 60,
     entryWindowEndSeconds: 300
   };
+  if (!explicitAssets && !avalonCatalog.isConfirmed()) {
+    return res.json({ ok: true, scannedAt: new Date().toISOString(), timeframe, scanned: 0, unavailable: [], coverage: { assetClass: 'ALL', assets: [], totalAssets: 0 }, broker: avalonCatalog.broker, catalogSource: avalonCatalog.source, catalogVerifiedAt: avalonCatalog.verifiedAt, recommendation: null, reason: 'Catálogo Avalon ainda não confirmado; scanner operacional não recomenda ativos sem essa evidência.', status: 'AVALON_CATALOG_UNVERIFIED' });
+  }
+  if (requestedAssets && !explicitAssets.length) {
+    return res.json({ ok: true, scannedAt: new Date().toISOString(), timeframe, scanned: 0, unavailable: requestedAssets.map((asset) => avalonCatalog.resolve(asset)), broker: avalonCatalog.broker, catalogSource: avalonCatalog.source, catalogVerifiedAt: avalonCatalog.verifiedAt, recommendation: null, reason: 'Ativo não confirmado como negociável na Avalon.', status: 'NOT_TRADABLE_ON_AVALON' });
+  }
   try {
     const analyses = [];
     const candidates = [];
@@ -127,6 +133,7 @@ router.get('/opportunities', async (req, res) => {
       coverage: activeSelection,
       broker: avalonCatalog.broker,
       catalogSource: avalonCatalog.source,
+      catalogVerifiedAt: avalonCatalog.verifiedAt,
       relayMode,
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
       candidates,

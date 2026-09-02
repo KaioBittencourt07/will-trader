@@ -19,19 +19,31 @@ function normalize(asset) {
   return String(asset ?? '').trim().toUpperCase();
 }
 
-function configuredAssets(value, fallback) {
-  if (!value) return [...fallback];
+function configuredAssets(value, fallback, explicit = false) {
+  if (!explicit && !value) return [...fallback];
   const parsed = [...new Set(String(value).split(',').map(normalize).filter(Boolean))];
-  return parsed.length ? parsed : [...fallback];
+  return explicit ? parsed : (parsed.length ? parsed : [...fallback]);
+}
+
+function aliases(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([from, to]) => [normalize(from), String(to).trim()]));
+  try { return aliases(JSON.parse(value)); } catch { return {}; }
 }
 
 export function createAvalonCatalog({ environment = process.env } = {}) {
+  const explicitCatalog = ['AVALON_FOREX_ASSETS', 'AVALON_CRYPTO_ASSETS', 'AVALON_STOCK_ASSETS'].some((key) => Object.hasOwn(environment, key));
   const universes = Object.freeze({
-    FOREX: Object.freeze(configuredAssets(environment.AVALON_FOREX_ASSETS, AVALON_PUBLIC_CATALOG.FOREX)),
-    CRYPTO: Object.freeze(configuredAssets(environment.AVALON_CRYPTO_ASSETS, AVALON_PUBLIC_CATALOG.CRYPTO)),
-    STOCKS: Object.freeze(configuredAssets(environment.AVALON_STOCK_ASSETS, AVALON_PUBLIC_CATALOG.STOCKS))
+    FOREX: Object.freeze(configuredAssets(environment.AVALON_FOREX_ASSETS, AVALON_PUBLIC_CATALOG.FOREX, explicitCatalog)),
+    CRYPTO: Object.freeze(configuredAssets(environment.AVALON_CRYPTO_ASSETS, AVALON_PUBLIC_CATALOG.CRYPTO, explicitCatalog)),
+    STOCKS: Object.freeze(configuredAssets(environment.AVALON_STOCK_ASSETS, AVALON_PUBLIC_CATALOG.STOCKS, explicitCatalog))
   });
   const allowed = new Set(Object.values(universes).flat());
+  const source = String(environment.AVALON_CATALOG_SOURCE ?? 'public-example-unverified').trim() || 'public-example-unverified';
+  const verifiedAt = environment.AVALON_CATALOG_VERIFIED_AT && Number.isFinite(Date.parse(environment.AVALON_CATALOG_VERIFIED_AT))
+    ? new Date(environment.AVALON_CATALOG_VERIFIED_AT).toISOString() : null;
+  const symbolAliases = aliases(environment.AVALON_SYMBOL_ALIASES);
+  const confirmed = Boolean(verifiedAt && !/unverified|unknown/i.test(source));
 
   function assertAllowed(assets = []) {
     const normalized = [...new Set(assets.map(normalize).filter(Boolean))];
@@ -42,11 +54,32 @@ export function createAvalonCatalog({ environment = process.env } = {}) {
     return normalized;
   }
 
+  function resolve(asset) {
+    const normalized = normalize(asset);
+    const brokerSymbol = symbolAliases[normalized] ?? normalized;
+    const listed = allowed.has(normalized);
+    return {
+      asset: normalized,
+      broker: 'Avalon',
+      brokerSymbol: listed ? brokerSymbol : null,
+      brokerTradable: listed && confirmed,
+      catalogSource: source,
+      catalogVerifiedAt: verifiedAt,
+      status: !listed ? 'NOT_TRADABLE_ON_AVALON' : !confirmed ? 'AVALON_CATALOG_UNVERIFIED' : 'TRADABLE_ON_AVALON'
+    };
+  }
+
+  const operationalUniverses = Object.fromEntries(Object.entries(universes).map(([assetClass, assets]) => [assetClass, Object.freeze(assets.filter((asset) => resolve(asset).brokerTradable))]));
+
   return Object.freeze({
     broker: 'Avalon',
-    source: 'configured-public-catalog',
+    source,
+    verifiedAt,
     universes,
+    operationalUniverses: Object.freeze(operationalUniverses),
+    isConfirmed: () => confirmed,
     isAllowed: (asset) => allowed.has(normalize(asset)),
+    resolve,
     assertAllowed
   });
 }
