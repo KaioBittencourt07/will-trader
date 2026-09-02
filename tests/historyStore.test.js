@@ -47,6 +47,21 @@ test('metrics expose WAIT volume separately from completed outcomes', () => {
   assert.equal(metrics.signals, 2);
 });
 
+test('metrics keep outcome evidence separated by strategy and model version', () => {
+  const metrics = summarize([
+    { direction: 'BUY', asset: 'EUR/USD', outcome: 'WIN', strategyVersion: 'will-core-v1', modelVersion: 'deterministic-v1', execution: { status: 'CONFIRMED' } },
+    { direction: 'SELL', asset: 'EUR/USD', outcome: 'LOSS', strategyVersion: 'will-core-v1.1', modelVersion: 'deterministic-v1', execution: { status: 'CONFIRMED' } },
+    { direction: 'WAIT', asset: 'EUR/USD', strategyVersion: 'will-core-v1.1', modelVersion: 'deterministic-v1' }
+  ]);
+  assert.deepEqual(metrics.byStrategyVersion, [
+    { key: 'will-core-v1', total: 1, wins: 1, winRate: 1 },
+    { key: 'will-core-v1.1', total: 1, wins: 0, winRate: 0 }
+  ]);
+  assert.deepEqual(metrics.byModelVersion, [
+    { key: 'deterministic-v1', total: 2, wins: 1, winRate: 0.5 }
+  ]);
+});
+
 test('stores an immutable, versioned feature snapshot for every decision', () => {
   const store = createHistoryStore({ id: () => 'versioned-1' });
   const data = { asset: 'EUR/USD', timeframe: '1min', price: 1.17, trend: 0.4, momentum: 0.2, structure: 0.5, volatility: 0.3, confirmations: 3, candleCount: 50 };

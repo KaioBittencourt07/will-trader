@@ -37,6 +37,10 @@ export function summarize(records = []) {
     bySetup: by('setup'),
     byTimeframe: by('timeframe'),
     byHour: by('hour'),
+    // A result is only comparable with decisions produced by the same
+    // version.  These groups are evidence slices, not a performance claim.
+    byStrategyVersion: by('strategyVersion'),
+    byModelVersion: by('modelVersion'),
     signals,
     waits,
     waitRate: signals ? waits / signals : null,
