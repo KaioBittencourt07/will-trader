@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { attributeOutcome } from './errorAttribution.js';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
 
@@ -116,7 +117,8 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     if (records[index].status === 'CLOSED' && records[index].outcome === outcome) return { ...structuredClone(records[index]), idempotent: true };
     if (records[index].status !== 'OPEN') throw new Error('Somente sinais abertos podem receber outcome.');
     if (records[index].outcome) throw new Error('Outcome já registrado.');
-    records[index] = { ...records[index], status: 'CLOSED', outcome, exitPrice: Number(metadata.exitPrice) || null, settledAt: now(), outcomeMetadata: metadata };
+    const settled = { ...records[index], status: 'CLOSED', outcome, exitPrice: Number(metadata.exitPrice) || null, settledAt: now(), outcomeMetadata: metadata };
+    records[index] = { ...settled, errorAttribution: attributeOutcome(settled) };
     persist();
     return structuredClone(records[index]);
   }
