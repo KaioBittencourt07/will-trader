@@ -3,6 +3,19 @@ import path from 'node:path';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID']);
 
+function version(value, fallback) {
+  const normalized = String(value ?? fallback).trim();
+  return normalized.slice(0, 120) || fallback;
+}
+
+function featureSnapshot(data = {}, decision = {}) {
+  const keys = [
+    'trend', 'momentum', 'structure', 'volatility', 'confirmations', 'candleCount',
+    'technicalModel', 'realizedVolatility', 'breakout', 'rejection', 'pullback', 'reversal'
+  ];
+  return Object.fromEntries(keys.map((key) => [key, data[key] ?? decision[key] ?? null]));
+}
+
 function dataQuality(data = {}) {
   return { valid: data.valid !== false, status: data.status ?? null, ageMs: Number.isFinite(data.ageMs) ? data.ageMs : null, source: data.source ?? null, quoteTimestamp: data.quoteTimestamp ?? null, candleTimestamp: data.candleTimestamp ?? null, candleCount: Number.isFinite(data.candleCount) ? data.candleCount : null };
 }
@@ -24,20 +37,46 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
   function recordDecision({ decision = {}, data = {}, audit = {}, context = {} } = {}) {
     const direction = decision.direction ?? 'WAIT';
     const executable = (direction === 'BUY' || direction === 'SELL') && !decision.blocked && decision.executable !== false;
-    const record = { id: id(), createdAt: now(), signalTimestamp: decision.generatedAt ?? data.timestamp ?? null, asset: data.asset ?? decision.asset ?? audit.asset ?? null, timeframe: data.timeframe ?? decision.timeframe ?? null, entryPrice: Number(data.price ?? decision.price) || null, direction, status: executable ? 'OPEN' : 'SKIPPED', score: Number(decision.score) || 0, confidence: Number(decision.confidence) || 0, regime: decision.regime ?? null, setup: decision.setup ?? null, confirmations: Number(data.confirmations ?? decision.confirmations) || 0, clickTime: executable ? (decision.clickTime ?? null) : null, execution: executable ? { status: 'PENDING_CONFIRMATION', plannedClickTime: decision.clickTime ?? null, actualClickTime: null, actualEntryPrice: null, confirmedAt: null } : null, outcome: null, metadata: { blockReasons: Array.isArray(decision.blockReasons) ? decision.blockReasons : [], dataQuality: dataQuality(data), context: { expirySeconds: context.expirySeconds ?? null } } };
+    const record = {
+      id: id(),
+      createdAt: now(),
+      strategyVersion: version(context.strategyVersion ?? decision.strategyVersion ?? process.env.WILL_STRATEGY_VERSION, 'will-core-v1'),
+      modelVersion: version(context.modelVersion ?? decision.modelVersion, 'deterministic-v1'),
+      signalTimestamp: decision.generatedAt ?? data.timestamp ?? null,
+      asset: data.asset ?? decision.asset ?? audit.asset ?? null,
+      timeframe: data.timeframe ?? decision.timeframe ?? null,
+      entryPrice: Number(data.price ?? decision.price) || null,
+      direction,
+      status: executable ? 'OPEN' : 'SKIPPED',
+      score: Number(decision.score) || 0,
+      confidence: Number(decision.confidence) || 0,
+      regime: decision.regime ?? null,
+      setup: decision.setup ?? null,
+      confirmations: Number(data.confirmations ?? decision.confirmations) || 0,
+      clickTime: executable ? (decision.clickTime ?? null) : null,
+      execution: executable ? { status: 'PENDING_CONFIRMATION', plannedClickTime: decision.clickTime ?? null, actualClickTime: null, actualEntryPrice: null, confirmedAt: null } : null,
+      outcome: null,
+      metadata: {
+        blockReasons: Array.isArray(decision.blockReasons) ? [...decision.blockReasons] : [],
+        dataQuality: dataQuality(data),
+        featureSnapshot: structuredClone(featureSnapshot(data, decision)),
+        context: { expirySeconds: context.expirySeconds ?? null }
+      }
+    };
     records.push(record);
     persist();
-    return record;
+    return structuredClone(record);
   }
   function settle(idValue, outcome, metadata = {}) {
     if (!OUTCOMES.has(outcome)) throw new Error('Outcome inválido.');
     const index = records.findIndex((record) => record.id === idValue);
     if (index < 0) throw new Error('Sinal não encontrado.');
+    if (records[index].status === 'CLOSED' && records[index].outcome === outcome) return { ...structuredClone(records[index]), idempotent: true };
     if (records[index].status !== 'OPEN') throw new Error('Somente sinais abertos podem receber outcome.');
     if (records[index].outcome) throw new Error('Outcome já registrado.');
     records[index] = { ...records[index], status: 'CLOSED', outcome, exitPrice: Number(metadata.exitPrice) || null, settledAt: now(), outcomeMetadata: metadata };
     persist();
-    return records[index];
+    return structuredClone(records[index]);
   }
   function confirmExecution(idValue, { actualClickTime, actualEntryPrice = null, notes = null } = {}) {
     const index = records.findIndex((record) => record.id === idValue);
@@ -59,7 +98,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       }
     };
     persist();
-    return records[index];
+    return structuredClone(records[index]);
   }
   return { recordDecision, settle, confirmExecution, list: () => records.map((record) => structuredClone(record)) };
 }

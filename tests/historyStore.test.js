@@ -46,3 +46,25 @@ test('metrics expose WAIT volume separately from completed outcomes', () => {
   assert.equal(metrics.waits, 1);
   assert.equal(metrics.signals, 2);
 });
+
+test('stores an immutable, versioned feature snapshot for every decision', () => {
+  const store = createHistoryStore({ id: () => 'versioned-1' });
+  const data = { asset: 'EUR/USD', timeframe: '1min', price: 1.17, trend: 0.4, momentum: 0.2, structure: 0.5, volatility: 0.3, confirmations: 3, candleCount: 50 };
+  const record = store.recordDecision({ decision: { direction: 'WAIT', blocked: true }, data, context: { strategyVersion: 'will-core-v1.1', modelVersion: 'deterministic-v1' } });
+  data.trend = -0.9;
+  record.metadata.featureSnapshot.structure = -0.9;
+  const saved = store.list()[0];
+  assert.equal(saved.strategyVersion, 'will-core-v1.1');
+  assert.equal(saved.modelVersion, 'deterministic-v1');
+  assert.equal(saved.metadata.featureSnapshot.trend, 0.4);
+  assert.equal(saved.metadata.featureSnapshot.structure, 0.5);
+});
+
+test('settling the same recorded outcome is idempotent', () => {
+  const store = createHistoryStore({ id: () => 'idempotent-1' });
+  store.recordDecision({ decision: { direction: 'BUY', executable: true }, data: { asset: 'EUR/USD', timeframe: '1min', price: 1.17 } });
+  store.settle('idempotent-1', 'WIN');
+  const repeated = store.settle('idempotent-1', 'WIN');
+  assert.equal(repeated.idempotent, true);
+  assert.equal(store.list().length, 1);
+});

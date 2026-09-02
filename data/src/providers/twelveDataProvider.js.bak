@@ -1,0 +1,221 @@
+import { normalizeMarketSnapshot } from '../marketAdapter.js';
+
+const BASE_URL = 'https://api.twelvedata.com';
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function num(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function deriveTechnical(values) {
+  const closes = values
+    .map(v => num(v.close))
+    .filter(v => v !== null)
+    .reverse();
+
+  if (closes.length < 12) {
+    throw new Error('Histórico insuficiente para análise técnica.');
+  }
+
+  const last = closes.at(-1);
+
+  const sma5 =
+    closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+
+  const sma12 =
+    closes.slice(-12).reduce((a, b) => a + b, 0) / 12;
+
+  const trendRaw = (last - sma12) / sma12;
+  const momentumRaw = (last - closes.at(-6)) / closes.at(-6);
+
+  const recent = closes.slice(-10);
+  const recentHigh = Math.max(...recent);
+  const recentLow = Math.min(...recent);
+  const range = recentHigh - recentLow;
+
+  const structureRaw =
+    range > 0
+      ? ((last - recentLow) / range) * 2 - 1
+      : 0;
+
+  const returns = closes
+    .slice(1)
+    .map((v, i) => (v - closes[i]) / closes[i])
+    .filter(Number.isFinite);
+
+  const mean =
+    returns.reduce((a, b) => a + b, 0) / returns.length;
+
+  const variance =
+    returns.reduce((a, b) => a + (b - mean) ** 2, 0) /
+    returns.length;
+
+  const volatilityRaw = Math.sqrt(variance) * 100;
+
+  const trend = clamp(trendRaw * 100, -1, 1);
+  const momentum = clamp(momentumRaw * 100, -1, 1);
+  const structure = clamp(structureRaw, -1, 1);
+  const volatility = clamp(volatilityRaw, 0, 1);
+
+  const signs = [trend, momentum, structure]
+    .filter(v => Math.abs(v) >= 0.15)
+    .map(v => Math.sign(v));
+
+  const dominant = signs.length
+    ? Math.sign(signs.reduce((a, b) => a + b, 0))
+    : 0;
+
+  const confirmations =
+    signs.filter(v => v === dominant).length +
+    (last > sma5 === last > sma12 ? 1 : 0);
+
+  return {
+    trend,
+    momentum,
+    structure,
+    volatility,
+    confirmations,
+    candleCount: closes.length
+  };
+}
+
+export function createTwelveDataProvider({
+  apiKey = process.env.TWELVEDATA_API_KEY,
+  fetchImpl = fetch,
+  maxAgeMs = Number(process.env.MARKET_MAX_AGE_MS || 30_000),
+  baseUrl = BASE_URL
+} = {}) {
+  if (!apiKey) {
+    throw new Error('TWELVEDATA_API_KEY não configurada.');
+  }
+
+  return {
+    async getSnapshot(asset, timeframe = '1min', outputsize = 50) {
+      const symbol = encodeURIComponent(asset);
+      const interval = encodeURIComponent(timeframe);
+
+      const headers = {
+        Authorization: `apikey ${apiKey}`
+      };
+
+      const [quoteResponse, seriesResponse] = await Promise.all([
+        fetchImpl(
+          `${baseUrl}/quote?symbol=${symbol}`,
+          {
+            headers,
+            cache: 'no-store'
+          }
+        ),
+
+        fetchImpl(
+          `${baseUrl}/time_series?symbol=${symbol}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`,
+          {
+            headers,
+            cache: 'no-store'
+          }
+        )
+      ]);
+
+      if (!quoteResponse.ok) {
+        throw new Error(
+          `Twelve Data quote HTTP ${quoteResponse.status}`
+        );
+      }
+
+      if (!seriesResponse.ok) {
+        throw new Error(
+          `Twelve Data time_series HTTP ${seriesResponse.status}`
+        );
+      }
+
+      const quote = await quoteResponse.json();
+      const series = await seriesResponse.json();
+
+      if (quote.status === 'error') {
+        throw new Error(
+          `Twelve Data quote: ${quote.message || 'erro'}`
+        );
+      }
+
+      if (series.status === 'error') {
+        throw new Error(
+          `Twelve Data time_series: ${series.message || 'erro'}`
+        );
+      }
+
+      const price = num(quote.close ?? quote.price);
+
+      if (
+        !price ||
+        !Array.isArray(series.values) ||
+        series.values.length === 0
+      ) {
+        throw new Error(
+          'Twelve Data retornou snapshot incompleto.'
+        );
+      }
+
+      const latestCandle = series.values[0];
+      const latestCandleTime = latestCandle?.datetime;
+
+      const candleTimestamp = latestCandleTime
+        ? new Date(
+            `${latestCandleTime.replace(' ', 'T')}Z`
+          ).toISOString()
+        : null;
+
+      if (!candleTimestamp) {
+        throw new Error(
+          'Twelve Data não retornou timestamp válido do candle.'
+        );
+      }
+
+      /*
+       * O candle é usado para análise técnica.
+       * Para frescor do preço usamos last_quote_at.
+       */
+      const quoteTimestamp = quote.last_quote_at
+        ? new Date(
+            Number(quote.last_quote_at) * 1000
+          ).toISOString()
+        : null;
+
+      if (!quoteTimestamp) {
+        throw new Error(
+          'Twelve Data não retornou last_quote_at válido.'
+        );
+      }
+
+      const technical = deriveTechnical(series.values);
+
+      const raw = {
+        asset,
+        timeframe,
+        price,
+
+        // Data Guard usa o horário da última cotação.
+        timestamp: quoteTimestamp,
+
+        // Candle fica separado para análise técnica.
+        candleTimestamp,
+
+        quoteTimestamp,
+
+        candles: series.values,
+        source: 'twelvedata',
+        marketOpen: Boolean(quote.is_market_open),
+        lastQuoteAt: quote.last_quote_at,
+
+        ...technical
+      };
+
+      return normalizeMarketSnapshot(raw, {
+        maxAgeMs
+      });
+    }
+  };
+}
