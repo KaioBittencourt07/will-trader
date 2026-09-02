@@ -11,13 +11,23 @@ function version(value, fallback) {
 function featureSnapshot(data = {}, decision = {}) {
   const keys = [
     'trend', 'momentum', 'structure', 'volatility', 'confirmations', 'candleCount',
-    'technicalModel', 'realizedVolatility', 'breakout', 'rejection', 'pullback', 'reversal'
+    'technicalModel', 'realizedVolatility', 'breakout', 'rejection', 'pullback', 'reversal',
+    'patternDirection', 'patternModel'
   ];
   return Object.fromEntries(keys.map((key) => [key, data[key] ?? decision[key] ?? null]));
 }
 
-function dataQuality(data = {}) {
-  return { valid: data.valid !== false, status: data.status ?? null, ageMs: Number.isFinite(data.ageMs) ? data.ageMs : null, source: data.source ?? null, quoteTimestamp: data.quoteTimestamp ?? null, candleTimestamp: data.candleTimestamp ?? null, candleCount: Number.isFinite(data.candleCount) ? data.candleCount : null };
+function dataQuality(data = {}, context = {}) {
+  return {
+    valid: data.valid !== false,
+    status: data.status ?? null,
+    ageMs: Number.isFinite(data.ageMs) ? data.ageMs : null,
+    source: data.source ?? null,
+    quoteTimestamp: data.quoteTimestamp ?? null,
+    candleTimestamp: data.candleTimestamp ?? null,
+    candleCount: Number.isFinite(data.candleCount) ? data.candleCount : null,
+    requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null
+  };
 }
 
 export function createHistoryStore({ filePath = null, now = () => new Date().toISOString(), id = () => crypto.randomUUID() } = {}) {
@@ -58,9 +68,13 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       outcome: null,
       metadata: {
         blockReasons: Array.isArray(decision.blockReasons) ? [...decision.blockReasons] : [],
-        dataQuality: dataQuality(data),
+        dataQuality: dataQuality(data, context),
         featureSnapshot: structuredClone(featureSnapshot(data, decision)),
-        context: { expirySeconds: context.expirySeconds ?? null }
+        context: {
+          expirySeconds: context.expirySeconds ?? null,
+          requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null,
+          decisionLatencyMs: Number.isFinite(Number(context.decisionLatencyMs)) ? Number(context.decisionLatencyMs) : null
+        }
       }
     };
     records.push(record);

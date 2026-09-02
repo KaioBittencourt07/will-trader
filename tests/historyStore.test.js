@@ -8,10 +8,12 @@ test('records complete prospective signal context and settles only open trades',
   const record = store.recordDecision({
     decision: { direction: 'BUY', executable: true, score: 81, confidence: 76, regime: 'TREND', setup: 'PULLBACK', clickTime: '12:00:02.000Z' },
     data: { asset: 'EUR/USD', timeframe: '1min', price: 1.17, confirmations: 4, valid: true, status: 'OK', ageMs: 500, source: 'twelvedata' },
-    context: { expirySeconds: 60 }
+    context: { expirySeconds: 60, requiredBars: 50, decisionLatencyMs: 12 }
   });
   assert.equal(record.status, 'OPEN');
   assert.equal(record.metadata.dataQuality.status, 'OK');
+  assert.equal(record.metadata.dataQuality.requiredBars, 50);
+  assert.equal(record.metadata.context.decisionLatencyMs, 12);
   assert.equal(record.confirmations, 4);
   const settled = store.settle('signal-1', 'WIN', { exitPrice: 1.171 });
   assert.equal(settled.outcome, 'WIN');

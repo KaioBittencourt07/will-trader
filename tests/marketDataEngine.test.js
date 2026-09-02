@@ -63,3 +63,18 @@ test('uses the provider batch capability and caches each returned asset', async 
   assert.equal(second[1].snapshot.asset, 'BTC/USD');
   assert.equal(batches, 1);
 });
+
+test('records provider errors, 429s and upstream latency without turning them into data', async () => {
+  let time = 10;
+  const engine = createMarketDataEngine({
+    provider: { getSnapshot: async () => { time += 17; throw new Error('Twelve Data HTTP 429'); } },
+    now: () => time,
+    minRequestIntervalMs: 0
+  });
+  await assert.rejects(() => engine.getSnapshot('EUR/USD'), /429/);
+  const metrics = engine.getMetrics();
+  assert.equal(metrics.providerErrors, 1);
+  assert.equal(metrics.provider429, 1);
+  assert.equal(metrics.upstreamLatencySamples, 1);
+  assert.equal(metrics.upstreamLatencyMsAverage, 17);
+});

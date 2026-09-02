@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { summarize } from '../../../learning/src/statistics.js';
 import { buildConfidenceCalibration, buildLearningReadiness } from '../../../learning/src/calibration.js';
 import { resolveProspectiveOutcome } from '../../../learning/src/outcomeResolver.js';
-import { getLocalRelaySnapshot } from './market.js';
+import { getLocalRelaySnapshot, getLocalRelayStatus, getMarketDataEngine } from './market.js';
 
 const router = Router();
 
@@ -63,6 +63,7 @@ router.post('/history/resolve', async (req, res) => {
     const resolved = [];
     const pending = [];
     for (const record of open) {
+      const resolverStartedAt = Date.now();
       const snapshot = await getLocalRelaySnapshot(record.asset, record.timeframe || '1min', 50);
       const outcome = resolveProspectiveOutcome(record, { price: snapshot.price, timestamp: snapshot.timestamp });
       if (!outcome.resolved) {
@@ -73,7 +74,8 @@ router.post('/history/resolve', async (req, res) => {
         exitPrice: outcome.exitPrice,
         source: 'market-relay-prospective-paper',
         referenceTimestamp: outcome.referenceTimestamp,
-        dueAt: outcome.dueAt
+        dueAt: outcome.dueAt,
+        resolverLatencyMs: Date.now() - resolverStartedAt
       }));
     }
     return res.json({ ok: true, resolved, pending });
@@ -93,6 +95,10 @@ router.get('/metrics', (req, res) => {
     return res.json({
       ok: true,
       metrics: summarize(withHour),
+      operational: {
+        provider: getMarketDataEngine().getMetrics(),
+        relay: getLocalRelayStatus()
+      },
       calibration: buildConfidenceCalibration(records, { minimumSamples }),
       learning: buildLearningReadiness(records, { minimumSamples })
     });

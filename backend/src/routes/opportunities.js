@@ -43,6 +43,7 @@ router.get('/opportunities', async (req, res) => {
   const timeframe = String(req.query.timeframe || '1min');
   const context = {
     dataValid: true,
+    requiredBars: 50,
     expirySeconds: Number(req.query.expirySeconds || process.env.EXPIRY_SECONDS || 60),
     entryDelaySeconds: entryDelaySeconds(req.query.entryDelaySeconds),
     entryWindowStartSeconds: 60,
@@ -93,13 +94,15 @@ router.get('/opportunities', async (req, res) => {
       if (snapshot.status === 'STALE' || snapshot.marketOpen === false) {
         (relayMode ? relayScheduler : scheduler).defer(asset);
       }
+      const startedAt = Date.now();
       const decision = snapshot.valid === false || snapshot.marketOpen === false
         ? dataQualityWait(snapshot.marketOpen === false
           ? { ...snapshot, status: 'MARKET_CLOSED', reason: 'MARKET_CLOSED' }
           : snapshot)
         : runWillPipeline(snapshot, context);
-      const audit = createAuditEntry({ signal: snapshot, decision, context });
-      const history = req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context });
+      const decisionContext = { ...context, decisionLatencyMs: Date.now() - startedAt };
+      const audit = createAuditEntry({ signal: snapshot, decision, context: decisionContext });
+      const history = req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext });
       analyses.push({ asset, snapshot, decision, historyId: history.id });
     }
     const result = selectBestOpportunity(analyses);

@@ -7,14 +7,43 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   const cache = new Map();
   const inFlight = new Map();
   let nextRequestAt = 0;
-  const metrics = { cacheHits: 0, cacheMisses: 0, deduplicated: 0, upstreamRequests: 0 };
+  const metrics = {
+    cacheHits: 0,
+    cacheMisses: 0,
+    deduplicated: 0,
+    upstreamRequests: 0,
+    providerErrors: 0,
+    provider429: 0,
+    upstreamLatencyMsTotal: 0,
+    upstreamLatencySamples: 0,
+    lastProviderError: null
+  };
+
+  function recordProviderError(error) {
+    metrics.providerErrors += 1;
+    if (/\b429\b|too many requests|rate limit/i.test(String(error?.message ?? error))) metrics.provider429 += 1;
+    metrics.lastProviderError = String(error?.message ?? error).slice(0, 500);
+  }
+
+  async function timedProviderRequest(work) {
+    const startedAt = now();
+    try {
+      return await work();
+    } catch (error) {
+      recordProviderError(error);
+      throw error;
+    } finally {
+      metrics.upstreamLatencyMsTotal += Math.max(0, now() - startedAt);
+      metrics.upstreamLatencySamples += 1;
+    }
+  }
 
   async function fetchWithRateLimit(asset, timeframe, outputsize) {
     const delay = Math.max(0, nextRequestAt - now());
     if (delay) await wait(delay);
     nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
     metrics.upstreamRequests += 1;
-    return provider.getSnapshot(asset, timeframe, outputsize);
+    return timedProviderRequest(() => provider.getSnapshot(asset, timeframe, outputsize));
   }
 
   async function getSnapshot(asset, timeframe = '1min', outputsize = 50) {
@@ -64,7 +93,15 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     if (delay) await wait(delay);
     nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
     metrics.upstreamRequests += 1;
-    const fetched = await provider.getSnapshots(missing, timeframe, outputsize);
+    let fetched;
+    try {
+      fetched = await timedProviderRequest(() => provider.getSnapshots(missing, timeframe, outputsize));
+    } catch (error) {
+      throw error;
+    }
+    for (const entry of fetched) {
+      if (entry?.error) recordProviderError(entry.error);
+    }
     for (const entry of fetched) {
       if (entry?.snapshot) cache.set(keyFor(entry.asset, timeframe, outputsize), { snapshot: entry.snapshot, storedAt: now() });
     }
@@ -72,5 +109,16 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     return uniqueAssets.map((asset) => all.find((entry) => entry.asset === asset) ?? { asset, snapshot: null, error: 'Ativo não retornado pelo provedor.' });
   }
 
-  return { getSnapshot, getSnapshots, getMetrics: () => ({ ...metrics, cacheEntries: cache.size }), clearCache: () => cache.clear() };
+  return {
+    getSnapshot,
+    getSnapshots,
+    getMetrics: () => ({
+      ...metrics,
+      cacheEntries: cache.size,
+      upstreamLatencyMsAverage: metrics.upstreamLatencySamples
+        ? metrics.upstreamLatencyMsTotal / metrics.upstreamLatencySamples
+        : null
+    }),
+    clearCache: () => cache.clear()
+  };
 }
