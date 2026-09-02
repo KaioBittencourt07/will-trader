@@ -20,8 +20,8 @@ export function snapshotFromEvidence(record = {}) {
 }
 
 function mismatch(record, replayed) {
-  const fields = ['direction', 'score', 'confidence', 'regime', 'setup', 'confirmations', 'blocked'];
-  const reasons = fields.filter((field) => record[field] !== replayed[field]).map((field) => `REPLAY_${field.toUpperCase()}_MISMATCH`);
+  const fields = ['direction', 'score', 'confidence', 'regime', 'setup', 'confirmations', 'blocked', 'setupType', 'setupDirection', 'setupQuality', 'featureVersion'];
+  const reasons = fields.filter((field) => record[field] !== undefined && record[field] !== replayed[field]).map((field) => `REPLAY_${field.toUpperCase()}_MISMATCH`);
   return reasons;
 }
 
@@ -36,6 +36,7 @@ export function replayEvidence(record, { engine = willCore } = {}) {
     decisionId: record.id ?? null,
     strategyVersion: record.strategyVersion ?? null,
     modelVersion: record.modelVersion ?? null,
+    featureVersion: record.featureVersion ?? snapshot.featureVersion ?? 'legacy-unversioned',
     match: reasons.length === 0,
     reasons,
     replayed

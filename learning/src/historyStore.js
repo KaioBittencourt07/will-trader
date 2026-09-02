@@ -12,7 +12,8 @@ function featureSnapshot(data = {}, decision = {}) {
   const keys = [
     'trend', 'momentum', 'structure', 'volatility', 'confirmations', 'candleCount',
     'technicalModel', 'realizedVolatility', 'breakout', 'rejection', 'pullback', 'reversal',
-    'patternDirection', 'patternModel'
+    'patternDirection', 'patternModel', 'featureVersion', 'featureStatus', 'atr', 'bodyRangeRatio',
+    'closeLocationValue', 'breakoutStrength', 'pullbackDepthAtr', 'rangeCompression', 'rangeExpansion'
   ];
   return Object.fromEntries(keys.map((key) => [key, data[key] ?? decision[key] ?? null]));
 }
@@ -75,6 +76,10 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       confidence: Number(decision.confidence) || 0,
       regime: decision.regime ?? null,
       setup: decision.setup ?? null,
+      setupType: decision.setupType ?? decision.setup ?? null,
+      setupDirection: decision.setupDirection ?? null,
+      setupQuality: decision.setupQuality ?? null,
+      featureVersion: decision.featureVersion ?? data.featureVersion ?? 'legacy-unversioned',
       confirmations: Number(data.confirmations ?? decision.confirmations) || 0,
       clickTime: executable ? (decision.clickTime ?? null) : null,
       execution: executable ? { status: 'PENDING_CONFIRMATION', plannedClickTime: decision.clickTime ?? null, actualClickTime: null, actualEntryPrice: null, confirmedAt: null } : null,
@@ -84,6 +89,10 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
         dataQuality: dataQuality(data, context),
         provenance: provenance(data, context),
         featureSnapshot: structuredClone(featureSnapshot(data, decision)),
+        setup: {
+          evidence: Array.isArray(decision.setupEvidence) ? [...decision.setupEvidence] : [],
+          invalidation: Array.isArray(decision.setupInvalidation) ? [...decision.setupInvalidation] : []
+        },
         context: {
           expirySeconds: context.expirySeconds ?? null,
           requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null,

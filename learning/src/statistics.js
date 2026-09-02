@@ -43,6 +43,10 @@ function derivedRecord(record = {}) {
     session: record.session ?? sessionFor(record.signalTimestamp),
     dataQualityStatus: quality.status ?? 'UNKNOWN',
     dataQualitySource: quality.source ?? 'UNKNOWN',
+    featureVersion: record.featureVersion ?? record.metadata?.featureSnapshot?.featureVersion ?? 'legacy-unversioned',
+    setupType: record.setupType ?? record.setup ?? 'UNKNOWN',
+    setupQuality: record.setupQuality ?? 'UNKNOWN',
+    setupDirection: record.setupDirection ?? (record.direction === 'BUY' || record.direction === 'SELL' ? record.direction : 'NEUTRAL'),
     outcomeKind: outcomeKind(record)
   };
 }
@@ -196,6 +200,10 @@ export function summarize(records = []) {
     segments: {
       byStrategyVersion: segment(normalized, 'strategyVersion'),
       byModelVersion: segment(normalized, 'modelVersion'),
+      byFeatureVersion: segment(normalized, 'featureVersion'),
+      bySetupType: segment(normalized, 'setupType'),
+      bySetupQuality: segment(normalized, 'setupQuality'),
+      bySetupDirection: segment(normalized, 'setupDirection'),
       byAsset: segment(normalized, 'asset'),
       bySetup: segment(normalized, 'setup'),
       byRegime: segment(normalized, 'regime'),

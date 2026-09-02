@@ -77,6 +77,20 @@ test('stores an immutable, versioned feature snapshot for every decision', () =>
   assert.equal(saved.metadata.featureSnapshot.structure, 0.5);
 });
 
+test('persists setup explanation and feature version for later segmentation and replay', () => {
+  const store = createHistoryStore({ id: () => 'setup-v2-1' });
+  const record = store.recordDecision({
+    decision: { direction: 'WAIT', blocked: true, setup: 'BREAKOUT', setupType: 'BREAKOUT', setupDirection: 'BUY', setupQuality: 'B', featureVersion: 'candle-price-action-v2', setupEvidence: ['BREAKOUT_CONFIRMED'], setupInvalidation: ['CLOSE_BACK_INSIDE_RANGE'] },
+    data: { asset: 'EUR/USD', timeframe: '1min' }
+  });
+  assert.equal(record.setupQuality, 'B');
+  assert.equal(record.featureVersion, 'candle-price-action-v2');
+  assert.deepEqual(record.metadata.setup.evidence, ['BREAKOUT_CONFIRMED']);
+  const metrics = summarize(store.list());
+  assert.equal(metrics.segments.byFeatureVersion[0].key, 'candle-price-action-v2');
+  assert.equal(metrics.segments.bySetupQuality[0].key, 'B');
+});
+
 test('settling the same recorded outcome is idempotent', () => {
   const store = createHistoryStore({ id: () => 'idempotent-1' });
   store.recordDecision({ decision: { direction: 'BUY', executable: true }, data: { asset: 'EUR/USD', timeframe: '1min', price: 1.17 } });

@@ -1,4 +1,4 @@
-import { classifyRegime } from './marketRegime.js';
+﻿import { classifyRegime } from './marketRegime.js';
 import { classifySetup } from './setupClassifier.js';
 import { decide } from './willEngine.js';
 import { calibrateConfidence } from './confidence.js';
@@ -69,6 +69,12 @@ export function willCore(market, context = {}) {
 
     setup: setup.setup,
     setupConfidence: setup.confidence,
+    setupType: setup.setupType,
+    setupDirection: setup.setupDirection,
+    setupQuality: setup.setupQuality,
+    setupEvidence: setup.evidence,
+    setupInvalidation: setup.invalidation,
+    featureVersion: setup.featureVersion,
 
     blocked,
 
