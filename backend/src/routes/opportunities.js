@@ -6,6 +6,7 @@ import { createAuditEntry } from '../../../engine/src/auditLog.js';
 import { dataQualityWait } from '../../../engine/src/dataGuard.js';
 import { createMarketUniverseScheduler } from '../../../data/src/marketUniverse.js';
 import { createAvalonCatalog } from '../../../data/src/brokerCatalog.js';
+import { assessScannerCandidate, adaptiveScanPriority, scannerTelemetry } from '../../../engine/src/scannerDiscovery.js';
 
 const router = Router();
 const avalonCatalog = createAvalonCatalog();
@@ -51,6 +52,7 @@ router.get('/opportunities', async (req, res) => {
   };
   try {
     const analyses = [];
+    const candidates = [];
     const unavailable = [];
     let activeSelection = selection;
     let snapshots;
@@ -103,9 +105,18 @@ router.get('/opportunities', async (req, res) => {
       const decisionContext = { ...context, decisionLatencyMs: Date.now() - startedAt };
       const audit = createAuditEntry({ signal: snapshot, decision, context: decisionContext });
       const history = req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext });
+      const candidate = assessScannerCandidate({ asset, snapshot, decision, context: decisionContext });
+      // The scheduler priority changes only future scan coverage. It cannot
+      // make this decision executable or alter any entry threshold.
+      (relayMode ? relayScheduler : scheduler).setPriority?.(asset, adaptiveScanPriority(snapshot, candidate.readiness));
+      candidates.push(candidate);
       analyses.push({ asset, snapshot, decision, historyId: history.id });
     }
     const result = selectBestOpportunity(analyses);
+    if (result.recommendation) {
+      const selected = candidates.find((item) => item.asset === result.recommendation.asset);
+      if (selected) selected.stages.ranked = true;
+    }
     return res.json({
       ok: true,
       scannedAt: new Date().toISOString(),
@@ -116,6 +127,8 @@ router.get('/opportunities', async (req, res) => {
       broker: avalonCatalog.broker,
       catalogSource: avalonCatalog.source,
       relayMode,
+      scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
+      candidates,
       ...result,
       reason: relayMode
         ? `${result.reason} Relay local ativo: ${activeSelection.assets[0]} estudado nesta janela; próxima leitura: ${activeSelection.nextAsset || 'fim da lista'}.`

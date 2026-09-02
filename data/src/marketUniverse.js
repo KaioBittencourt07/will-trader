@@ -25,6 +25,7 @@ function className(value = 'ALL') {
 export function createMarketUniverseScheduler({ universes = MARKET_UNIVERSES, now = () => Date.now() } = {}) {
   const cursors = new Map();
   const deferred = new Map();
+  const priorities = new Map();
   function isDeferred(asset) {
     const until = deferred.get(asset);
     if (!until) return false;
@@ -41,8 +42,12 @@ export function createMarketUniverseScheduler({ universes = MARKET_UNIVERSES, no
     const start = cursors.get(selectedClass) ?? 0;
     const assets = [];
     let cursor = start;
-    for (let inspected = 0; inspected < universe.length && assets.length < requested; inspected += 1) {
-      const asset = universe[cursor];
+    const ordered = [...universe];
+    // Preserve deterministic round-robin when no observations exist. Once an
+    // asset is observed, only scan ordering changes; eligibility stays fixed.
+    if ([...priorities.values()].some((priority) => priority > 0)) ordered.sort((left, right) => (priorities.get(right) ?? 0) - (priorities.get(left) ?? 0) || universe.indexOf(left) - universe.indexOf(right));
+    for (let inspected = 0; inspected < ordered.length && assets.length < requested; inspected += 1) {
+      const asset = ordered[cursor];
       cursor = (cursor + 1) % universe.length;
       if (!isDeferred(asset)) assets.push(asset);
     }
@@ -52,7 +57,7 @@ export function createMarketUniverseScheduler({ universes = MARKET_UNIVERSES, no
       assetClass: selectedClass,
       assets,
       totalAssets: universe.length,
-      nextAsset: universe[next],
+      nextAsset: ordered[next],
       completesCycle: next === 0,
       deferredAssets: [...deferred.keys()].filter((asset) => universe.includes(asset)).length
     };
@@ -62,5 +67,10 @@ export function createMarketUniverseScheduler({ universes = MARKET_UNIVERSES, no
     if (!normalized) return;
     deferred.set(normalized, now() + Math.max(0, Number(cooldownMs) || 0));
   }
-  return { take, defer };
+  function setPriority(asset, priority = 0) {
+    const normalized = String(asset).trim().toUpperCase();
+    if (!normalized) return;
+    priorities.set(normalized, Math.max(0, Number(priority) || 0));
+  }
+  return { take, defer, setPriority };
 }

@@ -24,3 +24,9 @@ test('scheduler temporarily skips assets with unavailable market data', () => {
   current = 1_001;
   assert.deepEqual(scheduler.take({ assetClass: 'FOREX', limit: 1 }).assets, ['A']);
 });
+
+test('scheduler can prioritize a healthy forming setup without changing its universe', () => {
+  const scheduler = createMarketUniverseScheduler({ universes: { FOREX: ['A', 'B', 'C'] } });
+  scheduler.setPriority('C', 90);
+  assert.deepEqual(scheduler.take({ assetClass: 'FOREX', limit: 1 }).assets, ['C']);
+});
