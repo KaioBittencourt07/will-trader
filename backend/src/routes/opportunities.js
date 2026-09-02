@@ -97,12 +97,13 @@ router.get('/opportunities', async (req, res) => {
         (relayMode ? relayScheduler : scheduler).defer(asset);
       }
       const startedAt = Date.now();
+      const marketContext = await req.app.locals.marketContextProvider.getContext(asset);
       const decision = snapshot.valid === false || snapshot.marketOpen === false
         ? dataQualityWait(snapshot.marketOpen === false
           ? { ...snapshot, status: 'MARKET_CLOSED', reason: 'MARKET_CLOSED' }
           : snapshot)
-        : runWillPipeline(snapshot, context);
-      const decisionContext = { ...context, decisionLatencyMs: Date.now() - startedAt };
+        : runWillPipeline(snapshot, { ...context, macroBlocked: marketContext.macro.blocked, newsBlocked: marketContext.news.blocked });
+      const decisionContext = { ...context, macroBlocked: marketContext.macro.blocked, newsBlocked: marketContext.news.blocked, marketContext, decisionLatencyMs: Date.now() - startedAt };
       const audit = createAuditEntry({ signal: snapshot, decision, context: decisionContext });
       const history = req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext });
       const candidate = assessScannerCandidate({ asset, snapshot, decision, context: decisionContext });
@@ -110,7 +111,7 @@ router.get('/opportunities', async (req, res) => {
       // make this decision executable or alter any entry threshold.
       (relayMode ? relayScheduler : scheduler).setPriority?.(asset, adaptiveScanPriority(snapshot, candidate.readiness));
       candidates.push(candidate);
-      analyses.push({ asset, snapshot, decision, historyId: history.id });
+      analyses.push({ asset, snapshot, decision, historyId: history.id, marketContext });
     }
     const result = selectBestOpportunity(analyses);
     if (result.recommendation) {

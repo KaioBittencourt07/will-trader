@@ -28,7 +28,7 @@ function mismatch(record, replayed) {
 /** Offline only: this module has no provider, filesystem or AI dependency. */
 export function replayEvidence(record, { engine = willCore } = {}) {
   const snapshot = snapshotFromEvidence(record);
-  const context = record.metadata?.context ?? {};
+  const context = { ...(record.metadata?.context ?? {}), marketContext: record.metadata?.marketContext ?? null, macroBlocked: record.metadata?.marketContext?.macro?.blocked ?? false, newsBlocked: record.metadata?.marketContext?.news?.blocked ?? false };
   const replayed = engine(snapshot, context);
   const reasons = mismatch(record, replayed);
   return {

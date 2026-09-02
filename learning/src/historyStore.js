@@ -97,7 +97,8 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
           expirySeconds: context.expirySeconds ?? null,
           requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null,
           decisionLatencyMs: Number.isFinite(Number(context.decisionLatencyMs)) ? Number(context.decisionLatencyMs) : null
-        }
+        },
+        marketContext: context.marketContext ? structuredClone(context.marketContext) : null
       }
     };
     records.push(record);

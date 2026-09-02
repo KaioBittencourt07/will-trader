@@ -12,6 +12,7 @@ import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
 import { createHistoryStore } from '../../learning/src/historyStore.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
+import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +27,9 @@ app.locals.researchMemory = createResearchMemory({
   minimumSamples: Number(process.env.WILL_RESEARCH_MINIMUM_SAMPLES || 30)
 });
 app.locals.executionGateway = createManualExecutionGateway();
+// No external adapter is configured by default: the context remains explicitly
+// UNKNOWN rather than being fabricated as low risk.
+app.locals.marketContextProvider = createMarketContextProvider();
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', config.dashboardOrigin);
