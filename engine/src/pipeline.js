@@ -1,5 +1,6 @@
 import { willCore } from './willCore.js';
 import { buildExecutionTiming } from './executionTiming.js';
+import { assessEntryTiming } from './timingEngine.js';
 
 export function analyzeMarket(data, context = {}) {
   return willCore(data, context);
@@ -29,11 +30,15 @@ export function runWillPipeline(data, context = {}) {
     expirySeconds: Number(context.expirySeconds ?? process.env.EXPIRY_SECONDS ?? 60)
   }) : null;
   const timingValid = Boolean(timing?.valid);
+  const entryTiming = assessEntryTiming({ snapshot: data, signalTime, validFrom: timing?.validFrom ?? null, validUntil: timing?.validUntil ?? null });
+  const timingBlocked = entryTiming.timingStatus !== 'READY';
   return {
     ...result,
-    executable: executable && timingValid,
-    clickTime: executable && timingValid ? timing.clickTime : null,
+    executable: executable && timingValid && !timingBlocked,
+    clickTime: executable && timingValid && !timingBlocked ? timing.clickTime : null,
     timing,
+    ...entryTiming,
+    blockReasons: timingBlocked ? [...(result.blockReasons ?? []), ...entryTiming.timingReasons] : result.blockReasons,
     generatedAt: signalTime
   };
 }

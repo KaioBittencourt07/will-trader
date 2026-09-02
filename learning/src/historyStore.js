@@ -80,6 +80,9 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       setupDirection: decision.setupDirection ?? null,
       setupQuality: decision.setupQuality ?? null,
       featureVersion: decision.featureVersion ?? data.featureVersion ?? 'legacy-unversioned',
+      timingStatus: decision.timingStatus ?? null,
+      entryQuality: Number.isFinite(Number(decision.entryQuality)) ? Number(decision.entryQuality) : null,
+      timingVersion: decision.timingVersion ?? null,
       confirmations: Number(data.confirmations ?? decision.confirmations) || 0,
       clickTime: executable ? (decision.clickTime ?? null) : null,
       execution: executable ? { status: 'PENDING_CONFIRMATION', plannedClickTime: decision.clickTime ?? null, actualClickTime: null, actualEntryPrice: null, confirmedAt: null } : null,
@@ -93,6 +96,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
           evidence: Array.isArray(decision.setupEvidence) ? [...decision.setupEvidence] : [],
           invalidation: Array.isArray(decision.setupInvalidation) ? [...decision.setupInvalidation] : []
         },
+        timing: { reasons: Array.isArray(decision.timingReasons) ? [...decision.timingReasons] : [], validFrom: decision.validFrom ?? null, validUntil: decision.validUntil ?? null },
         context: {
           expirySeconds: context.expirySeconds ?? null,
           requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null,
