@@ -17,6 +17,55 @@ function standardDeviation(values) {
   return Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length);
 }
 
+function priceActionFlags(values, { sma12, noise }) {
+  // Twelve Data sends newest first. Price action requires chronological candles
+  // and is deliberately unavailable when OHLC fields are incomplete.
+  const candles = values.map((value) => ({
+    open: num(value.open), high: num(value.high), low: num(value.low), close: num(value.close)
+  })).filter((candle) => Object.values(candle).every((value) => value !== null)).reverse();
+  if (candles.length < 12) {
+    return { breakout: false, rejection: false, pullback: false, reversal: false, patternDirection: 0, patternModel: 'ohlc-v1' };
+  }
+
+  const last = candles.at(-1);
+  const previous = candles.at(-2);
+  const lookback = candles.slice(-11, -1);
+  const high = Math.max(...lookback.map((candle) => candle.high));
+  const low = Math.min(...lookback.map((candle) => candle.low));
+  const breakoutDirection = last.close > high ? 1 : last.close < low ? -1 : 0;
+  const range = Math.max(last.high - last.low, Number.EPSILON);
+  const body = Math.abs(last.close - last.open);
+  const upperWick = last.high - Math.max(last.open, last.close);
+  const lowerWick = Math.min(last.open, last.close) - last.low;
+  const closePosition = (last.close - last.low) / range;
+  const bullishRejection = lowerWick >= Math.max(body * 2, range * 0.45) && closePosition >= 0.65;
+  const bearishRejection = upperWick >= Math.max(body * 2, range * 0.45) && closePosition <= 0.35;
+  const priorClose = candles.at(-4).close;
+  const trendDirection = Math.sign(last.close - sma12);
+  const recentDirection = Math.sign(last.close - priorClose);
+  // A pullback is a counter-trend move with meaningful magnitude. It is not
+  // itself an entry; the existing trend, score and confidence gates still apply.
+  const pullback = trendDirection !== 0 && recentDirection !== 0
+    && trendDirection !== recentDirection
+    && Math.abs((last.close - priorClose) / priorClose) >= noise * 0.5;
+  const priorMove = previous.close - candles.at(-5).close;
+  const latestMove = last.close - previous.close;
+  const reversalDirection = Math.sign(latestMove);
+  const reversal = Math.sign(priorMove) !== 0 && reversalDirection !== 0
+    && Math.sign(priorMove) !== reversalDirection
+    && Math.abs(latestMove) >= Math.abs(priorMove) * 0.8;
+  const patternDirection = breakoutDirection || (bullishRejection ? 1 : bearishRejection ? -1 : 0) || (reversal ? reversalDirection : 0);
+
+  return {
+    breakout: Boolean(breakoutDirection),
+    rejection: bullishRejection || bearishRejection,
+    pullback,
+    reversal,
+    patternDirection,
+    patternModel: 'ohlc-v1'
+  };
+}
+
 async function fetchTwelveData(fetchImpl, url, options) {
   try {
     return await fetchImpl(url, options);
@@ -75,7 +124,8 @@ export function deriveTechnical(values) {
     confirmations: dominant ? directionalVotes.filter((v) => v === dominant).length : 0,
     candleCount: closes.length,
     technicalModel: 'relative-noise-v1',
-    realizedVolatility
+    realizedVolatility,
+    ...priceActionFlags(values, { sma12, noise })
   };
 }
 

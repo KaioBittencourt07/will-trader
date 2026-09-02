@@ -5,10 +5,12 @@ import { selectBestOpportunity } from '../../../engine/src/opportunityEngine.js'
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
 import { dataQualityWait } from '../../../engine/src/dataGuard.js';
 import { createMarketUniverseScheduler } from '../../../data/src/marketUniverse.js';
+import { createAvalonCatalog } from '../../../data/src/brokerCatalog.js';
 
 const router = Router();
-const scheduler = createMarketUniverseScheduler();
-const relayScheduler = createMarketUniverseScheduler();
+const avalonCatalog = createAvalonCatalog();
+const scheduler = createMarketUniverseScheduler({ universes: avalonCatalog.universes });
+const relayScheduler = createMarketUniverseScheduler({ universes: avalonCatalog.universes });
 let localRelayRequired = false;
 
 function scanLimit() {
@@ -21,12 +23,23 @@ function entryDelaySeconds(value) {
 }
 
 router.get('/opportunities', async (req, res) => {
-  const explicitAssets = req.query.assets
+  const requestedAssets = req.query.assets
     ? String(req.query.assets).split(',').map((asset) => asset.trim().toUpperCase()).filter(Boolean)
     : null;
-  const selection = explicitAssets
-    ? { assetClass: 'CUSTOM', assets: explicitAssets.slice(0, scanLimit()), totalAssets: explicitAssets.length, nextAsset: null, completesCycle: false }
-    : scheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: Math.min(Number(req.query.limit || scanLimit()), scanLimit()) });
+  let explicitAssets;
+  try {
+    explicitAssets = requestedAssets ? avalonCatalog.assertAllowed(requestedAssets) : null;
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
+  }
+  let selection;
+  try {
+    selection = explicitAssets
+      ? { assetClass: 'CUSTOM', assets: explicitAssets.slice(0, scanLimit()), totalAssets: explicitAssets.length, nextAsset: null, completesCycle: false }
+      : scheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: Math.min(Number(req.query.limit || scanLimit()), scanLimit()) });
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
+  }
   const timeframe = String(req.query.timeframe || '1min');
   const context = {
     dataValid: true,
@@ -97,6 +110,8 @@ router.get('/opportunities', async (req, res) => {
       scanned: analyses.length,
       unavailable,
       coverage: activeSelection,
+      broker: avalonCatalog.broker,
+      catalogSource: avalonCatalog.source,
       relayMode,
       ...result,
       reason: relayMode
