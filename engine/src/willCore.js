@@ -66,6 +66,12 @@ export function willCore(market, context = {}) {
 
     regime: regime.regime,
     regimeConfidence: regime.confidence,
+    regimeType: regime.regimeType,
+    regimeStrength: regime.regimeStrength,
+    regimeStability: regime.regimeStability,
+    transitionRisk: regime.transitionRisk,
+    regimeEvidence: regime.regimeEvidence,
+    regimeVersion: regime.regimeVersion,
 
     setup: setup.setup,
     setupConfidence: setup.confidence,

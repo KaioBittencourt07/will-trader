@@ -7,6 +7,13 @@ export const REGIMES = Object.freeze({
   TRANSITION: 'TRANSITION',
   UNKNOWN: 'UNKNOWN'
 });
+export const REGIME_VERSION = 'market-regime-v2';
+
+function describe(regime, confidence, reason, data = {}) {
+  const type = regime === REGIMES.UP || regime === REGIMES.DOWN ? 'TREND' : regime === REGIMES.HIGH_VOL ? 'CHAOTIC_HIGH_VOL' : regime === REGIMES.LOW_VOL ? 'COMPRESSION' : regime;
+  const transitionRisk = type === 'TRANSITION' || type === 'CHAOTIC_HIGH_VOL' ? 'HIGH' : type === 'UNKNOWN' ? 'UNKNOWN' : 'LOW';
+  return { regime, confidence, reason, regimeType: type, regimeStrength: confidence, regimeStability: Math.max(0, 100 - (Number(data.volatility ?? 0) * 45) - (type === 'TRANSITION' ? 30 : 0)), transitionRisk, regimeEvidence: [reason], regimeVersion: REGIME_VERSION };
+}
 
 export function classifyRegime(data) {
   const trend = Number(data?.trend);
@@ -14,15 +21,15 @@ export function classifyRegime(data) {
   const structure = Number(data?.structure);
 
   if (![trend, volatility, structure].every(Number.isFinite)) {
-    return { regime: REGIMES.UNKNOWN, confidence: 0, reason: 'Dados insuficientes para classificar regime.' };
+    return describe(REGIMES.UNKNOWN, 0, 'Dados insuficientes para classificar regime.', data);
   }
 
-  if (volatility >= 0.85) return { regime: REGIMES.HIGH_VOL, confidence: 90, reason: 'Volatilidade extrema detectada.' };
-  if (volatility <= 0.15) return { regime: REGIMES.LOW_VOL, confidence: 75, reason: 'Volatilidade muito baixa.' };
+  if (volatility >= 0.85) return describe(REGIMES.HIGH_VOL, 90, 'Volatilidade extrema detectada.', data);
+  if (volatility <= 0.15) return describe(REGIMES.LOW_VOL, 75, 'Volatilidade muito baixa.', data);
 
   const directional = (trend * 0.6) + (structure * 0.4);
-  if (directional >= 0.45) return { regime: REGIMES.UP, confidence: Math.min(95, Math.round(55 + directional * 40)), reason: 'Estrutura e tendência favorecem alta.' };
-  if (directional <= -0.45) return { regime: REGIMES.DOWN, confidence: Math.min(95, Math.round(55 + Math.abs(directional) * 40)), reason: 'Estrutura e tendência favorecem baixa.' };
-  if (Math.abs(directional) <= 0.15) return { regime: REGIMES.RANGE, confidence: 70, reason: 'Ausência de direção dominante.' };
-  return { regime: REGIMES.TRANSITION, confidence: 55, reason: 'Sinais mistos sugerem transição de regime.' };
+  if (directional >= 0.45) return describe(REGIMES.UP, Math.min(95, Math.round(55 + directional * 40)), 'Estrutura e tendência favorecem alta.', data);
+  if (directional <= -0.45) return describe(REGIMES.DOWN, Math.min(95, Math.round(55 + Math.abs(directional) * 40)), 'Estrutura e tendência favorecem baixa.', data);
+  if (Math.abs(directional) <= 0.15) return describe(REGIMES.RANGE, 70, 'Ausência de direção dominante.', data);
+  return describe(REGIMES.TRANSITION, 55, 'Sinais mistos sugerem transição de regime.', data);
 }
