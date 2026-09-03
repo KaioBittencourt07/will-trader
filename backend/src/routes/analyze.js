@@ -11,6 +11,25 @@ function aiFallbackEnabled() {
   return process.env.AI_FALLBACK_ENABLED !== 'false';
 }
 
+export function persistAnalyzeDecision(req, body, context = {}) {
+  const store = req.app?.locals?.historyStore;
+  if (!store) throw new Error('Histórico não inicializado.');
+  const record = store.recordDecision({
+    decision: body.decision,
+    data: body.data,
+    audit: body.audit,
+    context: { ...context, prospectiveManifest: req.app.locals.prospectiveManifest }
+  });
+  return {
+    ...body,
+    history: {
+      id: record.id,
+      status: record.status,
+      idempotent: record.idempotent === true
+    }
+  };
+}
+
 router.post('/analyze', async (req, res) => {
   try {
     const payload = req.body;
@@ -24,6 +43,7 @@ router.post('/analyze', async (req, res) => {
 
     const rawMarket = payload.market ?? payload;
     const context = payload.context ?? {};
+    const respond = (body) => res.json(persistAnalyzeDecision(req, body, context));
 
     const normalized = normalizeMarketSnapshot(rawMarket, {
       maxAgeMs: Number(
@@ -50,7 +70,7 @@ router.post('/analyze', async (req, res) => {
         blockReasons: [normalized.reason]
       };
 
-      return res.json({
+      return respond({
         ok: true,
         source: 'data-guard',
         decision,
@@ -86,7 +106,7 @@ router.post('/analyze', async (req, res) => {
         executable: false
       };
 
-      return res.json({
+      return respond({
         ok: true,
         source: 'will-deterministic',
         decision,
@@ -118,7 +138,7 @@ router.post('/analyze', async (req, res) => {
         }
       );
 
-      return res.json({
+      return respond({
         ok: true,
         source: result.approved
           ? 'will-advisor-consensus'
@@ -146,7 +166,7 @@ router.post('/analyze', async (req, res) => {
           'IA indisponível; fallback determinístico ativo.'
       };
 
-      return res.json({
+      return respond({
         ok: true,
         source: 'will-deterministic-fallback',
         decision: fallbackDecision,
@@ -172,3 +192,4 @@ router.post('/analyze', async (req, res) => {
 });
 
 export default router;
+

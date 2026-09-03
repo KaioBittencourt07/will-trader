@@ -68,23 +68,6 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '256kb' }));
 app.use('/dashboard', express.static(path.resolve(backendDirectory, '../../dashboard')));
 
-app.use((req, res, next) => {
-  const json = res.json.bind(res);
-  res.json = (body) => {
-    if (req.path === '/api/analyze' && body?.decision && body?.data && body?.audit) {
-      const record = app.locals.historyStore.recordDecision({
-        decision: body.decision,
-        data: body.data,
-        audit: body.audit,
-        context: { ...(req.body?.context ?? {}), prospectiveManifest: app.locals.prospectiveManifest }
-      });
-      body = { ...body, history: { id: record.id, status: record.status } };
-    }
-    return json(body);
-  };
-  next();
-});
-
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,

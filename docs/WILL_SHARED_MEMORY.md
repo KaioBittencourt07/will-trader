@@ -138,3 +138,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Provider, data, clock, catalog and storage failures are fail-closed as paused or skipped invalid cycles; no synthetic data, outcome or execution is created.
 - The monitor has no order or click capability. Its event hook is alert-ready only; no WhatsApp or broker integration is implemented.
 
+## Fase 20B.1 — Analyze History Contract
+- POST /api/analyze persists every valid decision response, including Data Guard WAIT, through the existing durable History Store before returning history metadata.
+- context.decisionId is preserved for retry-safe deduplication; identical requests return the same history record instead of appending another decision.
+- The response contract includes history id, status and idempotent flag. No market data, outcome, execution or strategy behavior is invented by this persistence step.
+
