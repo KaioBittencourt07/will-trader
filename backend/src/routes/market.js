@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createTwelveDataProvider } from '../../../data/src/providers/twelveDataProvider.js';
 import { createMarketDataEngine } from '../../../data/src/marketDataEngine.js';
 import { buildMultiTimeframeContext } from '../../../context/src/multiTimeframe.js';
+import { classifyTwelveDataFailure, diagnoseTwelveData, TWELVE_DATA_DIAGNOSTIC_VERSION } from '../../../data/src/providers/twelveDataDiagnostics.js';
 
 const router = Router();
 let marketDataEngine;
@@ -93,6 +94,28 @@ router.get('/market/status', (_req, res) => {
   });
 });
 
+// Diagnostic only: it shares the existing cache/rate limiter and cannot start
+// collection, create a decision, or reach any broker execution surface.
+router.get('/market/diagnostic', async (req, res) => {
+  const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
+  const timeframe = String(req.query.timeframe || '1min');
+  let engine;
+  try {
+    engine = getMarketDataEngine();
+  } catch (error) {
+    const diagnostic = {
+      ok: false,
+      status: classifyTwelveDataFailure(error),
+      checkedAt: new Date().toISOString(),
+      version: TWELVE_DATA_DIAGNOSTIC_VERSION,
+      detail: String(error?.message ?? 'MARKET_ENGINE_UNAVAILABLE').slice(0, 500)
+    };
+    return res.status(503).json({ ok: false, diagnostic });
+  }
+  const diagnostic = await diagnoseTwelveData({ engine, asset, timeframe });
+  return res.status(diagnostic.ok ? 200 : 503).json({ ok: diagnostic.ok, diagnostic });
+});
+
 router.get('/market/multi', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
   const timeframes = String(req.query.timeframes || '1min,5min,15min').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 3);
@@ -109,3 +132,4 @@ router.get('/market/multi', async (req, res) => {
 });
 
 export default router;
+

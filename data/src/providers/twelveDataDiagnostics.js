@@ -1,0 +1,37 @@
+export const TWELVE_DATA_DIAGNOSTIC_VERSION = 'twelve-data-diagnostic-v1';
+
+function messageOf(error) {
+  return String(error?.message ?? error ?? 'unknown error');
+}
+
+/** Pure, conservative classification. It never turns an unknown failure into
+ * a usable market-data signal. */
+export function classifyTwelveDataFailure(error) {
+  const message = messageOf(error);
+  const status = Number(error?.status);
+  if (/TWELVEDATA_API_KEY.*n.o configurada|credential|api.?key|unauthori[sz]ed|forbidden/i.test(message) || status === 401 || status === 403) {
+    return 'CREDENTIAL_ERROR';
+  }
+  if (status === 429 || /\b429\b|rate.?limit|too many requests/i.test(message)) return 'RATE_LIMITED';
+  if (/EACCES|network blocked|network error|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network unreachable/i.test(message)) return 'NETWORK_BLOCKED';
+  if (/snapshot incompleto|timestamp v.lido|invalid json|resposta inv.lida|malformed|Twelve Data (quote|time_series):/i.test(message)) return 'INVALID_RESPONSE';
+  if (/stale|DATA_STALE/i.test(message)) return 'STALE_DATA';
+  return 'UNKNOWN_ERROR';
+}
+
+export async function diagnoseTwelveData({ engine, asset = 'EUR/USD', timeframe = '1min', outputsize = 20, now = () => new Date().toISOString() } = {}) {
+  const checkedAt = typeof now === 'function' ? now() : now;
+  if (!engine || typeof engine.getSnapshot !== 'function') {
+    return { ok: false, status: 'INVALID_RESPONSE', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: 'MARKET_ENGINE_UNAVAILABLE' };
+  }
+  try {
+    const snapshot = await engine.getSnapshot(asset, timeframe, outputsize);
+    if (!snapshot?.valid) {
+      return { ok: false, status: 'STALE_DATA', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: snapshot?.status ?? 'SNAPSHOT_INVALID' };
+    }
+    return { ok: true, status: 'HEALTHY', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, asset: String(asset).toUpperCase(), timeframe };
+  } catch (error) {
+    return { ok: false, status: classifyTwelveDataFailure(error), checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: messageOf(error).slice(0, 500) };
+  }
+}
+

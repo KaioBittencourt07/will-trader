@@ -143,3 +143,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - context.decisionId is preserved for retry-safe deduplication; identical requests return the same history record instead of appending another decision.
 - The response contract includes history id, status and idempotent flag. No market data, outcome, execution or strategy behavior is invented by this persistence step.
 
+## Fase 20C.1 — Market Access & Avalon Universe Gate
+- Avalon availability is evidence-only. `AVALON_ALLOWLIST_FILE` is a read-only local manual export with per-asset broker symbol, source, verification timestamp and status; price-provider knowledge is never treated as broker tradability.
+- Missing, malformed, unverified or expired catalog evidence remains `AVALON_CATALOG_UNVERIFIED` and fail-closed. No collection may start from that state.
+- `GET /api/market/diagnostic` is a diagnostic-only Twelve Data gate that distinguishes credential, rate-limit, blocked network, invalid response and stale-data failures while sharing the existing cache/rate limiter.
+- The gate does not bypass environment `EACCES`, start a batch, alter the Champion or enable Avalon clicks/orders. PAPER/MANUAL remains mandatory.
+

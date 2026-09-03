@@ -30,3 +30,33 @@ test('empty confirmed catalog is safe and does not create an operational univers
   assert.equal(catalog.isConfirmed(), true);
   assert.deepEqual(catalog.operationalUniverses.FOREX, []);
 });
+
+test('file allowlist is read-only, explicit and maps only verified TRADABLE assets', () => {
+  const document = JSON.stringify({
+    version: 'avalon-allowlist-v1', source: 'Kaio manual platform export', verifiedAt: '2026-09-03T10:00:00.000Z',
+    assets: [
+      { asset: 'EUR/USD', brokerSymbol: 'EURUSD', source: 'Kaio manual platform export', verifiedAt: '2026-09-03T10:00:00.000Z', status: 'TRADABLE' },
+      { asset: 'BTC/USD', brokerSymbol: 'BTCUSD', source: 'Kaio manual platform export', verifiedAt: '2026-09-03T10:00:00.000Z', status: 'NOT_TRADABLE' }
+    ]
+  });
+  let reads = 0;
+  const catalog = createAvalonCatalog({ environment: { AVALON_ALLOWLIST_FILE: 'avalon.json' }, readFile: () => { reads += 1; return document; }, now: () => Date.parse('2026-09-03T10:30:00.000Z') });
+  assert.equal(reads, 1);
+  assert.equal(catalog.isConfirmed(), true);
+  assert.equal(catalog.resolve('EUR/USD').brokerSymbol, 'EURUSD');
+  assert.equal(catalog.resolve('EUR/USD').brokerTradable, true);
+  assert.equal(catalog.resolve('BTC/USD').brokerTradable, false);
+  assert.equal(catalog.resolve('SOL/USD').status, 'NOT_TRADABLE_ON_AVALON');
+});
+
+test('missing, invalid or expired allowlist stays fail-closed', () => {
+  const base = { version: 'avalon-allowlist-v1', assets: [{ asset: 'EUR/USD', brokerSymbol: 'EURUSD', source: 'manual export', verifiedAt: '2026-09-01T00:00:00.000Z', status: 'TRADABLE' }] };
+  const expired = createAvalonCatalog({ environment: { AVALON_ALLOWLIST_FILE: 'avalon.json' }, readFile: () => JSON.stringify(base), now: () => Date.parse('2026-09-03T00:00:00.000Z') });
+  const invalid = createAvalonCatalog({ environment: { AVALON_ALLOWLIST_FILE: 'avalon.json' }, readFile: () => '{bad json', now: () => Date.parse('2026-09-03T00:00:00.000Z') });
+  assert.equal(expired.isConfirmed(), false);
+  assert.equal(expired.catalogStatus, 'AVALON_CATALOG_UNVERIFIED');
+  assert.equal(expired.resolve('EUR/USD').status, 'AVALON_CATALOG_UNVERIFIED');
+  assert.equal(invalid.catalogReason, 'ALLOWLIST_UNREADABLE_OR_INVALID');
+  assert.equal(invalid.resolve('EUR/USD').brokerTradable, false);
+});
+
