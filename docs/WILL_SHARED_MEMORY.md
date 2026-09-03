@@ -184,3 +184,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - O feed é desativado por padrão e exclusivamente `SHADOW_OBSERVABILITY`. Ticks não substituem candles REST, não constroem OHLC, não evitam requests e não entram em BUY/SELL/WAIT.
 - A telemetria aditiva mede mensagens, símbolos ativos, reconexões, idade do último tick, gaps, duplicatas, disponibilidade e potencial observacional de redução REST; nenhum segredo é exposto.
 - Champion, estratégia, thresholds, timing, freshness decisório, scanner, ranking e contratos decisórios permanecem congelados. PAPER/MANUAL continua obrigatório; nenhum batch oficial ou merge foi autorizado.
+
+## Fase 20C.9 — Twelve WebSocket Live Commissioning / Provider Validation
+- O commissioning é manual, limitado a uma conexão, um símbolo e no máximo 60 segundos; não faz REST, polling de quota, monitor PAPER ou batch.
+- APPROVED exige evidência real de conexão, aceite de subscrição e tick. Ausência de credencial ou bloqueio do plano/provider permanece BLOCKED, sem fallback inventado.
+- Telemetria sanitizada inclui conexões, subscrições solicitadas/aceitas/rejeitadas, primeiro/último tick, freshness, gaps, duplicatas, reconnect/backoff, disconnect e uptime.
+- Ticks continuam exclusivamente SHADOW: zero candles OHLC, zero requests REST evitados e zero impacto em Champion, estratégia, thresholds ou BUY/SELL/WAIT.

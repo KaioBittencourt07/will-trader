@@ -63,9 +63,14 @@ test('uses one central connection, subscribes controlled symbols and sends heart
   assert.match(h.sockets[0].url, /^wss:\/\/ws\.twelvedata\.com\/v1\/quotes\/price\?apikey=/);
   h.sockets[0].open();
   assert.deepEqual(h.sockets[0].sent[0], { action: 'subscribe', params: { symbols: 'EUR/USD,BTC/USD' } });
+  h.sockets[0].message({ event: 'subscribe-status', status: 'ok', success: [{ symbol: 'EUR/USD' }, { symbol: 'BTC/USD' }], fails: [] });
   h.runTimer([...h.timers.keys()][0]);
   assert.deepEqual(h.sockets[0].sent[1], { action: 'heartbeat' });
   assert.equal(h.feed.health().heartbeatSent, 1);
+  assert.equal(h.feed.health().successfulConnections, 1);
+  assert.equal(h.feed.health().subscriptionsRequested, 2);
+  assert.equal(h.feed.health().subscriptionsAccepted, 2);
+  assert.equal(h.feed.health().activeSymbols, 2);
 });
 
 test('deduplicates ticks, records timestamps and detects gaps without building candles', () => {
@@ -84,6 +89,28 @@ test('deduplicates ticks, records timestamps and detects gaps without building c
   assert.equal(health.authoritativeCandlesBuilt, 0);
   assert.equal(health.decisionImpact, 'NONE');
   assert.equal(health.restReductionPotential.requestsAvoided, 0);
+  assert.equal(health.firstTickAt, '2023-11-14T22:13:20.000Z');
+  assert.equal(health.lastTickAt, '2023-11-14T22:13:27.000Z');
+  assert.deepEqual(health.providerConsumption, {
+    restCreditsConsumedByFeed: 0, wsCreditsEstimated: 0, wsCreditsEstimatedIsOfficial: false
+  });
+});
+
+test('records accepted and rejected subscriptions without exposing provider secrets', () => {
+  const h = harness();
+  h.feed.start();
+  h.sockets[0].open();
+  h.sockets[0].message({
+    event: 'subscribe-status', status: 'warning', success: ['EUR/USD'],
+    fails: [{ symbol: 'BTC/USD' }], message: 'apikey=secret-key plan limit'
+  });
+  const health = h.feed.health();
+  assert.equal(health.subscriptionsAccepted, 1);
+  assert.equal(health.subscriptionsRejected, 1);
+  assert.equal(health.activeSymbols, 1);
+  assert.equal(health.lastSubscriptionStatus, 'WARNING');
+  assert.equal(JSON.stringify(health).includes('secret-key'), false);
+  assert.equal(health.providerConsumption.restCreditsConsumedByFeed, 0);
 });
 
 test('reports fresh and stale health deterministically', () => {
@@ -100,7 +127,7 @@ test('reconnects with bounded exponential backoff', () => {
   const h = harness({ reconnectBaseMs: 100, reconnectMaxMs: 200 });
   h.feed.start();
   h.sockets[0].open();
-  h.sockets[0].emit('close');
+  h.sockets[0].emit('close', { code: 1006, reason: 'temporary network loss' });
   let id = [...h.timers.entries()].find(([, timer]) => timer.delay === 100)?.[0];
   h.runTimer(id);
   h.sockets[1].emit('close');
@@ -108,6 +135,9 @@ test('reconnects with bounded exponential backoff', () => {
   h.runTimer(id);
   assert.equal(h.sockets.length, 3);
   assert.equal(h.feed.health().reconnects, 2);
+  assert.equal(h.feed.health().lastReconnectBackoffMs, 200);
+  assert.equal(h.feed.health().reconnectBackoffMsTotal, 300);
+  assert.equal(h.feed.health().lastDisconnectCode, 1006);
 });
 
 test('shutdown closes socket, cancels timers and disabled mode is inert', () => {

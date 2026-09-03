@@ -19,6 +19,18 @@ function addListener(socket, event, handler) {
   else socket[`on${event}`] = handler;
 }
 
+function sanitizedDetail(value) {
+  return String(value || '')
+    .replace(/([?&]apikey=)[^&\s]+/gi, '$1[REDACTED]')
+    .replace(/\b(api[_-]?key|token|authorization)\b\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .slice(0, 200);
+}
+
+function statusSymbols(value) {
+  if (!Array.isArray(value)) return [];
+  return normalizeSymbols(value.map((entry) => typeof entry === 'string' ? entry : entry?.symbol));
+}
+
 export function createTwelveWebSocketFeed({
   apiKey,
   symbols = [],
@@ -36,6 +48,8 @@ export function createTwelveWebSocketFeed({
 } = {}) {
   const configuredSymbols = normalizeSymbols(symbols);
   const latestTicks = new Map();
+  const acceptedSymbols = new Set();
+  const rejectedSymbols = new Set();
   const metrics = {
     messagesReceived: 0,
     ticksAccepted: 0,
@@ -44,9 +58,23 @@ export function createTwelveWebSocketFeed({
     reconnects: 0,
     heartbeatSent: 0,
     connectionAttempts: 0,
+    successfulConnections: 0,
+    subscriptionsRequested: 0,
+    subscriptionsAccepted: 0,
+    subscriptionsRejected: 0,
+    firstTickAt: null,
+    lastTickAt: null,
+    sessionStartedAt: null,
+    completedUptimeMs: 0,
+    lastReconnectBackoffMs: 0,
+    reconnectBackoffMsTotal: 0,
     lastConnectedAt: null,
     lastDisconnectedAt: null,
+    lastDisconnectCode: null,
+    lastDisconnectReason: null,
     lastMessageAt: null,
+    lastSubscriptionStatus: null,
+    lastSubscriptionError: null,
     lastError: null
   };
   let socket = null;
@@ -80,6 +108,8 @@ export function createTwelveWebSocketFeed({
     const delay = Math.min(reconnectMaxMs, reconnectBaseMs * (2 ** reconnectAttempt));
     reconnectAttempt += 1;
     metrics.reconnects += 1;
+    metrics.lastReconnectBackoffMs = delay;
+    metrics.reconnectBackoffMsTotal += delay;
     state = 'RECONNECTING';
     reconnectTimer = setTimer(() => {
       reconnectTimer = null;
@@ -94,6 +124,23 @@ export function createTwelveWebSocketFeed({
     try {
       payload = JSON.parse(typeof event?.data === 'string' ? event.data : String(event?.data ?? ''));
     } catch {
+      return;
+    }
+    if (payload?.event === 'subscribe-status') {
+      const accepted = statusSymbols(payload.success);
+      const rejected = statusSymbols(payload.fails ?? payload.failed);
+      for (const symbol of accepted) {
+        acceptedSymbols.add(symbol);
+        rejectedSymbols.delete(symbol);
+      }
+      for (const symbol of rejected) {
+        rejectedSymbols.add(symbol);
+        acceptedSymbols.delete(symbol);
+      }
+      metrics.subscriptionsAccepted = acceptedSymbols.size;
+      metrics.subscriptionsRejected = rejectedSymbols.size;
+      metrics.lastSubscriptionStatus = String(payload.status || 'UNKNOWN').toUpperCase().slice(0, 40);
+      metrics.lastSubscriptionError = sanitizedDetail(payload.message || payload.error || '');
       return;
     }
     if (payload?.event !== 'price') return;
@@ -112,6 +159,9 @@ export function createTwelveWebSocketFeed({
     if (previous && timestamp - previous.eventTimestamp > gapAfterMs) metrics.gaps += 1;
     latestTicks.set(symbol, { symbol, price, eventTimestamp: timestamp, receivedAt, fingerprint });
     metrics.ticksAccepted += 1;
+    const receivedAtIso = new Date(receivedAt).toISOString();
+    metrics.firstTickAt ??= receivedAtIso;
+    metrics.lastTickAt = receivedAtIso;
   }
 
   function connect() {
@@ -126,20 +176,30 @@ export function createTwelveWebSocketFeed({
         if (socket !== candidate || !running) return;
         state = 'CONNECTED';
         reconnectAttempt = 0;
+        metrics.successfulConnections += 1;
+        metrics.sessionStartedAt = now();
         metrics.lastConnectedAt = new Date(now()).toISOString();
-        send({ action: 'subscribe', params: { symbols: configuredSymbols.join(',') } });
+        if (send({ action: 'subscribe', params: { symbols: configuredSymbols.join(',') } })) {
+          metrics.subscriptionsRequested += configuredSymbols.length;
+        }
         scheduleHeartbeat();
       });
       addListener(candidate, 'message', handleMessage);
       addListener(candidate, 'error', (error) => {
         metrics.lastError = String(error?.message || 'WEBSOCKET_ERROR').slice(0, 200);
       });
-      addListener(candidate, 'close', () => {
+      addListener(candidate, 'close', (event) => {
         if (socket !== candidate) return;
         socket = null;
         clearTimer(heartbeatTimer);
         heartbeatTimer = null;
+        if (metrics.sessionStartedAt !== null) metrics.completedUptimeMs += Math.max(0, now() - metrics.sessionStartedAt);
+        metrics.sessionStartedAt = null;
         metrics.lastDisconnectedAt = new Date(now()).toISOString();
+        if (Number.isFinite(Number(event?.code))) metrics.lastDisconnectCode = Number(event.code);
+        if (event?.reason) metrics.lastDisconnectReason = sanitizedDetail(event.reason);
+        acceptedSymbols.clear();
+        metrics.subscriptionsAccepted = 0;
         if (running) scheduleReconnect();
         else state = 'STOPPED';
       });
@@ -186,6 +246,7 @@ export function createTwelveWebSocketFeed({
     });
     const freshSymbols = ticks.filter((tick) => tick.fresh).length;
     const tickAges = ticks.filter((tick) => tick.ageMs !== null).map((tick) => tick.ageMs);
+    const sessionUptimeMs = metrics.sessionStartedAt === null ? 0 : Math.max(0, checkedAt - metrics.sessionStartedAt);
     return {
       mode: 'SHADOW_OBSERVABILITY',
       state,
@@ -193,15 +254,22 @@ export function createTwelveWebSocketFeed({
       connected: state === 'CONNECTED',
       available: state === 'CONNECTED' && freshSymbols > 0,
       configuredSymbols: configuredSymbols.length,
-      activeSymbols: state === 'CONNECTED' ? configuredSymbols.length : 0,
+      activeSymbols: acceptedSymbols.size,
       staleAfterMs,
       ...metrics,
       lastTickAgeMs: tickAges.length ? Math.min(...tickAges) : null,
+      sessionUptimeMs,
+      totalUptimeMs: metrics.completedUptimeMs + sessionUptimeMs,
       symbols: ticks,
       restReductionPotential: {
         observationalOnly: true,
         freshSymbols,
         requestsAvoided: 0
+      },
+      providerConsumption: {
+        restCreditsConsumedByFeed: 0,
+        wsCreditsEstimated: acceptedSymbols.size,
+        wsCreditsEstimatedIsOfficial: false
       },
       authoritativeCandlesBuilt: 0,
       decisionImpact: 'NONE'
