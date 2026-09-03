@@ -132,3 +132,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - DATA_INVALID is never rewritten as WIN or LOSS. Payout and costs begin as NOT_AVAILABLE; no EV, edge or assertiveness claim is permitted.
 - PAPER/MANUAL remains mandatory. The batch forbids Avalon auto-click, real orders, auto-tuning, auto-promotion, Meta-Model training and premature probability calibration.
 
+## Fase 20B — autonomous PAPER monitor
+- A bounded monitor collects prospective PAPER observations through the existing analysis path, with a minimum 60-second cadence and no uncontrolled loop.
+- Each cadence slot has a stable monitorCycleId and durable state. Without durable state, the monitor pauses; restart idempotency still depends on stable decision IDs plus History Store durability.
+- Provider, data, clock, catalog and storage failures are fail-closed as paused or skipped invalid cycles; no synthetic data, outcome or execution is created.
+- The monitor has no order or click capability. Its event hook is alert-ready only; no WhatsApp or broker integration is implemented.
+

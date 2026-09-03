@@ -42,6 +42,7 @@ router.get('/opportunities', async (req, res) => {
     return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
   }
   const timeframe = String(req.query.timeframe || '1min');
+  const monitorCycleId = req.query.monitorCycleId ? String(req.query.monitorCycleId).slice(0, 180) : null;
   const context = {
     dataValid: true,
     requiredBars: 50,
@@ -116,7 +117,9 @@ router.get('/opportunities', async (req, res) => {
         marketContext,
         decisionLatencyMs: Date.now() - startedAt,
         providerHealth: relayMode ? 'LOCAL_RELAY' : 'HEALTHY',
-        prospectiveManifest: req.app.locals.prospectiveManifest
+        prospectiveManifest: req.app.locals.prospectiveManifest,
+        monitorCycleId,
+        decisionId: monitorCycleId ? `${monitorCycleId}:${asset}` : undefined
       };
       const audit = createAuditEntry({ signal: snapshot, decision, context: decisionContext });
       const history = req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext });

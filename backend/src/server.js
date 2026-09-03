@@ -12,6 +12,7 @@ import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
 import { createHistoryStore } from '../../learning/src/historyStore.js';
 import { createProspectiveManifest } from '../../learning/src/prospectiveEvidence.js';
+import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import path from 'node:path';
@@ -26,6 +27,26 @@ app.locals.prospectiveManifest = createProspectiveManifest({
 });
 app.locals.historyStore = createHistoryStore({
   filePath: process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json')
+});
+app.locals.paperMonitor = createAutonomousPaperMonitor({
+  // This is an observation scheduler only. Set false to stop it explicitly.
+  enabled: process.env.WILL_PAPER_MONITOR_ENABLED !== 'false',
+  intervalMs: Number(process.env.WILL_PAPER_MONITOR_INTERVAL_MS || 60_000),
+  filePath: process.env.WILL_PAPER_MONITOR_STATE_FILE || path.join(process.cwd(), 'data', 'will-paper-monitor-state.json'),
+  runCycle: async ({ cycleId }) => {
+    const url = new URL(`http://127.0.0.1:${config.port}/api/opportunities`);
+    url.searchParams.set('limit', '1');
+    url.searchParams.set('timeframe', process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min');
+    url.searchParams.set('monitorCycleId', cycleId);
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    const body = await response.json();
+    return {
+      ok: response.ok && body?.ok === true && !body?.status && !(body?.unavailable?.length),
+      status: body?.status ?? null,
+      scanned: body?.scanned ?? 0,
+      recommendation: body?.recommendation ? body.recommendation.asset : null
+    };
+  }
 });
 app.locals.researchMemory = createResearchMemory({
   filePath: process.env.WILL_RESEARCH_FILE || path.join(process.cwd(), 'data', 'will-research.json'),
@@ -74,6 +95,10 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.get('/api/paper-monitor', (_req, res) => {
+  res.json({ ok: true, monitor: app.locals.paperMonitor.health() });
+});
+
 app.use('/api', analyzeRouter);
 app.use('/api', marketRouter);
 app.use('/api', contextRouter);
@@ -85,5 +110,6 @@ app.use('/api', researchRouter);
 
 app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
+  app.locals.paperMonitor.start();
 });
 

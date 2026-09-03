@@ -129,7 +129,8 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
         context: {
           expirySeconds: context.expirySeconds ?? null,
           requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null,
-          decisionLatencyMs: Number.isFinite(Number(context.decisionLatencyMs)) ? Number(context.decisionLatencyMs) : null
+          decisionLatencyMs: Number.isFinite(Number(context.decisionLatencyMs)) ? Number(context.decisionLatencyMs) : null,
+          monitorCycleId: context.monitorCycleId ?? null
         },
         marketContext: context.marketContext ? structuredClone(context.marketContext) : null
         ,stateFingerprint, familiarityEvidence
