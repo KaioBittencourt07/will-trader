@@ -49,6 +49,8 @@ test('spaces different cache misses using the request limiter', async () => {
   await engine.getSnapshot('GBP/USD');
   assert.deepEqual(waits, [500]);
   assert.equal(engine.getMetrics().upstreamRequests, 2);
+  assert.equal(engine.getMetrics().rateLimitWaitMsTotal, 500);
+  assert.equal(engine.getMetrics().rateLimitWaitCount, 1);
 });
 
 test('uses the provider batch capability and caches each returned asset', async () => {
@@ -109,4 +111,23 @@ test('bounds exponential backoff and exposes retry exhaustion without synthetic 
   assert.deepEqual(waits, [120]);
   assert.equal(engine.getMetrics().retryExhausted, 1);
   assert.equal(engine.getMetrics().providerState, 'DEGRADED');
+});
+
+
+test('diagnostic request shape warms the opportunity batch cache without a second provider slot', async () => {
+  let singleCalls = 0;
+  let batchCalls = 0;
+  const engine = createMarketDataEngine({
+    provider: {
+      getSnapshot: async (asset) => { singleCalls += 1; return { asset, valid: true }; },
+      getSnapshots: async () => { batchCalls += 1; throw new Error('batch should be cached'); }
+    },
+    minRequestIntervalMs: 60_000
+  });
+  await engine.getSnapshot('EUR/USD', '1min', 50);
+  const results = await engine.getSnapshots(['EUR/USD'], '1min', 50);
+  assert.equal(results[0].snapshot.valid, true);
+  assert.equal(singleCalls, 1);
+  assert.equal(batchCalls, 0);
+  assert.equal(engine.getMetrics().rateLimitWaitCount, 0);
 });

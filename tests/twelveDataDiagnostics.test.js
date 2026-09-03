@@ -11,10 +11,12 @@ test('Twelve Data diagnostic distinguishes credential, rate limit, blocked netwo
 });
 
 test('diagnostic returns HEALTHY only for a valid snapshot and never invents one', async () => {
-  const healthy = await diagnoseTwelveData({ engine: { getSnapshot: async () => ({ valid: true }) }, now: () => '2026-09-03T10:00:00.000Z' });
+  let requestShape;
+  const healthy = await diagnoseTwelveData({ engine: { getSnapshot: async (...args) => { requestShape = args; return { valid: true }; } }, now: () => '2026-09-03T10:00:00.000Z' });
   const stale = await diagnoseTwelveData({ engine: { getSnapshot: async () => ({ valid: false, status: 'STALE' }) }, now: () => '2026-09-03T10:00:00.000Z' });
   const blocked = await diagnoseTwelveData({ engine: { getSnapshot: async () => { throw new Error('Twelve Data network error: EACCES'); } }, now: () => '2026-09-03T10:00:00.000Z' });
   assert.deepEqual(healthy, { ok: true, status: 'HEALTHY', checkedAt: '2026-09-03T10:00:00.000Z', version: 'twelve-data-diagnostic-v1', asset: 'EUR/USD', timeframe: '1min' });
+  assert.deepEqual(requestShape, ['EUR/USD', '1min', 50]);
   assert.equal(stale.status, 'STALE_DATA');
   assert.equal(blocked.status, 'NETWORK_BLOCKED');
 });

@@ -19,7 +19,8 @@ export function classifyTwelveDataFailure(error) {
   return 'UNKNOWN_ERROR';
 }
 
-export async function diagnoseTwelveData({ engine, asset = 'EUR/USD', timeframe = '1min', outputsize = 20, now = () => new Date().toISOString() } = {}) {
+// Match the opportunity request shape so the monitor diagnostic warms the exact cache entry.
+export async function diagnoseTwelveData({ engine, asset = 'EUR/USD', timeframe = '1min', outputsize = 50, now = () => new Date().toISOString() } = {}) {
   const checkedAt = typeof now === 'function' ? now() : now;
   if (!engine || typeof engine.getSnapshot !== 'function') {
     return { ok: false, status: 'INVALID_RESPONSE', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: 'MARKET_ENGINE_UNAVAILABLE' };

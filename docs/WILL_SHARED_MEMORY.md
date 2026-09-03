@@ -165,3 +165,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - The timeout must be finite, positive and strictly below cadence minus the 1-second safety margin. Invalid configuration is `MONITOR_TIMEOUT_CONFIG_INVALID` and fails closed before any internal request.
 - Timeout aborts remain invalid observations with durable idempotency and no synthetic decision; their sanitized monitor diagnostic uses `REQUEST_TIMEOUT`.
 
+
+## Fase 20C.5 — Opportunity Pipeline Latency Hardening
+- The PAPER monitor diagnostic and opportunity scan now use the same 50-candle market request shape, allowing the scan to reuse the diagnostic cache entry instead of waiting for a second 60-second provider slot.
+- Opportunity responses expose additive per-stage latency telemetry; Market Data Engine metrics separately expose rate-limiter wait count and duration.
+- Freshness remains fail-closed and unchanged. Snapshot age is derived from the provider quote timestamp; candle timestamp remains separate evidence.
+- No Champion, strategy, threshold, score, ranking, BUY/SELL/WAIT, Outcome Resolver or Evidence Store contract changed. PAPER/MANUAL remains mandatory.

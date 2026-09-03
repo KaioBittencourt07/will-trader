@@ -7,6 +7,7 @@ import { dataQualityWait } from '../../../engine/src/dataGuard.js';
 import { MARKET_UNIVERSES, createMarketUniverseScheduler } from '../../../data/src/marketUniverse.js';
 import { createAvalonCatalog } from '../../../data/src/brokerCatalog.js';
 import { assessScannerCandidate, adaptiveScanPriority, scannerTelemetry } from '../../../engine/src/scannerDiscovery.js';
+import { createOpportunityLatency } from '../opportunityLatency.js';
 
 const router = Router();
 const avalonCatalog = createAvalonCatalog();
@@ -44,6 +45,7 @@ function brokerMapping() {
 }
 
 router.get('/opportunities', async (req, res) => {
+  const latency = createOpportunityLatency();
   const requestedAssets = req.query.assets
     ? String(req.query.assets).split(',').map((asset) => asset.trim().toUpperCase()).filter(Boolean)
     : null;
@@ -55,9 +57,9 @@ router.get('/opportunities', async (req, res) => {
   }
   let selection;
   try {
-    selection = explicitAssets
+    selection = latency.stage('universeSelectionMs', () => explicitAssets
       ? { assetClass: 'CUSTOM', assets: explicitAssets.slice(0, scanLimit()), totalAssets: explicitAssets.length, nextAsset: null, completesCycle: false }
-      : scheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: Math.min(Number(req.query.limit || scanLimit()), scanLimit()) });
+      : scheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: Math.min(Number(req.query.limit || scanLimit()), scanLimit()) }));
   } catch (error) {
     return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
   }
@@ -80,7 +82,7 @@ router.get('/opportunities', async (req, res) => {
     let relayMode = false;
     try {
       if (localRelayRequired) throw new Error('LOCAL_RELAY_REQUIRED');
-      snapshots = await getMarketDataEngine().getSnapshots(selection.assets, timeframe, 50);
+      snapshots = await latency.stage('marketFetchMs', () => getMarketDataEngine().getSnapshots(selection.assets, timeframe, 50));
     } catch (error) {
       if (!/EACCES|network error|LOCAL_RELAY_REQUIRED/i.test(error.message)) throw error;
       localRelayRequired = true;
@@ -89,7 +91,7 @@ router.get('/opportunities', async (req, res) => {
         : relayScheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: 1 });
       const asset = activeSelection.assets[0];
       try {
-        snapshots = [{ asset, snapshot: await getLocalRelaySnapshot(asset, timeframe, 50), error: null }];
+        snapshots = [{ asset, snapshot: await latency.stage('marketFetchMs', () => getLocalRelaySnapshot(asset, timeframe, 50)), error: null }];
       } catch (relayError) {
         if (!/cooldown|429|HTTP 404|not found|não encontrado/i.test(relayError.message)) throw relayError;
         if (/HTTP 404|not found|não encontrado/i.test(relayError.message)) relayScheduler.defer(asset, 60 * 60_000);
@@ -118,12 +120,12 @@ router.get('/opportunities', async (req, res) => {
         (relayMode ? relayScheduler : scheduler).defer(asset);
       }
       const startedAt = Date.now();
-      const marketContext = await req.app.locals.marketContextProvider.getContext(asset);
-      const decision = snapshot.valid === false || snapshot.marketOpen === false
+      const marketContext = await latency.stage('marketContextMs', () => req.app.locals.marketContextProvider.getContext(asset));
+      const decision = latency.stage('decisionPipelineMs', () => snapshot.valid === false || snapshot.marketOpen === false
         ? dataQualityWait(snapshot.marketOpen === false
           ? { ...snapshot, status: 'MARKET_CLOSED', reason: 'MARKET_CLOSED' }
           : snapshot)
-        : runWillPipeline(snapshot, { ...context, macroBlocked: marketContext.macro.blocked, newsBlocked: marketContext.news.blocked });
+        : runWillPipeline(snapshot, { ...context, macroBlocked: marketContext.macro.blocked, newsBlocked: marketContext.news.blocked }));
       const decisionContext = {
         ...context,
         macroBlocked: marketContext.macro.blocked,
@@ -135,21 +137,21 @@ router.get('/opportunities', async (req, res) => {
         monitorCycleId,
         decisionId: monitorCycleId ? `${monitorCycleId}:${asset}` : undefined
       };
-      const audit = createAuditEntry({ signal: snapshot, decision, context: decisionContext });
-      const history = req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext });
-      const candidate = assessScannerCandidate({ asset, snapshot, decision, context: decisionContext });
+      const audit = latency.stage('persistenceMs', () => createAuditEntry({ signal: snapshot, decision, context: decisionContext }));
+      const history = latency.stage('persistenceMs', () => req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext }));
+      const candidate = latency.stage('scannerMs', () => assessScannerCandidate({ asset, snapshot, decision, context: decisionContext }));
       // The scheduler priority changes only future scan coverage. It cannot
       // make this decision executable or alter any entry threshold.
       (relayMode ? relayScheduler : scheduler).setPriority?.(asset, adaptiveScanPriority(snapshot, candidate.readiness));
       candidates.push(candidate);
       analyses.push({ asset, snapshot, decision, historyId: history.id, marketContext });
     }
-    const result = selectBestOpportunity(analyses);
+    const result = latency.stage('rankingMs', () => selectBestOpportunity(analyses));
     if (result.recommendation) {
       const selected = candidates.find((item) => item.asset === result.recommendation.asset);
       if (selected) selected.stages.ranked = true;
     }
-    return res.json({
+    const response = latency.stage('responsePreparationMs', () => ({
       ok: true,
       scannedAt: new Date().toISOString(),
       timeframe,
@@ -166,7 +168,9 @@ router.get('/opportunities', async (req, res) => {
       reason: relayMode
         ? `${result.reason} Relay local ativo: ${activeSelection.assets[0]} estudado nesta janela; próxima leitura: ${activeSelection.nextAsset || 'fim da lista'}.`
         : result.reason || (unavailable.length ? 'Parte da fila não recebeu dados válidos; nenhum sinal foi liberado.' : undefined)
-    });
+    }));
+    response.latency = latency.snapshot();
+    return res.json(response);
   } catch (error) {
     console.error('Opportunity scan error:', error.message);
     return res.status(503).json({ ok: false, error: error.message });

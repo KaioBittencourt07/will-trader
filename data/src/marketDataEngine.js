@@ -16,6 +16,8 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     provider429: 0,
     upstreamLatencyMsTotal: 0,
     upstreamLatencySamples: 0,
+    rateLimitWaitMsTotal: 0,
+    rateLimitWaitCount: 0,
     lastProviderError: null,
     retries: 0,
     retryExhausted: 0,
@@ -92,7 +94,11 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
 
   async function fetchWithRateLimit(asset, timeframe, outputsize) {
     const delay = Math.max(0, nextRequestAt - now());
-    if (delay) await wait(delay);
+    if (delay) {
+      metrics.rateLimitWaitMsTotal += delay;
+      metrics.rateLimitWaitCount += 1;
+      await wait(delay);
+    }
     nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
     metrics.upstreamRequests += 1;
     return timedProviderRequest(() => provider.getSnapshot(asset, timeframe, outputsize));
@@ -142,7 +148,11 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     if (!missing.length) return uniqueAssets.map((asset) => fresh.find((entry) => entry.asset === asset));
     metrics.cacheMisses += missing.length;
     const delay = Math.max(0, nextRequestAt - now());
-    if (delay) await wait(delay);
+    if (delay) {
+      metrics.rateLimitWaitMsTotal += delay;
+      metrics.rateLimitWaitCount += 1;
+      await wait(delay);
+    }
     nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
     metrics.upstreamRequests += 1;
     let fetched;
