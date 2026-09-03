@@ -4,14 +4,16 @@ import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { selectBestOpportunity } from '../../../engine/src/opportunityEngine.js';
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
 import { dataQualityWait } from '../../../engine/src/dataGuard.js';
-import { createMarketUniverseScheduler } from '../../../data/src/marketUniverse.js';
+import { MARKET_UNIVERSES, createMarketUniverseScheduler } from '../../../data/src/marketUniverse.js';
 import { createAvalonCatalog } from '../../../data/src/brokerCatalog.js';
 import { assessScannerCandidate, adaptiveScanPriority, scannerTelemetry } from '../../../engine/src/scannerDiscovery.js';
 
 const router = Router();
 const avalonCatalog = createAvalonCatalog();
-const scheduler = createMarketUniverseScheduler({ universes: avalonCatalog.operationalUniverses });
-const relayScheduler = createMarketUniverseScheduler({ universes: avalonCatalog.operationalUniverses });
+// PAPER research studies a canonical provider universe. Avalon is deliberately
+// not its source of truth: mapping evidence belongs to broker execution only.
+const scheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
+const relayScheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
 let localRelayRequired = false;
 
 function scanLimit() {
@@ -23,13 +25,31 @@ function entryDelaySeconds(value) {
   return Number.isFinite(parsed) ? Math.min(300, Math.max(60, parsed)) : 120;
 }
 
+export function canonicalResearchAssets(assets = []) {
+  const allowed = new Set(Object.values(MARKET_UNIVERSES).flat());
+  const normalized = [...new Set(assets.map((asset) => String(asset).trim().toUpperCase()).filter(Boolean))];
+  const unsupported = normalized.filter((asset) => !allowed.has(asset));
+  if (unsupported.length) throw new Error(`Ativo fora do universo canônico de pesquisa: ${unsupported.join(', ')}.`);
+  return normalized;
+}
+
+function brokerMapping() {
+  return {
+    broker: avalonCatalog.broker,
+    status: avalonCatalog.isConfirmed() ? 'AVALON_MAPPING_VERIFIED' : 'AVALON_CATALOG_UNVERIFIED',
+    catalogSource: avalonCatalog.source,
+    catalogVerifiedAt: avalonCatalog.verifiedAt,
+    executionAvailable: false
+  };
+}
+
 router.get('/opportunities', async (req, res) => {
   const requestedAssets = req.query.assets
     ? String(req.query.assets).split(',').map((asset) => asset.trim().toUpperCase()).filter(Boolean)
     : null;
   let explicitAssets;
   try {
-    explicitAssets = requestedAssets ? avalonCatalog.assertAllowed(requestedAssets).filter((asset) => avalonCatalog.resolve(asset).brokerTradable) : null;
+    explicitAssets = requestedAssets ? canonicalResearchAssets(requestedAssets) : null;
   } catch (error) {
     return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
   }
@@ -51,12 +71,6 @@ router.get('/opportunities', async (req, res) => {
     entryWindowStartSeconds: 60,
     entryWindowEndSeconds: 300
   };
-  if (!explicitAssets && !avalonCatalog.isConfirmed()) {
-    return res.json({ ok: true, scannedAt: new Date().toISOString(), timeframe, scanned: 0, unavailable: [], coverage: { assetClass: 'ALL', assets: [], totalAssets: 0 }, broker: avalonCatalog.broker, catalogSource: avalonCatalog.source, catalogVerifiedAt: avalonCatalog.verifiedAt, recommendation: null, reason: 'Catálogo Avalon ainda não confirmado; scanner operacional não recomenda ativos sem essa evidência.', status: 'AVALON_CATALOG_UNVERIFIED' });
-  }
-  if (requestedAssets && !explicitAssets.length) {
-    return res.json({ ok: true, scannedAt: new Date().toISOString(), timeframe, scanned: 0, unavailable: requestedAssets.map((asset) => avalonCatalog.resolve(asset)), broker: avalonCatalog.broker, catalogSource: avalonCatalog.source, catalogVerifiedAt: avalonCatalog.verifiedAt, recommendation: null, reason: 'Ativo não confirmado como negociável na Avalon.', status: 'NOT_TRADABLE_ON_AVALON' });
-  }
   try {
     const analyses = [];
     const candidates = [];
@@ -142,9 +156,9 @@ router.get('/opportunities', async (req, res) => {
       scanned: analyses.length,
       unavailable,
       coverage: activeSelection,
+      researchUniverse: 'canonical-market-v1',
       broker: avalonCatalog.broker,
-      catalogSource: avalonCatalog.source,
-      catalogVerifiedAt: avalonCatalog.verifiedAt,
+      brokerMapping: brokerMapping(),
       relayMode,
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
       candidates,

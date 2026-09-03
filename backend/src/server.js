@@ -15,6 +15,7 @@ import { createProspectiveManifest } from '../../learning/src/prospectiveEvidenc
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
+import { prospectiveResearchGate } from '../../data/src/providers/prospectiveResearchGate.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +35,23 @@ app.locals.paperMonitor = createAutonomousPaperMonitor({
   intervalMs: Number(process.env.WILL_PAPER_MONITOR_INTERVAL_MS || 60_000),
   filePath: process.env.WILL_PAPER_MONITOR_STATE_FILE || path.join(process.cwd(), 'data', 'will-paper-monitor-state.json'),
   runCycle: async ({ cycleId }) => {
+    // A prospective research cycle is permitted only after real provider data
+    // passes the diagnostic gate. Broker mapping is intentionally irrelevant
+    // here and remains a separate manual execution concern.
+    const diagnosticUrl = new URL(`http://127.0.0.1:${config.port}/api/market/diagnostic`);
+    diagnosticUrl.searchParams.set('asset', process.env.DEFAULT_ASSET || 'EUR/USD');
+    diagnosticUrl.searchParams.set('timeframe', process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min');
+    const diagnosticResponse = await fetch(diagnosticUrl, { signal: AbortSignal.timeout(30_000) });
+    const diagnostic = await diagnosticResponse.json();
+    const gate = prospectiveResearchGate(diagnostic);
+    if (!diagnosticResponse.ok || !gate.ready) {
+      return {
+        ok: false,
+        status: gate.status,
+        scanned: 0,
+        recommendation: null
+      };
+    }
     const url = new URL(`http://127.0.0.1:${config.port}/api/opportunities`);
     url.searchParams.set('limit', '1');
     url.searchParams.set('timeframe', process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min');

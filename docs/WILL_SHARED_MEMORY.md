@@ -149,3 +149,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - `GET /api/market/diagnostic` is a diagnostic-only Twelve Data gate that distinguishes credential, rate-limit, blocked network, invalid response and stale-data failures while sharing the existing cache/rate limiter.
 - The gate does not bypass environment `EACCES`, start a batch, alter the Champion or enable Avalon clicks/orders. PAPER/MANUAL remains mandatory.
 
+## Fase 20C.2 — PAPER Research / Avalon Execution Decoupling
+- PAPER research uses the canonical market universe and verified Twelve Data evidence only. An Avalon catalog is neither a research universe nor proof of a provider symbol.
+- Missing Avalon evidence no longer blocks PAPER research, but remains `AVALON_CATALOG_UNVERIFIED` for all Avalon availability or execution claims.
+- The prospective monitor remains fail-closed until the Twelve Data diagnostic returns `HEALTHY`; stale, invalid, rate-limited, credential and network failures do not begin a cycle.
+- No Champion, threshold, scanner, ranking, feature, regime, timing or BUY/SELL/WAIT contract changed. PAPER/MANUAL only; no order, click or money flow is authorized.
+

@@ -1,6 +1,9 @@
 # Market Access & Avalon Universe Gate
 
-The prospective PAPER batch remains blocked until both independent gates pass.
+PAPER research and Avalon execution are separate gates. Prospective PAPER
+research needs verified provider data; it does not need an Avalon catalog.
+Avalon mapping is still mandatory before any future claim of availability or
+manual execution there.
 
 ## Avalon Universe Gate
 
@@ -48,7 +51,10 @@ batch, create an order, or contact Avalon.
 
 ## Launch condition
 
-Do not start prospective collection until a current verified allowlist and a
-real `HEALTHY` market diagnostic are recorded. PAPER/MANUAL remains mandatory;
-there is no Avalon click, order, payout or real-money flow in this gate.
+Do not start prospective PAPER collection until a real `HEALTHY` market
+diagnostic is recorded. The canonical market universe is research-only and is
+not evidence that any symbol exists on Avalon. A current verified Avalon
+allowlist remains required for any future manual execution mapping or
+availability statement. PAPER/MANUAL remains mandatory; there is no Avalon
+click, order, payout or real-money flow in this gate.
 
