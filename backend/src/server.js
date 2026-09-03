@@ -15,11 +15,17 @@ import { createProspectiveManifest } from '../../learning/src/prospectiveEvidenc
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
-import { prospectiveResearchGate } from '../../data/src/providers/prospectiveResearchGate.js';
+import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonitorTimeout.js';
+import { runPaperMonitorCycle } from './paperMonitorCycle.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
+const paperMonitorIntervalMs = Number(process.env.WILL_PAPER_MONITOR_INTERVAL_MS || 60_000);
+const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
+  value: process.env.WILL_PAPER_MONITOR_REQUEST_TIMEOUT_MS,
+  intervalMs: paperMonitorIntervalMs
+});
 
 const app = express();
 // Evidence-only batch metadata. It cannot place an order or alter a decision.
@@ -32,43 +38,19 @@ app.locals.historyStore = createHistoryStore({
 app.locals.paperMonitor = createAutonomousPaperMonitor({
   // This is an observation scheduler only. Set false to stop it explicitly.
   enabled: process.env.WILL_PAPER_MONITOR_ENABLED !== 'false',
-  intervalMs: Number(process.env.WILL_PAPER_MONITOR_INTERVAL_MS || 60_000),
+  intervalMs: paperMonitorIntervalMs,
   filePath: process.env.WILL_PAPER_MONITOR_STATE_FILE || path.join(process.cwd(), 'data', 'will-paper-monitor-state.json'),
   logger: (event) => {
     // The monitor supplies only the bounded, redacted diagnostic fields.
     console.warn(`[PAPER monitor] ${event.status} ${event.cycleId} ${event.errorCode}: ${event.errorDetail}`);
   },
-  runCycle: async ({ cycleId }) => {
-    // A prospective research cycle is permitted only after real provider data
-    // passes the diagnostic gate. Broker mapping is intentionally irrelevant
-    // here and remains a separate manual execution concern.
-    const diagnosticUrl = new URL(`http://127.0.0.1:${config.port}/api/market/diagnostic`);
-    diagnosticUrl.searchParams.set('asset', process.env.DEFAULT_ASSET || 'EUR/USD');
-    diagnosticUrl.searchParams.set('timeframe', process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min');
-    const diagnosticResponse = await fetch(diagnosticUrl, { signal: AbortSignal.timeout(30_000) });
-    const diagnostic = await diagnosticResponse.json();
-    const gate = prospectiveResearchGate(diagnostic);
-    if (!diagnosticResponse.ok || !gate.ready) {
-      return {
-        ok: false,
-        status: gate.status,
-        scanned: 0,
-        recommendation: null
-      };
-    }
-    const url = new URL(`http://127.0.0.1:${config.port}/api/opportunities`);
-    url.searchParams.set('limit', '1');
-    url.searchParams.set('timeframe', process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min');
-    url.searchParams.set('monitorCycleId', cycleId);
-    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-    const body = await response.json();
-    return {
-      ok: response.ok && body?.ok === true && !body?.status && !(body?.unavailable?.length),
-      status: body?.status ?? null,
-      scanned: body?.scanned ?? 0,
-      recommendation: body?.recommendation ? body.recommendation.asset : null
-    };
-  }
+  runCycle: ({ cycleId }) => runPaperMonitorCycle({
+    baseUrl: `http://127.0.0.1:${config.port}`,
+    cycleId,
+    timeout: paperMonitorTimeout,
+    asset: process.env.DEFAULT_ASSET || 'EUR/USD',
+    timeframe: process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min'
+  })
 });
 app.locals.researchMemory = createResearchMemory({
   filePath: process.env.WILL_RESEARCH_FILE || path.join(process.cwd(), 'data', 'will-research.json'),

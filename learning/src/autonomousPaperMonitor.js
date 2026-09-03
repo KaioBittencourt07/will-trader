@@ -13,7 +13,8 @@ const MAX_ERROR_DETAIL_LENGTH = 240;
 export function sanitizeCycleError(error) {
   const status = Number(error?.status);
   const rawCode = String(error?.code ?? '').trim().toUpperCase();
-  const errorCode = /^E[A-Z0-9_]+$/.test(rawCode) ? `NETWORK_${rawCode}`
+  const errorCode = error?.name === 'TimeoutError' || /aborted due to timeout|request timeout/i.test(String(error?.message ?? '')) ? 'REQUEST_TIMEOUT'
+    : /^E[A-Z0-9_]+$/.test(rawCode) ? `NETWORK_${rawCode}`
     : Number.isFinite(status) ? `HTTP_${status}`
       : 'CYCLE_ERROR';
   const message = String(error?.message ?? error ?? 'unknown cycle failure')

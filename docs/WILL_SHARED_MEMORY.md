@@ -160,3 +160,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Failure events now expose only a bounded, deterministic `errorCode` and sanitized `errorDetail`. Credentials, authorization headers, tokens, credential-bearing URL parts and stack traces are excluded from events and backend logs.
 - Storage persistence failures remain `PAUSED/STORAGE_FAILURE`. The observability path creates no WAIT, quote, outcome or execution capability.
 
+## Fase 20C.4 — PAPER Monitor Timeout Hardening
+- `WILL_PAPER_MONITOR_REQUEST_TIMEOUT_MS` controls the bounded timeout used by both internal PAPER monitor requests. Its default is 55 seconds for the minimum 60-second cadence.
+- The timeout must be finite, positive and strictly below cadence minus the 1-second safety margin. Invalid configuration is `MONITOR_TIMEOUT_CONFIG_INVALID` and fails closed before any internal request.
+- Timeout aborts remain invalid observations with durable idempotency and no synthetic decision; their sanitized monitor diagnostic uses `REQUEST_TIMEOUT`.
+
