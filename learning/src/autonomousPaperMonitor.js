@@ -3,6 +3,32 @@ import path from 'node:path';
 
 export const PAPER_MONITOR_VERSION = 'autonomous-paper-monitor-v1';
 const MIN_INTERVAL_MS = 60_000;
+const MAX_ERROR_DETAIL_LENGTH = 240;
+
+/**
+ * Exposes enough local operational context to debug a failed cadence without
+ * copying secrets, headers, credential-bearing URLs, or a stack trace into
+ * durable monitor state or logs.
+ */
+export function sanitizeCycleError(error) {
+  const status = Number(error?.status);
+  const rawCode = String(error?.code ?? '').trim().toUpperCase();
+  const errorCode = /^E[A-Z0-9_]+$/.test(rawCode) ? `NETWORK_${rawCode}`
+    : Number.isFinite(status) ? `HTTP_${status}`
+      : 'CYCLE_ERROR';
+  const message = String(error?.message ?? error ?? 'unknown cycle failure')
+    .split(/\r?\n/, 1)[0]
+    .replace(/(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+/gi, '$1[REDACTED]')
+    .replace(/\b(bearer|token|api[_-]?key|apikey|secret|password)\b\s*(?:[:=]\s*|\s+)([^\s,;]+)/gi, '$1=[REDACTED]')
+    .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[REDACTED]@')
+    .replace(/([?&](?:api[_-]?key|apikey|token|authorization|secret|password)=)[^&#\s]+/gi, '$1[REDACTED]')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim();
+  return Object.freeze({
+    errorCode,
+    errorDetail: (message || 'cycle failure').slice(0, MAX_ERROR_DETAIL_LENGTH)
+  });
+}
 
 function loadCompleted(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return [];
@@ -30,6 +56,7 @@ export function createAutonomousPaperMonitor({
   runCycle,
   now = () => Date.now(),
   onEvent = () => {},
+  logger = () => {},
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval
 } = {}) {
@@ -69,10 +96,13 @@ export function createAutonomousPaperMonitor({
       return event({ ran: true, status: result?.ok === false ? 'SKIPPED_INVALID_CYCLE' : 'COMPLETED', cycleId: id, mode: 'PAPER', result: result ?? null });
     } catch (error) {
       // Do not invent a WAIT, quote, or outcome when the observation failed.
+      const diagnostic = sanitizeCycleError(error);
       try {
         completed.add(id);
         persistCompleted(filePath, completed);
-        return event({ ran: false, status: 'SKIPPED_INVALID_CYCLE', reason: 'CYCLE_FAILURE', cycleId: id, mode: 'PAPER' });
+        const failed = event({ ran: false, status: 'SKIPPED_INVALID_CYCLE', reason: 'CYCLE_FAILURE', cycleId: id, mode: 'PAPER', ...diagnostic });
+        try { logger(structuredClone(failed)); } catch {}
+        return failed;
       } catch {
         return event({ ran: false, status: 'PAUSED', reason: 'STORAGE_FAILURE', cycleId: id, mode: 'PAPER' });
       }

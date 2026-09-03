@@ -34,6 +34,10 @@ app.locals.paperMonitor = createAutonomousPaperMonitor({
   enabled: process.env.WILL_PAPER_MONITOR_ENABLED !== 'false',
   intervalMs: Number(process.env.WILL_PAPER_MONITOR_INTERVAL_MS || 60_000),
   filePath: process.env.WILL_PAPER_MONITOR_STATE_FILE || path.join(process.cwd(), 'data', 'will-paper-monitor-state.json'),
+  logger: (event) => {
+    // The monitor supplies only the bounded, redacted diagnostic fields.
+    console.warn(`[PAPER monitor] ${event.status} ${event.cycleId} ${event.errorCode}: ${event.errorDetail}`);
+  },
   runCycle: async ({ cycleId }) => {
     // A prospective research cycle is permitted only after real provider data
     // passes the diagnostic gate. Broker mapping is intentionally irrelevant

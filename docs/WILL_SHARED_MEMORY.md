@@ -155,3 +155,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - The prospective monitor remains fail-closed until the Twelve Data diagnostic returns `HEALTHY`; stale, invalid, rate-limited, credential and network failures do not begin a cycle.
 - No Champion, threshold, scanner, ranking, feature, regime, timing or BUY/SELL/WAIT contract changed. PAPER/MANUAL only; no order, click or money flow is authorized.
 
+## Fase 20C.3 — PAPER Monitor Failure Observability
+- A thrown PAPER monitor cycle remains fail-closed as `SKIPPED_INVALID_CYCLE` with `CYCLE_FAILURE`; its cadence id remains durably recorded to prevent retry churn.
+- Failure events now expose only a bounded, deterministic `errorCode` and sanitized `errorDetail`. Credentials, authorization headers, tokens, credential-bearing URL parts and stack traces are excluded from events and backend logs.
+- Storage persistence failures remain `PAUSED/STORAGE_FAILURE`. The observability path creates no WAIT, quote, outcome or execution capability.
+
