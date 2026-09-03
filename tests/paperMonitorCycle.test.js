@@ -16,13 +16,20 @@ test('monitor cycle applies the same configured timeout to diagnostic and opport
     fetchImpl: async (url, options) => {
       requests.push({ url: String(url), timeoutMs: options.signal.timeoutMs });
       return { ok: true, json: async () => String(url).includes('/diagnostic')
-        ? { ok: true, diagnostic: { status: 'HEALTHY' } }
-        : { ok: true, scanned: 1, recommendation: { asset: 'EUR/USD' } } };
+        ? { ok: true, diagnostic: { status: 'HEALTHY' }, providerEfficiency: { externalRequests: 2, cacheMisses: 1, externalLatencyMs: 12, creditsEstimated: 2 } }
+        : { ok: true, scanned: 1, recommendation: { asset: 'EUR/USD' }, providerEfficiency: { cacheHits: 1 } } };
     }
   });
   assert.deepEqual(requests.map((request) => request.timeoutMs), [55_000, 55_000]);
   assert.match(requests[1].url, /monitorCycleId=cycle-1/);
-  assert.deepEqual(result, { ok: true, status: null, scanned: 1, recommendation: 'EUR/USD' });
+  assert.deepEqual(result, {
+    ok: true, status: null, scanned: 1, recommendation: 'EUR/USD',
+    providerEfficiency: {
+      version: 'provider-efficiency-v1', scope: 'paper-monitor-cycle', externalRequests: 2,
+      cacheHits: 1, cacheMisses: 1, deduplicated: 0, limiterWaitMs: 0,
+      externalLatencyMs: 12, creditsEstimated: 2, creditsEstimatedIsOfficial: false
+    }
+  });
 });
 
 test('invalid timeout config does not issue a request or create a recommendation', async () => {

@@ -171,3 +171,10 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Opportunity responses expose additive per-stage latency telemetry; Market Data Engine metrics separately expose rate-limiter wait count and duration.
 - Freshness remains fail-closed and unchanged. Snapshot age is derived from the provider quote timestamp; candle timestamp remains separate evidence.
 - No Champion, strategy, threshold, score, ranking, BUY/SELL/WAIT, Outcome Resolver or Evidence Store contract changed. PAPER/MANUAL remains mandatory.
+
+## Fase 20C.7 — Provider Efficiency & Credit Accounting
+- `provider-efficiency-v1` atribui a cada request/ciclo requests HTTP externos, cache hits/misses, deduplicação, espera do limiter, latência externa e créditos estimados.
+- Crédito é explicitamente estimado e não autoritativo. O modelo local assume um crédito por endpoint/símbolo; somente `/api_usage` do provider representa a conta real.
+- O ciclo PAPER diagnostic -> opportunities usa a mesma chave de 50 candles: em um ciclo saudável de um ativo partindo de cache vazio, o diagnóstico faz 2 requests HTTP (~2 créditos estimados) e opportunities reutiliza o snapshot com 1 cache hit, 0 requests externos e 0 segunda espera do limiter.
+- Scanner e pipeline decisório não consultam Twelve Data diretamente; recebem os snapshots já contabilizados. Telemetria é somente saída e nunca cria ou altera preço, timestamp, decisão, WAIT, outcome ou execução.
+- 429, stale, missing e provider errors continuam fail-closed. Champion, versões, thresholds, freshness, timing, scanner, ranking, timeouts e contratos decisórios permanecem congelados; PAPER/MANUAL continua obrigatório.

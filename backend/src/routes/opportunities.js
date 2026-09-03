@@ -8,6 +8,7 @@ import { MARKET_UNIVERSES, createMarketUniverseScheduler } from '../../../data/s
 import { createAvalonCatalog } from '../../../data/src/brokerCatalog.js';
 import { assessScannerCandidate, adaptiveScanPriority, scannerTelemetry } from '../../../engine/src/scannerDiscovery.js';
 import { createOpportunityLatency } from '../opportunityLatency.js';
+import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
 
 const router = Router();
 const avalonCatalog = createAvalonCatalog();
@@ -46,6 +47,7 @@ function brokerMapping() {
 
 router.get('/opportunities', async (req, res) => {
   const latency = createOpportunityLatency();
+  const providerTelemetry = createProviderEfficiencyTelemetry(req.query.monitorCycleId ? 'paper-monitor-opportunities' : 'api-opportunities-request');
   const requestedAssets = req.query.assets
     ? String(req.query.assets).split(',').map((asset) => asset.trim().toUpperCase()).filter(Boolean)
     : null;
@@ -82,7 +84,7 @@ router.get('/opportunities', async (req, res) => {
     let relayMode = false;
     try {
       if (localRelayRequired) throw new Error('LOCAL_RELAY_REQUIRED');
-      snapshots = await latency.stage('marketFetchMs', () => getMarketDataEngine().getSnapshots(selection.assets, timeframe, 50));
+      snapshots = await latency.stage('marketFetchMs', () => getMarketDataEngine().getSnapshots(selection.assets, timeframe, 50, { telemetry: providerTelemetry }));
     } catch (error) {
       if (!/EACCES|network error|LOCAL_RELAY_REQUIRED/i.test(error.message)) throw error;
       localRelayRequired = true;
@@ -91,7 +93,7 @@ router.get('/opportunities', async (req, res) => {
         : relayScheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: 1 });
       const asset = activeSelection.assets[0];
       try {
-        snapshots = [{ asset, snapshot: await latency.stage('marketFetchMs', () => getLocalRelaySnapshot(asset, timeframe, 50)), error: null }];
+        snapshots = [{ asset, snapshot: await latency.stage('marketFetchMs', () => getLocalRelaySnapshot(asset, timeframe, 50, { telemetry: providerTelemetry })), error: null }];
       } catch (relayError) {
         if (!/cooldown|429|HTTP 404|not found|não encontrado/i.test(relayError.message)) throw relayError;
         if (/HTTP 404|not found|não encontrado/i.test(relayError.message)) relayScheduler.defer(asset, 60 * 60_000);
@@ -103,6 +105,7 @@ router.get('/opportunities', async (req, res) => {
           unavailable: [{ asset, error: relayError.message }],
           coverage: activeSelection,
           relayMode: true,
+          providerEfficiency: providerEfficiencySnapshot(providerTelemetry),
           recommendation: null,
           reason: /HTTP 404|not found|não encontrado/i.test(relayError.message)
             ? 'Ativo indisponível no feed atual; ele foi retirado temporariamente da fila de estudo.'
@@ -165,6 +168,7 @@ router.get('/opportunities', async (req, res) => {
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
       candidates,
       ...result,
+      providerEfficiency: providerEfficiencySnapshot(providerTelemetry),
       reason: relayMode
         ? `${result.reason} Relay local ativo: ${activeSelection.assets[0]} estudado nesta janela; próxima leitura: ${activeSelection.nextAsset || 'fim da lista'}.`
         : result.reason || (unavailable.length ? 'Parte da fila não recebeu dados válidos; nenhum sinal foi liberado.' : undefined)
@@ -173,7 +177,7 @@ router.get('/opportunities', async (req, res) => {
     return res.json(response);
   } catch (error) {
     console.error('Opportunity scan error:', error.message);
-    return res.status(503).json({ ok: false, error: error.message });
+    return res.status(503).json({ ok: false, error: error.message, providerEfficiency: providerEfficiencySnapshot(providerTelemetry) });
   }
 });
 

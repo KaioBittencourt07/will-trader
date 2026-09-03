@@ -3,6 +3,7 @@ import { createTwelveDataProvider } from '../../../data/src/providers/twelveData
 import { createMarketDataEngine } from '../../../data/src/marketDataEngine.js';
 import { buildMultiTimeframeContext } from '../../../context/src/multiTimeframe.js';
 import { classifyTwelveDataFailure, diagnoseTwelveData, TWELVE_DATA_DIAGNOSTIC_VERSION } from '../../../data/src/providers/twelveDataDiagnostics.js';
+import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
 
 const router = Router();
 let marketDataEngine;
@@ -25,7 +26,7 @@ export function getLocalRelayStatus(now = Date.now()) {
   };
 }
 
-export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsize = 50) {
+export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
   const key = `${String(asset).toUpperCase()}|${timeframe}|${outputsize}`;
   const now = Date.now();
   const cached = relayCache.get(key);
@@ -50,6 +51,12 @@ export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsiz
     throw new Error(message);
   }
   const body = await response.json().catch(() => null);
+  if (body?.providerEfficiency && telemetry) {
+    for (const key of ['externalRequests', 'cacheHits', 'cacheMisses', 'deduplicated', 'limiterWaitMs', 'externalLatencyMs', 'creditsEstimated']) {
+      const value = Number(body.providerEfficiency[key]);
+      if (Number.isFinite(value) && value >= 0) telemetry[key] += value;
+    }
+  }
   if (!response.ok || !body?.snapshot) {
     nextRelayRequestAt = Date.now() + (response.status === 429 ? 60_000 : 15_000);
     const message = body?.error || `Relay local HTTP ${response.status}`;
@@ -77,12 +84,13 @@ router.get('/market', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
   const timeframe = String(req.query.timeframe || '1min');
   const outputsize = Math.min(Math.max(Number(req.query.outputsize || 50), 12), 200);
+  const telemetry = createProviderEfficiencyTelemetry('api-market-request');
   try {
-    const snapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize);
-    return res.json({ ok: snapshot.valid, snapshot });
+    const snapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize, { telemetry });
+    return res.json({ ok: snapshot.valid, snapshot, providerEfficiency: providerEfficiencySnapshot(telemetry) });
   } catch (error) {
     console.error('Market provider error:', error.message);
-    return res.status(503).json({ ok: false, error: error.message });
+    return res.status(503).json({ ok: false, error: error.message, providerEfficiency: providerEfficiencySnapshot(telemetry) });
   }
 });
 
@@ -99,6 +107,7 @@ router.get('/market/status', (_req, res) => {
 router.get('/market/diagnostic', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
   const timeframe = String(req.query.timeframe || '1min');
+  const telemetry = createProviderEfficiencyTelemetry('api-market-diagnostic-request');
   let engine;
   try {
     engine = getMarketDataEngine();
@@ -110,10 +119,10 @@ router.get('/market/diagnostic', async (req, res) => {
       version: TWELVE_DATA_DIAGNOSTIC_VERSION,
       detail: String(error?.message ?? 'MARKET_ENGINE_UNAVAILABLE').slice(0, 500)
     };
-    return res.status(503).json({ ok: false, diagnostic });
+    return res.status(503).json({ ok: false, diagnostic, providerEfficiency: providerEfficiencySnapshot(telemetry) });
   }
-  const diagnostic = await diagnoseTwelveData({ engine, asset, timeframe });
-  return res.status(diagnostic.ok ? 200 : 503).json({ ok: diagnostic.ok, diagnostic });
+  const diagnostic = await diagnoseTwelveData({ engine, asset, timeframe, telemetry });
+  return res.status(diagnostic.ok ? 200 : 503).json({ ok: diagnostic.ok, diagnostic, providerEfficiency: providerEfficiencySnapshot(telemetry) });
 });
 
 router.get('/market/multi', async (req, res) => {

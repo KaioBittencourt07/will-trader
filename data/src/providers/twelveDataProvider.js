@@ -1,4 +1,5 @@
 import { normalizeMarketSnapshot } from '../marketAdapter.js';
+import { addProviderEfficiency } from '../providerEfficiency.js';
 
 const BASE_URL = 'https://api.twelvedata.com';
 
@@ -66,12 +67,15 @@ function priceActionFlags(values, { sma12, noise }) {
   };
 }
 
-async function fetchTwelveData(fetchImpl, url, options) {
+async function fetchTwelveData(fetchImpl, url, options, { telemetry, creditsEstimated = 1, now = () => Date.now() } = {}) {
+  const startedAt = now();
   try {
     return await fetchImpl(url, options);
   } catch (error) {
     const detail = error?.cause?.code || error?.cause?.message || error?.message || 'erro de rede desconhecido';
     throw new Error(`Twelve Data network error: ${detail}`);
+  } finally {
+    addProviderEfficiency(telemetry, { externalRequests: 1, externalLatencyMs: Math.max(0, now() - startedAt), creditsEstimated });
   }
 }
 
@@ -169,13 +173,13 @@ export function createTwelveDataProvider({
   if (!apiKey) throw new Error('TWELVEDATA_API_KEY não configurada.');
 
   return {
-    async getSnapshot(asset, timeframe = '1min', outputsize = 50) {
+    async getSnapshot(asset, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
       const symbol = encodeURIComponent(asset);
       const interval = encodeURIComponent(timeframe);
       const headers = { Authorization: `apikey ${apiKey}` };
       const [quoteResponse, seriesResponse] = await Promise.all([
-        fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${symbol}`, { headers, cache: 'no-store' }),
-        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${symbol}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' })
+        fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${symbol}`, { headers, cache: 'no-store' }, { telemetry }),
+        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${symbol}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' }, { telemetry })
       ]);
       if (!quoteResponse.ok) throw httpError('quote', quoteResponse);
       if (!seriesResponse.ok) throw httpError('time_series', seriesResponse);
@@ -184,19 +188,19 @@ export function createTwelveDataProvider({
       return snapshotFromApi(asset, timeframe, quote, series, maxAgeMs);
     },
 
-    async getSnapshots(assets, timeframe = '1min', outputsize = 50) {
+    async getSnapshots(assets, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
       const symbols = [...new Set((assets || []).map((asset) => String(asset).trim().toUpperCase()).filter(Boolean))];
       if (!symbols.length) return [];
       if (symbols.length === 1) {
-        try { return [{ asset: symbols[0], snapshot: await this.getSnapshot(symbols[0], timeframe, outputsize), error: null }]; }
+        try { return [{ asset: symbols[0], snapshot: await this.getSnapshot(symbols[0], timeframe, outputsize, { telemetry }), error: null }]; }
         catch (error) { return [{ asset: symbols[0], snapshot: null, error: error.message }]; }
       }
       const joinedSymbols = encodeURIComponent(symbols.join(','));
       const interval = encodeURIComponent(timeframe);
       const headers = { Authorization: `apikey ${apiKey}` };
       const [quoteResponse, seriesResponse] = await Promise.all([
-        fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${joinedSymbols}`, { headers, cache: 'no-store' }),
-        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${joinedSymbols}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' })
+        fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${joinedSymbols}`, { headers, cache: 'no-store' }, { telemetry, creditsEstimated: symbols.length }),
+        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${joinedSymbols}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' }, { telemetry, creditsEstimated: symbols.length })
       ]);
       if (!quoteResponse.ok) throw httpError('quote', quoteResponse);
       if (!seriesResponse.ok) throw httpError('time_series', seriesResponse);
