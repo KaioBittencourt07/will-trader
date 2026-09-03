@@ -109,7 +109,15 @@ router.get('/opportunities', async (req, res) => {
           ? { ...snapshot, status: 'MARKET_CLOSED', reason: 'MARKET_CLOSED' }
           : snapshot)
         : runWillPipeline(snapshot, { ...context, macroBlocked: marketContext.macro.blocked, newsBlocked: marketContext.news.blocked });
-      const decisionContext = { ...context, macroBlocked: marketContext.macro.blocked, newsBlocked: marketContext.news.blocked, marketContext, decisionLatencyMs: Date.now() - startedAt };
+      const decisionContext = {
+        ...context,
+        macroBlocked: marketContext.macro.blocked,
+        newsBlocked: marketContext.news.blocked,
+        marketContext,
+        decisionLatencyMs: Date.now() - startedAt,
+        providerHealth: relayMode ? 'LOCAL_RELAY' : 'HEALTHY',
+        prospectiveManifest: req.app.locals.prospectiveManifest
+      };
       const audit = createAuditEntry({ signal: snapshot, decision, context: decisionContext });
       const history = req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext });
       const candidate = assessScannerCandidate({ asset, snapshot, decision, context: decisionContext });
@@ -149,3 +157,4 @@ router.get('/opportunities', async (req, res) => {
 });
 
 export default router;
+

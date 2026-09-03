@@ -30,6 +30,7 @@ Every rate in `metrics.evidence` and `metrics.segments` carries its relevant N. 
 - asset, setup, regime and timeframe;
 - UTC decision-clock session and hour;
 - data-quality status and source.
+- provider state, timing status, MTF, familiarity, lifecycle/decay, disagreement, robustness and drift status.
 
 UTC session buckets are operational clock labels (`ASIA_UTC`, `EUROPE_UTC`, `US_UTC`, `PACIFIC_UTC`), not a claim that an exchange is open or liquid.
 
@@ -46,3 +47,5 @@ UTC session buckets are operational clock labels (`ASIA_UTC`, `EUROPE_UTC`, `US_
 - no expectancy without recorded payout and costs;
 - no drawdown without monetary P&L;
 - no promotion, threshold tuning, MTF or execution automation.
+- no EV or expectancy field when payout and costs are unavailable (NOT_AVAILABLE).
+

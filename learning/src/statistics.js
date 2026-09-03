@@ -37,6 +37,7 @@ function sessionFor(timestamp) {
 
 function derivedRecord(record = {}) {
   const quality = record.metadata?.dataQuality ?? {};
+  const prospective = record.metadata?.prospective ?? {};
   return {
     ...record,
     hour: record.hour ?? (record.signalTimestamp ? new Date(record.signalTimestamp).getUTCHours() : 'UNKNOWN'),
@@ -47,6 +48,14 @@ function derivedRecord(record = {}) {
     setupType: record.setupType ?? record.setup ?? 'UNKNOWN',
     setupQuality: record.setupQuality ?? 'UNKNOWN',
     setupDirection: record.setupDirection ?? (record.direction === 'BUY' || record.direction === 'SELL' ? record.direction : 'NEUTRAL'),
+    timingStatus: record.timingStatus ?? prospective.timing?.status ?? 'UNKNOWN',
+    providerState: prospective.providerState ?? 'UNKNOWN',
+    mtfStatus: prospective.mtf?.status ?? prospective.mtf?.agreement ?? 'NOT_AVAILABLE',
+    familiarityStatus: prospective.familiarity?.status ?? record.metadata?.familiarityEvidence?.status ?? 'NOT_AVAILABLE',
+    lifecycleState: prospective.lifecycle?.state ?? record.metadata?.lifecycle?.state ?? 'NOT_AVAILABLE',
+    disagreementStatus: prospective.disagreement?.status ?? record.metadata?.disagreement?.status ?? 'NOT_AVAILABLE',
+    robustnessStatus: prospective.robustness?.status ?? record.metadata?.robustness?.status ?? 'NOT_AVAILABLE',
+    driftStatus: prospective.drift?.status ?? 'NOT_AVAILABLE',
     outcomeKind: outcomeKind(record)
   };
 }
@@ -211,7 +220,16 @@ export function summarize(records = []) {
       bySession: segment(normalized, 'session'),
       byHour: segment(normalized, 'hour'),
       byDataQualityStatus: segment(normalized, 'dataQualityStatus'),
-      byDataQualitySource: segment(normalized, 'dataQualitySource')
+      byDataQualitySource: segment(normalized, 'dataQualitySource'),
+      byProviderState: segment(normalized, 'providerState'),
+      byTimingStatus: segment(normalized, 'timingStatus'),
+      byMtfStatus: segment(normalized, 'mtfStatus'),
+      byFamiliarityStatus: segment(normalized, 'familiarityStatus'),
+      byLifecycleState: segment(normalized, 'lifecycleState'),
+      byDisagreementStatus: segment(normalized, 'disagreementStatus'),
+      byRobustnessStatus: segment(normalized, 'robustnessStatus'),
+      byDriftStatus: segment(normalized, 'driftStatus')
     }
   };
 }
+

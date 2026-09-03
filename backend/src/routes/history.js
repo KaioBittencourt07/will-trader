@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { summarize } from '../../../learning/src/statistics.js';
 import { buildConfidenceCalibration, buildLearningReadiness } from '../../../learning/src/calibration.js';
-import { resolveProspectiveOutcome } from '../../../learning/src/outcomeResolver.js';
+import { prospectiveOutcomeDue, resolveProspectiveOutcome } from '../../../learning/src/outcomeResolver.js';
 import { getLocalRelaySnapshot, getLocalRelayStatus, getMarketDataEngine } from './market.js';
 
 const router = Router();
@@ -39,6 +39,10 @@ router.post('/history/:id/outcome', (req, res) => {
     if (!current) throw new Error('Sinal não encontrado.');
     if (current.execution?.status !== 'CONFIRMED') {
       throw new Error('Confirme a entrada realmente executada antes de registrar WIN ou LOSS.');
+    }
+    if (current.metadata?.prospective?.experimentId) {
+      const temporalGate = prospectiveOutcomeDue(current);
+      if (!temporalGate.allowed) throw new Error(`Resultado prospectivo só pode ser registrado após a expiração (${temporalGate.dueAt ?? 'indisponível'}).`);
     }
     const record = storeFor(req).settle(req.params.id, outcome, { ...metadata, exitPrice, recordedBy: 'operator' });
     return res.json({ ok: true, record, learning: learningSnapshot(storeFor(req)) });
@@ -109,3 +113,4 @@ router.get('/metrics', (req, res) => {
 });
 
 export default router;
+

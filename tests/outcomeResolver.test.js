@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveProspectiveOutcome } from '../learning/src/outcomeResolver.js';
+import { prospectiveOutcomeDue, resolveProspectiveOutcome } from '../learning/src/outcomeResolver.js';
 
 const record = { status: 'OPEN', direction: 'BUY', entryPrice: 100, signalTimestamp: '2026-09-02T12:00:00.000Z', metadata: { context: { expirySeconds: 60 } } };
 
@@ -12,7 +12,12 @@ test('paper resolver does not settle before expiry', () => {
 test('paper resolver settles BUY, SELL and flat price prospectively', () => {
   assert.equal(resolveProspectiveOutcome(record, { price: 101 }, Date.parse('2026-09-02T12:01:00.000Z')).outcome, 'WIN');
   assert.equal(resolveProspectiveOutcome({ ...record, direction: 'SELL' }, { price: 101 }, Date.parse('2026-09-02T12:01:00.000Z')).outcome, 'LOSS');
-  assert.equal(resolveProspectiveOutcome(record, { price: 100 }, Date.parse('2026-09-02T12:01:00.000Z')).outcome, 'VOID');
+  assert.equal(resolveProspectiveOutcome(record, { price: 100 }, Date.parse('2026-09-02T12:01:00.000Z')).outcome, 'TIE');
+});
+
+test('prospective temporal gate prevents manual settlement before expiry', () => {
+  assert.equal(prospectiveOutcomeDue(record, Date.parse('2026-09-02T12:00:59.000Z')).allowed, false);
+  assert.equal(prospectiveOutcomeDue(record, Date.parse('2026-09-02T12:01:00.000Z')).allowed, true);
 });
 
 test('resolver anchors expiry and entry price to the executed trade when available', () => {
@@ -36,3 +41,4 @@ test('resolver records DATA_INVALID instead of inventing a settlement from bad d
   assert.equal(invalid.outcome, 'DATA_INVALID');
   assert.equal(invalid.reason, 'RESOLUTION_DATA_STALE');
 });
+

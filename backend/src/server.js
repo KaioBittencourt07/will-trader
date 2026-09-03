@@ -11,6 +11,7 @@ import researchRouter from './routes/research.js';
 import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
 import { createHistoryStore } from '../../learning/src/historyStore.js';
+import { createProspectiveManifest } from '../../learning/src/prospectiveEvidence.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import path from 'node:path';
@@ -19,6 +20,10 @@ import { fileURLToPath } from 'node:url';
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+// Evidence-only batch metadata. It cannot place an order or alter a decision.
+app.locals.prospectiveManifest = createProspectiveManifest({
+  startTime: process.env.WILL_PROSPECTIVE_START_TIME || '2026-09-03T02:15:00.000Z'
+});
 app.locals.historyStore = createHistoryStore({
   filePath: process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json')
 });
@@ -46,7 +51,12 @@ app.use((req, res, next) => {
   const json = res.json.bind(res);
   res.json = (body) => {
     if (req.path === '/api/analyze' && body?.decision && body?.data && body?.audit) {
-      const record = app.locals.historyStore.recordDecision({ decision: body.decision, data: body.data, audit: body.audit, context: req.body?.context ?? {} });
+      const record = app.locals.historyStore.recordDecision({
+        decision: body.decision,
+        data: body.data,
+        audit: body.audit,
+        context: { ...(req.body?.context ?? {}), prospectiveManifest: app.locals.prospectiveManifest }
+      });
       body = { ...body, history: { id: record.id, status: record.status } };
     }
     return json(body);
@@ -76,3 +86,4 @@ app.use('/api', researchRouter);
 app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
 });
+

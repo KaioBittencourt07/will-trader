@@ -6,6 +6,7 @@ import { assessSignalLifecycle } from '../../engine/src/signalLifecycle.js';
 import { assessDisagreement } from '../../engine/src/disagreement.js';
 import { assessDecisionRobustness } from '../../engine/src/robustness.js';
 import { runFeatureAblation } from './featureAblation.js';
+import { createProspectiveEvidenceRecord } from './prospectiveEvidence.js';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
 
@@ -65,6 +66,11 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     fs.renameSync(temporary, filePath);
   }
   function recordDecision({ decision = {}, data = {}, audit = {}, context = {} } = {}) {
+    const decisionId = context.decisionId ?? decision.decisionId ?? audit.id ?? null;
+    if (decisionId) {
+      const existing = records.find((item) => item.decisionId === decisionId);
+      if (existing) return { ...structuredClone(existing), idempotent: true };
+    }
     const stateFingerprint = createStateFingerprint({ data, decision, context });
     const familiarityEvidence = assessFamiliarity(stateFingerprint, records);
     const lifecycle = assessSignalLifecycle({ snapshot: data, decision, now: Date.now() });
@@ -73,8 +79,18 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     const ablation = runFeatureAblation({ snapshot: data, decision });
     const direction = decision.direction ?? 'WAIT';
     const executable = (direction === 'BUY' || direction === 'SELL') && !decision.blocked && decision.executable !== false;
+    const recordId = id();
+    const prospective = createProspectiveEvidenceRecord({
+      decision,
+      data,
+      context,
+      audit,
+      manifest: context.prospectiveManifest,
+      decisionId
+    });
     const record = {
-      id: id(),
+      id: recordId,
+      decisionId,
       createdAt: now(),
       strategyVersion: version(context.strategyVersion ?? decision.strategyVersion ?? process.env.WILL_STRATEGY_VERSION, 'will-core-v1'),
       modelVersion: version(context.modelVersion ?? decision.modelVersion, 'deterministic-v1'),
@@ -92,6 +108,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       setupDirection: decision.setupDirection ?? null,
       setupQuality: decision.setupQuality ?? null,
       featureVersion: decision.featureVersion ?? data.featureVersion ?? 'legacy-unversioned',
+      regimeVersion: decision.regimeVersion ?? null,
       timingStatus: decision.timingStatus ?? null,
       entryQuality: Number.isFinite(Number(decision.entryQuality)) ? Number(decision.entryQuality) : null,
       timingVersion: decision.timingVersion ?? null,
@@ -120,6 +137,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
         ,disagreement
         ,robustness
         ,ablation
+        ,prospective
       }
     };
     records.push(record);
@@ -133,7 +151,21 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     if (records[index].status === 'CLOSED' && records[index].outcome === outcome) return { ...structuredClone(records[index]), idempotent: true };
     if (records[index].status !== 'OPEN') throw new Error('Somente sinais abertos podem receber outcome.');
     if (records[index].outcome) throw new Error('Outcome já registrado.');
-    const settled = { ...records[index], status: 'CLOSED', outcome, exitPrice: Number(metadata.exitPrice) || null, settledAt: now(), outcomeMetadata: metadata };
+    const settled = {
+      ...records[index],
+      status: 'CLOSED',
+      outcome,
+      exitPrice: Number(metadata.exitPrice) || null,
+      settledAt: now(),
+      outcomeMetadata: metadata,
+      metadata: {
+        ...records[index].metadata,
+        prospective: {
+          ...records[index].metadata?.prospective,
+          outcome: { status: outcome, referenceTimestamp: metadata.referenceTimestamp ?? null, payoutAndCosts: 'NOT_AVAILABLE' }
+        }
+      }
+    };
     records[index] = { ...settled, errorAttribution: attributeOutcome(settled) };
     persist();
     return structuredClone(records[index]);
@@ -155,6 +187,18 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
         actualEntryPrice: entryPrice,
         confirmedAt: now(),
         notes: typeof notes === 'string' ? notes.slice(0, 500) : null
+      },
+      metadata: {
+        ...records[index].metadata,
+        prospective: {
+          ...records[index].metadata?.prospective,
+          executionQuality: {
+            ...(records[index].metadata?.prospective?.executionQuality ?? {}),
+            actualClickTime: new Date(clickMs).toISOString(),
+            actualEntryPrice: entryPrice,
+            executionDelayMs: Number.isFinite(Date.parse(records[index].clickTime ?? '')) ? clickMs - Date.parse(records[index].clickTime) : null
+          }
+        }
       }
     };
     persist();
@@ -162,3 +206,4 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
   }
   return { recordDecision, settle, confirmExecution, list: () => records.map((record) => structuredClone(record)) };
 }
+

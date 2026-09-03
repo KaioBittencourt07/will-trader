@@ -126,3 +126,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - The PAPER runner may hydrate `completedCycleIds` from durable storage. Without durable storage, restart safety is not guaranteed.
 - PAPER/MANUAL remains mandatory. No Avalon auto-click, threshold change, calibration or promotion is authorized.
 
+## Fase 20 — prospective PAPER evidence foundation
+- The Champion is frozen in `docs/WILL_PROSPECTIVE_PAPER_MANIFEST.json`; no version, threshold, ranking or scanner contract can silently enter the batch.
+- New decisions are recorded prospectively and auditably, including BUY, SELL, WAIT and rejected candidates. Outcomes remain pending until a temporally valid post-expiry resolution.
+- DATA_INVALID is never rewritten as WIN or LOSS. Payout and costs begin as NOT_AVAILABLE; no EV, edge or assertiveness claim is permitted.
+- PAPER/MANUAL remains mandatory. The batch forbids Avalon auto-click, real orders, auto-tuning, auto-promotion, Meta-Model training and premature probability calibration.
+

@@ -5,6 +5,14 @@ export function expiryAt(record) {
   return started + seconds * 1_000;
 }
 
+export function prospectiveOutcomeDue(record, now = Date.now()) {
+  const dueAt = expiryAt(record);
+  return {
+    dueAt: Number.isFinite(dueAt) ? new Date(dueAt).toISOString() : null,
+    allowed: Number.isFinite(dueAt) && now >= dueAt
+  };
+}
+
 /** Resolves only PAPER outcomes against a documented prospective reference price. */
 export function resolveProspectiveOutcome(record, { price, timestamp = new Date().toISOString(), valid = true, status = 'OK' } = {}, now = Date.now()) {
   if (record?.status !== 'OPEN') throw new Error('Somente sinais PAPER abertos podem ser resolvidos.');
@@ -21,6 +29,7 @@ export function resolveProspectiveOutcome(record, { price, timestamp = new Date(
     return { resolved: true, outcome: 'DATA_INVALID', reason: valid === false || status !== 'OK' ? `RESOLUTION_DATA_${status || 'INVALID'}` : 'INVALID_RESOLUTION_PRICE', dueAt: new Date(dueAt).toISOString(), referenceTimestamp: new Date(referenceMs).toISOString() };
   }
   const change = exit - entry;
-  const outcome = change === 0 ? 'VOID' : ((record.direction === 'BUY' && change > 0) || (record.direction === 'SELL' && change < 0) ? 'WIN' : 'LOSS');
+  const outcome = change === 0 ? 'TIE' : ((record.direction === 'BUY' && change > 0) || (record.direction === 'SELL' && change < 0) ? 'WIN' : 'LOSS');
   return { resolved: true, outcome, exitPrice: exit, entryPrice: entry, referenceTimestamp: new Date(referenceMs).toISOString(), dueAt: new Date(dueAt).toISOString() };
 }
+

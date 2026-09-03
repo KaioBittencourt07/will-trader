@@ -55,3 +55,25 @@ test('segments isolate strategy versions and expose data quality, session and bl
   assert.equal(metrics.dataQuality.missingBars.total, 8);
   assert.equal(metrics.latency.decisionMs.n, 2);
 });
+
+test('segments retain prospective shadow dimensions without interpreting them as probability', () => {
+  const metrics = summarize([{
+    direction: 'WAIT', status: 'SKIPPED', metadata: {
+      dataQuality: { status: 'OK', source: 'feed' },
+      prospective: {
+        providerState: 'HEALTHY',
+        timing: { status: 'WAIT_TIMING' },
+        mtf: { status: 'SHADOW' },
+        familiarity: { status: 'UNFAMILIAR' },
+        lifecycle: { state: 'FORMING' },
+        disagreement: { status: 'MIXED' },
+        robustness: { status: 'SENSITIVE' },
+        drift: { status: 'WATCH' }
+      }
+    }
+  }]);
+  assert.equal(metrics.segments.byTimingStatus[0].key, 'WAIT_TIMING');
+  assert.equal(metrics.segments.byDriftStatus[0].key, 'WATCH');
+  assert.equal(metrics.evidence.winRate, null);
+});
+
