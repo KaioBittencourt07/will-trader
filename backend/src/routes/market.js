@@ -94,11 +94,14 @@ router.get('/market', async (req, res) => {
   }
 });
 
-router.get('/market/status', (_req, res) => {
+router.get('/market/status', (req, res) => {
   return res.json({
     ok: true,
     direct: getMarketDataEngine().getMetrics(),
-    relay: getLocalRelayStatus()
+    relay: getLocalRelayStatus(),
+    webSocketShadow: req.app.locals.twelveWebSocketFeed?.health?.() ?? {
+      mode: 'SHADOW_OBSERVABILITY', state: 'UNAVAILABLE', enabled: false, decisionImpact: 'NONE'
+    }
   });
 });
 

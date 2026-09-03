@@ -178,3 +178,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - O ciclo PAPER diagnostic -> opportunities usa a mesma chave de 50 candles: em um ciclo saudável de um ativo partindo de cache vazio, o diagnóstico faz 2 requests HTTP (~2 créditos estimados) e opportunities reutiliza o snapshot com 1 cache hit, 0 requests externos e 0 segunda espera do limiter.
 - Scanner e pipeline decisório não consultam Twelve Data diretamente; recebem os snapshots já contabilizados. Telemetria é somente saída e nunca cria ou altera preço, timestamp, decisão, WAIT, outcome ou execução.
 - 429, stale, missing e provider errors continuam fail-closed. Champion, versões, thresholds, freshness, timing, scanner, ranking, timeouts e contratos decisórios permanecem congelados; PAPER/MANUAL continua obrigatório.
+
+## Fase 20C.8 — Twelve WebSocket Market Feed Foundation
+- Uma única conexão Twelve Data WebSocket por processo pode observar uma lista controlada de símbolos, com subscribe consolidado, heartbeat, reconexão com backoff limitado e shutdown explícito.
+- O feed é desativado por padrão e exclusivamente `SHADOW_OBSERVABILITY`. Ticks não substituem candles REST, não constroem OHLC, não evitam requests e não entram em BUY/SELL/WAIT.
+- A telemetria aditiva mede mensagens, símbolos ativos, reconexões, idade do último tick, gaps, duplicatas, disponibilidade e potencial observacional de redução REST; nenhum segredo é exposto.
+- Champion, estratégia, thresholds, timing, freshness decisório, scanner, ranking e contratos decisórios permanecem congelados. PAPER/MANUAL continua obrigatório; nenhum batch oficial ou merge foi autorizado.

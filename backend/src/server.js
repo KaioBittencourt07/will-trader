@@ -17,6 +17,7 @@ import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonitorTimeout.js';
 import { runPaperMonitorCycle } from './paperMonitorCycle.js';
+import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,6 +29,11 @@ const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
 });
 
 const app = express();
+app.locals.twelveWebSocketFeed = createTwelveWebSocketFeed({
+  enabled: process.env.WILL_TWELVE_WS_ENABLED === 'true',
+  apiKey: process.env.TWELVEDATA_API_KEY,
+  symbols: process.env.WILL_TWELVE_WS_SYMBOLS || process.env.DEFAULT_ASSET || 'EUR/USD'
+});
 // Evidence-only batch metadata. It cannot place an order or alter a decision.
 app.locals.prospectiveManifest = createProspectiveManifest({
   startTime: process.env.WILL_PROSPECTIVE_START_TIME || '2026-09-03T02:15:00.000Z'
@@ -97,6 +103,11 @@ app.use('/api', researchRouter);
 
 app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
+  app.locals.twelveWebSocketFeed.start();
   app.locals.paperMonitor.start();
 });
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => app.locals.twelveWebSocketFeed.stop());
+}
 
