@@ -10,7 +10,10 @@ export function attributeOutcome(record = {}) {
   if (timingReasons.includes('LATE_ENTRY')) { causes.push(ERROR_CAUSES.LATE_ENTRY); evidence.push('PERSISTED_LATE_ENTRY'); }
   if (timingReasons.includes('VOLATILITY_SPIKE')) { causes.push(ERROR_CAUSES.VOLATILITY_SPIKE); evidence.push('PERSISTED_VOLATILITY_SPIKE'); }
   if (timingReasons.includes('PRICE_EXTENDED') || timingReasons.includes('SIGNAL_DETERIORATION')) { causes.push(ERROR_CAUSES.TIMING_ERROR); evidence.push('PERSISTED_TIMING_DETERIORATION'); }
-  if (record.metadata?.featureSnapshot?.breakout && record.outcome === 'LOSS') { causes.push(ERROR_CAUSES.FALSE_BREAKOUT); evidence.push('PERSISTED_BREAKOUT_AND_LOSS'); }
+  if (record.outcomeMetadata?.directionValidatedOpposite === true) { causes.push(ERROR_CAUSES.DIRECTION_ERROR); evidence.push('SETTLEMENT_VALIDATED_OPPOSITE_DIRECTION'); }
+  if (record.metadata?.featureSnapshot?.falseBreakout === true || record.outcomeMetadata?.falseBreakoutConfirmed === true) { causes.push(ERROR_CAUSES.FALSE_BREAKOUT); evidence.push('PERSISTED_FALSE_BREAKOUT'); }
+  if (record.regimeType === 'TRANSITION' || record.transitionRisk === 'HIGH') { causes.push(ERROR_CAUSES.REGIME_TRANSITION); evidence.push('PERSISTED_REGIME_TRANSITION'); }
+  if (record.metadata?.broker?.providerDivergenceConfirmed === true) { causes.push(ERROR_CAUSES.PROVIDER_DIVERGENCE); evidence.push('PERSISTED_PROVIDER_DIVERGENCE'); }
   if (!causes.length) causes.push(ERROR_CAUSES.UNKNOWN);
   return { attributionVersion: ATTRIBUTION_VERSION, primaryCause: causes[0], contributingCauses: causes.slice(1), evidence };
 }

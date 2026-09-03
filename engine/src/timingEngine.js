@@ -12,7 +12,7 @@ export function assessEntryTiming({ snapshot = {}, signalTime = null, validFrom 
   const from = Date.parse(validFrom ?? '');
   if (snapshot.valid === false || snapshot.status === 'STALE' || snapshot.featureStatus === 'INSUFFICIENT_BARS') return { timingStatus: TIMING_STATUS.INVALID, entryQuality: 0, timingReasons: ['TIMING_UNKNOWN'], timingVersion: TIMING_VERSION, validFrom, validUntil, windowRemainingMs: null };
   if (Number.isFinite(until) && current > until) return { timingStatus: TIMING_STATUS.EXPIRED, entryQuality: 0, timingReasons: ['LATE_ENTRY'], timingVersion: TIMING_VERSION, validFrom, validUntil, windowRemainingMs: 0 };
-  if (Number.isFinite(from) && current < from) return { timingStatus: TIMING_STATUS.WAIT, entryQuality: 0, timingReasons: ['LATE_ENTRY'], timingVersion: TIMING_VERSION, validFrom, validUntil, windowRemainingMs: Number.isFinite(until) ? until - current : null };
+  if (Number.isFinite(from) && current < from) return { timingStatus: TIMING_STATUS.WAIT, entryQuality: 0, timingReasons: ['TOO_EARLY'], timingVersion: TIMING_VERSION, validFrom, validUntil, windowRemainingMs: Number.isFinite(until) ? until - current : null };
   if (n(snapshot.maDistanceAtr) !== null && Math.abs(n(snapshot.maDistanceAtr)) >= 2.5) reasons.push('PRICE_EXTENDED');
   if (n(snapshot.rangeExpansion) !== null && n(snapshot.rangeExpansion) >= 1.8) reasons.push('VOLATILITY_EXPANSION');
   if (n(snapshot.exhaustion) !== null && n(snapshot.exhaustion) >= 1.8) reasons.push('VOLATILITY_SPIKE');

@@ -18,3 +18,12 @@ test('timing respects retest, stale evidence and expiry deterministically', () =
   assert.equal(expired.timingStatus, TIMING_STATUS.EXPIRED);
   assert.equal(invalid.timingStatus, TIMING_STATUS.INVALID);
 });
+
+test('timing distinguishes early, valid and expired entry windows semantically', () => {
+  const early = assessEntryTiming({ snapshot: { valid: true }, validFrom: '1970-01-01T00:00:00.100Z', validUntil: '1970-01-01T00:00:00.200Z', now: 50 });
+  const valid = assessEntryTiming({ snapshot: { valid: true }, validFrom: '1970-01-01T00:00:00.100Z', validUntil: '1970-01-01T00:00:00.200Z', now: 150 });
+  const expired = assessEntryTiming({ snapshot: { valid: true }, validUntil: '1970-01-01T00:00:00.100Z', now: 150 });
+  assert.deepEqual(early.timingReasons, ['TOO_EARLY']);
+  assert.equal(valid.timingStatus, TIMING_STATUS.READY);
+  assert.deepEqual(expired.timingReasons, ['LATE_ENTRY']);
+});

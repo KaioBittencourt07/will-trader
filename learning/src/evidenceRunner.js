@@ -1,6 +1,8 @@
 /** PAPER-only cycle coordinator. Disabled by default and idempotent by cycle id. */
-export function createEvidenceRunner({ enabled = false, scan, now = () => new Date().toISOString() } = {}) {
-  const completed = new Set();
+export function createEvidenceRunner({ enabled = false, scan, now = () => new Date().toISOString(), completedCycleIds = [] } = {}) {
+  // Caller may hydrate persisted ids after restart. Without that durable source,
+  // restart idempotency is intentionally not claimed.
+  const completed = new Set(completedCycleIds);
   let paused = null;
   async function run({ cycleId, providerHealth = 'HEALTHY', storageHealthy = true, catalogReady = true } = {}) {
     if (!enabled) return { ran: false, status: 'DISABLED', mode: 'PAPER' };
