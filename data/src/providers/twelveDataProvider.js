@@ -141,7 +141,14 @@ export function deriveTechnical(values) {
   };
 }
 
-function snapshotFromApi(asset, timeframe, quote, series, maxAgeMs) {
+function parseQuoteTimestamp(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return new Date(numeric * 1_000).toISOString();
+  const parsed = Date.parse(value ?? '');
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function snapshotFromApi(asset, timeframe, quote, series, maxAgeMs, receivedAtMs) {
   if (quote?.status === 'error') throw new Error(`Twelve Data quote: ${quote.message || 'erro'}`);
   if (series?.status === 'error') throw new Error(`Twelve Data time_series: ${series.message || 'erro'}`);
   const price = num(quote?.close ?? quote?.price);
@@ -151,13 +158,38 @@ function snapshotFromApi(asset, timeframe, quote, series, maxAgeMs) {
     ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(candleDate) ? candleDate : `${candleDate.replace(' ', 'T')}Z`).toISOString()
     : null;
   const rawQuoteTime = quote.last_quote_at ?? quote.timestamp;
-  const quoteTimestamp = rawQuoteTime ? new Date(Number(rawQuoteTime) * 1000).toISOString() : null;
+  const quoteTimestamp = parseQuoteTimestamp(rawQuoteTime);
   if (!candleTimestamp || !quoteTimestamp) throw new Error('Twelve Data não retornou timestamp válido.');
+  const quoteAgeMs = receivedAtMs - Date.parse(quoteTimestamp);
+  const candleAgeMs = receivedAtMs - Date.parse(candleTimestamp);
   return normalizeMarketSnapshot({
     asset, timeframe, price, timestamp: quoteTimestamp, candleTimestamp, quoteTimestamp,
     candles: series.values, source: 'twelvedata', marketOpen: Boolean(quote.is_market_open),
-    lastQuoteAt: quote.last_quote_at, ...deriveTechnical(series.values)
-  }, { maxAgeMs });
+    lastQuoteAt: quote.last_quote_at,
+    providerReceivedAt: new Date(receivedAtMs).toISOString(),
+    quoteAgeMs,
+    latestCandleTimestamp: candleTimestamp,
+    latestClosedCandleTimestamp: null,
+    candleAgeMs,
+    candleCompleteness: 'UNVERIFIED_BY_PROVIDER_PAYLOAD',
+    cacheAgeMs: 0,
+    freshnessBasis: 'REST_QUOTE_TIMESTAMP',
+    freshnessPolicyVersion: 'rest-quote-freshness-v1',
+    freshnessMaxAgeMs: maxAgeMs,
+    timestampOrigins: {
+      quoteTimestamp: 'twelvedata.quote.last_quote_at_or_timestamp',
+      candleTimestamp: 'twelvedata.time_series.values[0].datetime',
+      providerReceivedAt: 'will.local_clock_after_response_parse'
+    },
+    providerTiming: {
+      evaluatedAt: new Date(receivedAtMs).toISOString(),
+      quoteAgeAtReceiptMs: quoteAgeMs,
+      candleAgeAtReceiptMs: candleAgeMs,
+      providerLatencyMs: null,
+      providerLatencyStatus: 'NOT_MEASURABLE_FROM_REST_PAYLOAD'
+    },
+    ...deriveTechnical(series.values)
+  }, { maxAgeMs, now: receivedAtMs });
 }
 
 function entryFor(payload, asset) {
@@ -168,7 +200,8 @@ export function createTwelveDataProvider({
   apiKey = process.env.TWELVEDATA_API_KEY,
   fetchImpl = fetch,
   maxAgeMs = Number(process.env.MARKET_MAX_AGE_MS || 30_000),
-  baseUrl = BASE_URL
+  baseUrl = BASE_URL,
+  now = () => Date.now()
 } = {}) {
   if (!apiKey) throw new Error('TWELVEDATA_API_KEY não configurada.');
 
@@ -185,7 +218,7 @@ export function createTwelveDataProvider({
       if (!seriesResponse.ok) throw httpError('time_series', seriesResponse);
 
       const [quote, series] = await Promise.all([quoteResponse.json(), seriesResponse.json()]);
-      return snapshotFromApi(asset, timeframe, quote, series, maxAgeMs);
+      return snapshotFromApi(asset, timeframe, quote, series, maxAgeMs, now());
     },
 
     async getSnapshots(assets, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
@@ -207,7 +240,7 @@ export function createTwelveDataProvider({
       const [quotes, seriesBySymbol] = await Promise.all([quoteResponse.json(), seriesResponse.json()]);
       return symbols.map((asset) => {
         try {
-          return { asset, snapshot: snapshotFromApi(asset, timeframe, entryFor(quotes, asset), entryFor(seriesBySymbol, asset), maxAgeMs), error: null };
+          return { asset, snapshot: snapshotFromApi(asset, timeframe, entryFor(quotes, asset), entryFor(seriesBySymbol, asset), maxAgeMs, now()), error: null };
         } catch (error) {
           return { asset, snapshot: null, error: error.message };
         }

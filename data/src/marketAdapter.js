@@ -71,3 +71,27 @@ export function normalizeMarketSnapshot(
     ageMs
   };
 }
+
+// Re-evaluates only the explicitly versioned freshness contract. It never
+// substitutes cache time, receive time, candle time or WS time for the REST
+// quote timestamp that governed the original gate.
+export function refreshMarketSnapshotFreshness(snapshot, { now = Date.now(), cacheStoredAt = null } = {}) {
+  if (!snapshot || typeof snapshot !== 'object') return snapshot;
+  const cacheAgeMs = Number.isFinite(Number(cacheStoredAt)) ? now - Number(cacheStoredAt) : null;
+  if (snapshot.freshnessPolicyVersion !== 'rest-quote-freshness-v1') {
+    return snapshot;
+  }
+  return {
+    ...normalizeMarketSnapshot(snapshot, {
+      maxAgeMs: Number(snapshot.freshnessMaxAgeMs),
+      now
+    }),
+    cacheAgeMs,
+    quoteAgeMs: now - Date.parse(snapshot.quoteTimestamp),
+    candleAgeMs: now - Date.parse(snapshot.candleTimestamp),
+    providerTiming: {
+      ...snapshot.providerTiming,
+      evaluatedAt: new Date(now).toISOString()
+    }
+  };
+}

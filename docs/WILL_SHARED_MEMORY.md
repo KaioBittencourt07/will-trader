@@ -190,3 +190,10 @@ When Codex starts a new substantial task, treat the following as the default ins
 - APPROVED exige evidência real de conexão, aceite de subscrição e tick. Ausência de credencial ou bloqueio do plano/provider permanece BLOCKED, sem fallback inventado.
 - Telemetria sanitizada inclui conexões, subscrições solicitadas/aceitas/rejeitadas, primeiro/último tick, freshness, gaps, duplicatas, reconnect/backoff, disconnect e uptime.
 - Ticks continuam exclusivamente SHADOW: zero candles OHLC, zero requests REST evitados e zero impacto em Champion, estratégia, thresholds ou BUY/SELL/WAIT.
+
+## Fase 20C.6.1 — Freshness / Provider Timing Investigation
+- O gate permanece `rest-quote-freshness-v1`: idade é relógio local menos timestamp original da quote REST; threshold de 30s não mudou.
+- Quote, candle, receive, cache, latência HTTP e tick WS agora têm telemetria separada. Candle fechado e latência exclusiva do provider ficam explicitamente não verificáveis quando o payload não prova a semântica.
+- Cache hits reavaliam freshness pelo quote timestamp atual; `storedAt` nunca rejuvenesce market data. O caso determinístico de 30,5s permanece `STALE_MARKET_DATA`.
+- O limiter de 60s preserva a fase do primeiro miss/process start; não arredonda para `:30`. Diagnostic -> opportunities reutiliza a mesma chave de 50 candles sem segunda espera.
+- Resultado para 20C.6: `BLOCKED/EXTERNAL PROVIDER SEMANTICS`. WS continua SHADOW e nenhum batch, Champion, threshold ou decisão foi alterado.

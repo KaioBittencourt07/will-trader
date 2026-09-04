@@ -3,6 +3,7 @@ function keyFor(asset, timeframe, outputsize) {
 }
 
 import { addProviderEfficiency } from './providerEfficiency.js';
+import { refreshMarketSnapshotFreshness } from './marketAdapter.js';
 
 export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
   if (!provider || typeof provider.getSnapshot !== 'function') throw new Error('provider.getSnapshot é obrigatório.');
@@ -115,7 +116,7 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     if (cached && now() - cached.storedAt < cacheTtlMs) {
       metrics.cacheHits += 1;
       addProviderEfficiency(telemetry, { cacheHits: 1 });
-      return cached.snapshot;
+      return refreshMarketSnapshotFreshness(cached.snapshot, { now: now(), cacheStoredAt: cached.storedAt });
     }
     if (inFlight.has(key)) {
       metrics.deduplicated += 1;
@@ -151,7 +152,7 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
       if (cached && now() - cached.storedAt < cacheTtlMs) {
         metrics.cacheHits += 1;
         addProviderEfficiency(telemetry, { cacheHits: 1 });
-        fresh.push({ asset, snapshot: cached.snapshot, error: null });
+        fresh.push({ asset, snapshot: refreshMarketSnapshotFreshness(cached.snapshot, { now: now(), cacheStoredAt: cached.storedAt }), error: null });
       } else missing.push(asset);
     }
     if (!missing.length) return uniqueAssets.map((asset) => fresh.find((entry) => entry.asset === asset));

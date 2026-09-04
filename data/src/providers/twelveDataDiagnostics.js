@@ -1,5 +1,23 @@
 export const TWELVE_DATA_DIAGNOSTIC_VERSION = 'twelve-data-diagnostic-v1';
 
+function freshnessOf(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  return {
+    freshnessBasis: snapshot.freshnessBasis ?? null,
+    freshnessPolicyVersion: snapshot.freshnessPolicyVersion ?? null,
+    quoteTimestamp: snapshot.quoteTimestamp ?? null,
+    quoteAgeMs: Number.isFinite(Number(snapshot.quoteAgeMs ?? snapshot.ageMs)) ? Number(snapshot.quoteAgeMs ?? snapshot.ageMs) : null,
+    latestCandleTimestamp: snapshot.latestCandleTimestamp ?? snapshot.candleTimestamp ?? null,
+    latestClosedCandleTimestamp: snapshot.latestClosedCandleTimestamp ?? null,
+    candleAgeMs: Number.isFinite(Number(snapshot.candleAgeMs)) ? Number(snapshot.candleAgeMs) : null,
+    candleCompleteness: snapshot.candleCompleteness ?? null,
+    providerReceivedAt: snapshot.providerReceivedAt ?? null,
+    providerLatencyMs: snapshot.providerTiming?.providerLatencyMs ?? null,
+    cacheAgeMs: Number.isFinite(Number(snapshot.cacheAgeMs)) ? Number(snapshot.cacheAgeMs) : null,
+    source: snapshot.source ?? null
+  };
+}
+
 function messageOf(error) {
   return String(error?.message ?? error ?? 'unknown error');
 }
@@ -30,9 +48,9 @@ export async function diagnoseTwelveData({ engine, asset = 'EUR/USD', timeframe 
       ? await engine.getSnapshot(asset, timeframe, outputsize, { telemetry })
       : await engine.getSnapshot(asset, timeframe, outputsize);
     if (!snapshot?.valid) {
-      return { ok: false, status: 'STALE_DATA', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: snapshot?.status ?? 'SNAPSHOT_INVALID' };
+      return { ok: false, status: 'STALE_DATA', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: snapshot?.status ?? 'SNAPSHOT_INVALID', freshness: freshnessOf(snapshot) };
     }
-    return { ok: true, status: 'HEALTHY', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, asset: String(asset).toUpperCase(), timeframe };
+    return { ok: true, status: 'HEALTHY', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, asset: String(asset).toUpperCase(), timeframe, freshness: freshnessOf(snapshot) };
   } catch (error) {
     return { ok: false, status: classifyTwelveDataFailure(error), checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: messageOf(error).slice(0, 500) };
   }

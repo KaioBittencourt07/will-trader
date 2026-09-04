@@ -29,7 +29,10 @@ test('healthy observation reports two external HTTP requests once, then an equiv
   const first = await engine.getSnapshot('EUR/USD', '1min', 50, { telemetry: miss });
   const second = await engine.getSnapshot('EUR/USD', '1min', 50, { telemetry: hit });
 
-  assert.deepEqual(second, first);
+  assert.equal(second.price, first.price);
+  assert.equal(second.timestamp, first.timestamp);
+  assert.equal(second.valid, first.valid);
+  assert.ok(second.ageMs >= first.ageMs);
   assert.deepEqual({ requests: miss.externalRequests, misses: miss.cacheMisses, credits: miss.creditsEstimated }, { requests: 2, misses: 1, credits: 2 });
   assert.deepEqual({ requests: hit.externalRequests, hits: hit.cacheHits, credits: hit.creditsEstimated }, { requests: 0, hits: 1, credits: 0 });
   assert.equal(hit.externalLatencyMs, 0);
