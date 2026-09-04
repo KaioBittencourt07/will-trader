@@ -22,3 +22,22 @@ test('diagnostic returns HEALTHY only for a valid snapshot and never invents one
   assert.equal(blocked.status, 'NETWORK_BLOCKED');
 });
 
+test('diagnostic composes the already fetched snapshot once and fails closed on REST error', async () => {
+  let fetches = 0;
+  let compositions = 0;
+  const healthy = await diagnoseTwelveData({
+    engine: { getSnapshot: async () => { fetches += 1; return { valid: true }; } },
+    composeShadow: (snapshot) => { compositions += 1; return { compositionState: snapshot ? 'COMPOSABLE' : 'UNKNOWN' }; }
+  });
+  assert.equal(fetches, 1);
+  assert.equal(compositions, 1);
+  assert.equal(healthy.compositionShadow.compositionState, 'COMPOSABLE');
+
+  const failed = await diagnoseTwelveData({
+    engine: { getSnapshot: async () => { throw Object.assign(new Error('rate limit'), { status: 429 }); } },
+    composeShadow: (snapshot) => ({ compositionState: snapshot ? 'COMPOSABLE' : 'UNKNOWN' })
+  });
+  assert.equal(failed.status, 'RATE_LIMITED');
+  assert.equal(failed.compositionShadow.compositionState, 'UNKNOWN');
+});
+

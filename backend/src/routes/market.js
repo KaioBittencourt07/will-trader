@@ -4,6 +4,7 @@ import { createMarketDataEngine } from '../../../data/src/marketDataEngine.js';
 import { buildMultiTimeframeContext } from '../../../context/src/multiTimeframe.js';
 import { classifyTwelveDataFailure, diagnoseTwelveData, TWELVE_DATA_DIAGNOSTIC_VERSION } from '../../../data/src/providers/twelveDataDiagnostics.js';
 import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
+import { composeWsFreshnessRestOhlc } from '../../../data/src/wsRestComposition.js';
 
 const router = Router();
 let marketDataEngine;
@@ -124,7 +125,18 @@ router.get('/market/diagnostic', async (req, res) => {
     };
     return res.status(503).json({ ok: false, diagnostic, providerEfficiency: providerEfficiencySnapshot(telemetry) });
   }
-  const diagnostic = await diagnoseTwelveData({ engine, asset, timeframe, telemetry });
+  const diagnostic = await diagnoseTwelveData({
+    engine,
+    asset,
+    timeframe,
+    telemetry,
+    composeShadow: (snapshot) => composeWsFreshnessRestOhlc({
+      restSnapshot: snapshot,
+      wsHealth: req.app.locals.twelveWebSocketFeed?.health?.(),
+      canonicalSymbol: asset,
+      timeframe
+    })
+  });
   return res.status(diagnostic.ok ? 200 : 503).json({ ok: diagnostic.ok, diagnostic, providerEfficiency: providerEfficiencySnapshot(telemetry) });
 });
 

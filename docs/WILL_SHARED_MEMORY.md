@@ -1,5 +1,9 @@
 # WILL TRADER — Shared Memory Protocol
 
+## Phase 20C.6.2
+- `ws-freshness-rest-ohlc-composition-v1` is an isolated SHADOW-only composer: WS is freshness evidence while REST remains the source of OHLC/history/features and all decision authority.
+- `COMPOSABLE` never authorizes a trade; stale REST remains `STALE_MARKET_DATA`. Provenance, timestamps, age, completeness and price divergence are explicit and fail closed.
+
 ## Purpose
 Keep ChatGPT and Codex aligned through the repository instead of relying on ephemeral chat memory.
 

@@ -238,6 +238,7 @@ export function createTwelveWebSocketFeed({
       const ageMs = tick ? Math.max(0, checkedAt - tick.receivedAt, checkedAt - tick.eventTimestamp) : null;
       return {
         symbol,
+        price: tick?.price ?? null,
         eventTimestamp: tick?.eventTimestamp ?? null,
         receivedAt: tick ? new Date(tick.receivedAt).toISOString() : null,
         ageMs,

@@ -38,21 +38,24 @@ export function classifyTwelveDataFailure(error) {
 }
 
 // Match the opportunity request shape so the monitor diagnostic warms the exact cache entry.
-export async function diagnoseTwelveData({ engine, asset = 'EUR/USD', timeframe = '1min', outputsize = 50, telemetry, now = () => new Date().toISOString() } = {}) {
+export async function diagnoseTwelveData({ engine, asset = 'EUR/USD', timeframe = '1min', outputsize = 50, telemetry, now = () => new Date().toISOString(), composeShadow } = {}) {
   const checkedAt = typeof now === 'function' ? now() : now;
   if (!engine || typeof engine.getSnapshot !== 'function') {
-    return { ok: false, status: 'INVALID_RESPONSE', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: 'MARKET_ENGINE_UNAVAILABLE' };
+    const compositionShadow = typeof composeShadow === 'function' ? composeShadow(null) : undefined;
+    return { ok: false, status: 'INVALID_RESPONSE', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: 'MARKET_ENGINE_UNAVAILABLE', ...(compositionShadow ? { compositionShadow } : {}) };
   }
   try {
     const snapshot = telemetry
       ? await engine.getSnapshot(asset, timeframe, outputsize, { telemetry })
       : await engine.getSnapshot(asset, timeframe, outputsize);
+    const compositionShadow = typeof composeShadow === 'function' ? composeShadow(snapshot) : undefined;
     if (!snapshot?.valid) {
-      return { ok: false, status: 'STALE_DATA', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: snapshot?.status ?? 'SNAPSHOT_INVALID', freshness: freshnessOf(snapshot) };
+      return { ok: false, status: 'STALE_DATA', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: snapshot?.status ?? 'SNAPSHOT_INVALID', freshness: freshnessOf(snapshot), ...(compositionShadow ? { compositionShadow } : {}) };
     }
-    return { ok: true, status: 'HEALTHY', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, asset: String(asset).toUpperCase(), timeframe, freshness: freshnessOf(snapshot) };
+    return { ok: true, status: 'HEALTHY', checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, asset: String(asset).toUpperCase(), timeframe, freshness: freshnessOf(snapshot), ...(compositionShadow ? { compositionShadow } : {}) };
   } catch (error) {
-    return { ok: false, status: classifyTwelveDataFailure(error), checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: messageOf(error).slice(0, 500) };
+    const compositionShadow = typeof composeShadow === 'function' ? composeShadow(null) : undefined;
+    return { ok: false, status: classifyTwelveDataFailure(error), checkedAt, version: TWELVE_DATA_DIAGNOSTIC_VERSION, detail: messageOf(error).slice(0, 500), ...(compositionShadow ? { compositionShadow } : {}) };
   }
 }
 
