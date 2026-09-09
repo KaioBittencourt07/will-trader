@@ -9,6 +9,11 @@
 - Status inspection consumes zero provider requests; cooldown blocks new misses while cache timestamps retain their original provenance and freshness semantics.
 - WS remains SHADOW with `decisionImpact: NONE`; no live commissioning, 20C.6 or prospective batch is authorized by this phase.
 
+## Phase 20C.6.6
+- `multi-provider-ohlc-resilience-v1` selects one complete, independently valid provider snapshot in priority order; it never merges or rejuvenates provider data.
+- Canonical WILL symbols and provider symbols are explicitly mapped. Provider readiness/cache remain isolated and all providers bad fails closed as `ALL_PROVIDERS_UNAVAILABLE`.
+- No secondary commercial provider or live commissioning is configured by this foundation; both require separate external and audit decisions.
+
 ## Purpose
 Keep ChatGPT and Codex aligned through the repository instead of relying on ephemeral chat memory.
 

@@ -6,3 +6,4 @@ export { createTwelveDataProvider } from './providers/twelveDataProvider.js';
 export { createMarketDataEngine } from './marketDataEngine.js';
 export { createTwelveWebSocketFeed } from './providers/twelveWebSocketFeed.js';
 export { composeWsFreshnessRestOhlc, WS_REST_COMPOSITION_VERSION } from './wsRestComposition.js';
+export { createMultiProviderOhlc, MULTI_PROVIDER_OHLC_VERSION } from './multiProviderOhlc.js';
