@@ -29,6 +29,18 @@ test('incomplete-only candles fail closed', () => {
   assert.throws(() => transformOandaOffline(p), /OANDA_COMPLETE_CANDLE_MISSING/);
 });
 
+test('latest closed candle is selected by timestamp, never array position or incomplete data', () => {
+  const p = payload();
+  p.candlesResponse.candles = [
+    { time: '2026-09-09T12:00:00.000Z', complete: false, mid: { o: '9', h: '9', l: '9', c: '9' } },
+    p.candlesResponse.candles[0],
+    { time: '2026-09-09T11:58:00.000Z', complete: true, mid: { o: '1', h: '2', l: '.5', c: '1' } }
+  ];
+  const value = transformOandaOffline(p);
+  assert.equal(value.latestClosedCandleTimestamp, '2026-09-09T11:59:00.000Z');
+  assert.equal(value.candles.length, 2);
+});
+
 test('stale pricing timestamp remains stale under frozen 30s gate', () => {
   const p = payload(); p.pricingResponse.prices[0].time = '2026-09-09T11:59:40.000Z';
   const value = transformOandaOffline(p);

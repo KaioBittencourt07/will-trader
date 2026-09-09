@@ -41,7 +41,8 @@ export function transformOandaOffline({
   const bid = number(priceEntry?.closeoutBid);
   const ask = number(priceEntry?.closeoutAsk);
   if (bid === null || ask === null || bid <= 0 || ask <= 0) fail('OANDA_QUOTE_MALFORMED');
-  const complete = (candlesResponse?.candles || []).filter((candle) => candle?.complete === true);
+  const complete = (candlesResponse?.candles || []).filter((candle) => candle?.complete === true)
+    .sort((left, right) => Date.parse(right?.time ?? '') - Date.parse(left?.time ?? ''));
   if (!complete.length) fail('OANDA_COMPLETE_CANDLE_MISSING');
   const mapped = complete.map((candle) => {
     const values = candle?.mid;
