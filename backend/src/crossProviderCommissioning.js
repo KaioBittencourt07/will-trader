@@ -6,6 +6,13 @@ export const CROSS_PROVIDER_COMMISSIONING_VERSION = 'cross-provider-readonly-com
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const safeCode = (error) => error?.code || classifySaxoFailure(error);
 
+export function extractSaxoSubscriptionSnapshot(payload) {
+  if (!payload || typeof payload !== 'object' || !payload.Snapshot || typeof payload.Snapshot !== 'object') {
+    const error = new Error('SAXO_SUBSCRIPTION_SNAPSHOT_MISSING'); error.code = 'SAXO_SUBSCRIPTION_SNAPSHOT_MISSING'; throw error;
+  }
+  return payload.Snapshot;
+}
+
 export function commissioningConfiguration(env = {}) {
   const reasons = [];
   const enabled = env.WILL_CROSS_PROVIDER_COMMISSIONING_ENABLED === 'true';
@@ -25,27 +32,32 @@ export function commissioningConfiguration(env = {}) {
 async function subscribeSaxoSim({ token, fetchImpl, contextId, referenceId, now }) {
   const response = await fetchImpl('https://gateway.saxobank.com/sim/openapi/chart/v3/charts/subscriptions', {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ContextId: contextId, ReferenceId: referenceId, Arguments: { Uic: 21, AssetType: 'FxSpot', Horizon: 1, Count: 50 } })
+    body: JSON.stringify({ ContextId: contextId, ReferenceId: referenceId, Format: 'application/json',
+      Arguments: { Uic: 21, AssetType: 'FxSpot', Horizon: 1, Count: 50, FieldGroups: ['ChartInfo'] } })
   });
   if (!response.ok) { const error = new Error('SAXO_SUBSCRIPTION_REJECTED'); error.status = response.status; throw error; }
   const payload = await response.json();
-  return transformSaxoChartsOffline({ chartResponse: payload.Snapshot ?? payload, sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(now()).toISOString() });
+  return transformSaxoChartsOffline({ chartResponse: extractSaxoSubscriptionSnapshot(payload), sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(now()).toISOString() });
 }
 
 export async function runCrossProviderCommissioning({ env = process.env, fetchImpl = fetch,
-  webSocketFactory, wait = sleep, now = () => Date.now(), durationMs = 15_000, saxoSubscribe = subscribeSaxoSim } = {}) {
+  webSocketFactory = typeof globalThis.WebSocket === 'function' ? (url) => new globalThis.WebSocket(url) : null,
+  wait = sleep, now = () => Date.now(), durationMs = 15_000, saxoSubscribe = subscribeSaxoSim } = {}) {
   const configuration = commissioningConfiguration(env);
   const base = { commissioningVersion: CROSS_PROVIDER_COMMISSIONING_VERSION, configuration, canonicalSymbol: 'EUR/USD', timeframe: '1min',
     gateMs: 30_000, decisionImpact: 'NONE', prospectivePaperAuthorized: false, ordersExecuted: 0, sessions: 0,
     secretExposed: false };
   if (!configuration.ready) return { ...base, result: 'BLOCKED_EXTERNAL', reasonCodes: configuration.reasonCodes,
     twelve: { connections: 0, subscriptions: 0 }, saxo: { subscriptions: 0 }, stoppedBeforeExternalAccess: true };
+  if (typeof webSocketFactory !== 'function') return { ...base, result: 'BLOCKED_EXTERNAL',
+    reasonCodes: ['TWELVE_WEBSOCKET_RUNTIME_UNAVAILABLE'], twelve: { connections: 0, subscriptions: 0, reconnects: 0 },
+    saxo: { subscriptions: 0 }, stoppedBeforeExternalAccess: true };
 
   const boundedDuration = Math.min(30_000, Math.max(5_000, Number(durationMs) || 15_000));
   const contextId = `will13b-${now()}`;
   const referenceId = 'WILL13BCHART';
   const feed = createTwelveWebSocketFeed({ enabled: true, apiKey: env.TWELVE_DATA_API_KEY, symbols: ['EUR/USD'],
-    webSocketFactory, staleAfterMs: 30_000, now, logger: () => {} });
+    webSocketFactory, staleAfterMs: 30_000, maxReconnects: 1, maxSubscriptionRequests: 1, now, logger: () => {} });
   let saxoSnapshot = null;
   let saxoReason = null;
   let twelveHealth;
@@ -57,7 +69,7 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
   } finally { twelveHealth = feed.health(); feed.stop(); }
 
   const reasons = [];
-  if (saxoReason) reasons.push(`SAXO_${saxoReason}`);
+  if (saxoReason) reasons.push(saxoReason.startsWith('SAXO_') ? saxoReason : `SAXO_${saxoReason}`);
   if (!saxoSnapshot) reasons.push('SAXO_CLOSED_OHLC_UNAVAILABLE');
   if (twelveHealth.successfulConnections !== 1) reasons.push('TWELVE_CONNECTION_COUNT_INVALID');
   if (twelveHealth.subscriptionsRequested > 1 || twelveHealth.subscriptionsAccepted !== 1) reasons.push('TWELVE_SUBSCRIPTION_INVALID');
@@ -72,7 +84,8 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
     reasonCodes: [...new Set(reasons)], saxo: { environment: 'sim', subscriptions: 1, result: saxoSnapshot ? 'OBSERVED' : 'BLOCKED',
       completeness: saxoSnapshot?.candleCompleteness ?? 'UNVERIFIED', latestClosedCandleTimestamp: saxoSnapshot?.latestClosedCandleTimestamp ?? null },
     twelve: { connected: twelveHealth.connected, connections: twelveHealth.successfulConnections, subscriptions: twelveHealth.subscriptionsAccepted,
-      reconnects: twelveHealth.reconnects, eventTimestamp: composition?.quoteTimestamp ?? null, quoteAgeMs: composition?.quoteAgeMs ?? null },
+      reconnects: twelveHealth.reconnects, transportError: twelveHealth.lastError || null,
+      eventTimestamp: composition?.quoteTimestamp ?? null, quoteAgeMs: composition?.quoteAgeMs ?? null },
     composition: composition ? { state: composition.compositionState, separation: composition.separation } : null,
     stoppedBeforeExternalAccess: false };
 }

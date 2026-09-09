@@ -266,3 +266,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Harness isolado/default OFF exige autorização 13B exata e Saxo SIM; budget: uma sessão EUR/USD/1min, uma subscription por provider, zero retry, no máximo um reconnect.
 - Gate permanece 30.000 ms; Saxo somente OHLC fechado por contexto documental e Twelve somente quote freshness por event timestamp nativo.
 - `decisionImpact:NONE`, `prospectivePaperAuthorized:false`, zero ordens; 20C.6 final, PAPER prospectivo e merge continuam não autorizados.
+
+## Fase 20C.6.13B-R1 — Offline Root-Cause + Hardening
+- Saxo: ausência de `FieldGroups:["ChartInfo"]` no request produziu Snapshot sem a evidência Horizon; parser não foi relaxado. Wrapper `Snapshot`, ChartInfo.Horizon=1 e completed initial samples são obrigatórios.
+- Twelve: preflight de WebSocket bloqueia runtime incompatível antes de rede; hard cap real de um reconnect e uma subscription foi aplicado, excesso não agenda timer, e stop cancela qualquer retry pendente. Sem REST fallback ou quote sintética.
+- Gate 30.000 ms, PAPER/MANUAL, fail-closed, Champion e contratos decisórios permanecem congelados. Nova sessão depende de autorização separada após auditoria.

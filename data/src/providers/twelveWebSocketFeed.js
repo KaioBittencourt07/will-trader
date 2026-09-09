@@ -44,6 +44,8 @@ export function createTwelveWebSocketFeed({
   gapAfterMs = 15_000,
   reconnectBaseMs = 1_000,
   reconnectMaxMs = 30_000,
+  maxReconnects = Number.POSITIVE_INFINITY,
+  maxSubscriptionRequests = Number.POSITIVE_INFINITY,
   logger = () => {}
 } = {}) {
   const configuredSymbols = normalizeSymbols(symbols);
@@ -105,6 +107,10 @@ export function createTwelveWebSocketFeed({
 
   function scheduleReconnect() {
     if (!running || reconnectTimer) return;
+    if (metrics.reconnects >= maxReconnects || metrics.subscriptionsRequested >= maxSubscriptionRequests) {
+      state = 'RECONNECT_EXHAUSTED';
+      return;
+    }
     const delay = Math.min(reconnectMaxMs, reconnectBaseMs * (2 ** reconnectAttempt));
     reconnectAttempt += 1;
     metrics.reconnects += 1;
@@ -174,6 +180,13 @@ export function createTwelveWebSocketFeed({
       socket = candidate;
       addListener(candidate, 'open', () => {
         if (socket !== candidate || !running) return;
+        if (metrics.subscriptionsRequested >= maxSubscriptionRequests) {
+          state = 'SUBSCRIPTION_BUDGET_EXHAUSTED';
+          running = false;
+          socket = null;
+          if (typeof candidate.close === 'function') candidate.close();
+          return;
+        }
         state = 'CONNECTED';
         reconnectAttempt = 0;
         metrics.successfulConnections += 1;
@@ -186,7 +199,7 @@ export function createTwelveWebSocketFeed({
       });
       addListener(candidate, 'message', handleMessage);
       addListener(candidate, 'error', (error) => {
-        metrics.lastError = String(error?.message || 'WEBSOCKET_ERROR').slice(0, 200);
+        metrics.lastError = sanitizedDetail(error?.message || 'WEBSOCKET_ERROR');
       });
       addListener(candidate, 'close', (event) => {
         if (socket !== candidate) return;
@@ -205,7 +218,7 @@ export function createTwelveWebSocketFeed({
       });
     } catch (error) {
       socket = null;
-      metrics.lastError = String(error?.message || error).slice(0, 200);
+      metrics.lastError = sanitizedDetail(error?.message || error);
       scheduleReconnect();
     }
   }
@@ -272,6 +285,8 @@ export function createTwelveWebSocketFeed({
         wsCreditsEstimated: acceptedSymbols.size,
         wsCreditsEstimatedIsOfficial: false
       },
+      reconnectBudget: { maxReconnects, exhausted: state === 'RECONNECT_EXHAUSTED' },
+      subscriptionBudget: { maxSubscriptionRequests, exhausted: state === 'SUBSCRIPTION_BUDGET_EXHAUSTED' },
       authoritativeCandlesBuilt: 0,
       decisionImpact: 'NONE'
     };

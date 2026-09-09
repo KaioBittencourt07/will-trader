@@ -152,3 +152,37 @@ test('shutdown closes socket, cancels timers and disabled mode is inert', () => 
   assert.equal(disabled.start(), false);
   assert.equal(JSON.stringify(disabled.health()).includes('do-not-expose'), false);
 });
+
+test('hard reconnect limit prevents an initial error loop and stop cancels the bounded retry', () => {
+  const h = harness({ maxReconnects: 1, reconnectBaseMs: 100 });
+  h.feed.start();
+  h.sockets[0].emit('close', { code: 1006 });
+  let retry = [...h.timers.entries()].find(([, timer]) => timer.delay === 100)?.[0];
+  h.runTimer(retry);
+  h.sockets[1].emit('close', { code: 1006 });
+  assert.equal(h.feed.health().reconnects, 1);
+  assert.equal(h.feed.health().state, 'RECONNECT_EXHAUSTED');
+  assert.equal(h.timers.size, 0);
+  h.feed.stop();
+  assert.equal(h.timers.size, 0);
+});
+
+test('subscription budget sends EUR/USD only once across reconnect lifecycle', () => {
+  const h = harness({ symbols: ['EUR/USD'], maxReconnects: 1, maxSubscriptionRequests: 1, reconnectBaseMs: 100 });
+  h.feed.start(); h.sockets[0].open();
+  assert.equal(h.feed.health().subscriptionsRequested, 1);
+  h.sockets[0].emit('close', { code: 1006 });
+  assert.equal(h.feed.health().reconnects, 0);
+  assert.equal(h.feed.health().state, 'RECONNECT_EXHAUSTED');
+  assert.equal(h.timers.size, 0);
+});
+
+test('initial transport errors are redacted and cannot exceed one reconnect', () => {
+  const h = harness({ maxReconnects: 1, webSocketFactory: (url) => { throw new Error(`connect failed ${url}`); } });
+  h.feed.start();
+  const health = h.feed.health();
+  assert.equal(health.reconnects, 1);
+  assert.equal(JSON.stringify(health).includes('secret-key'), false);
+  h.feed.stop();
+  assert.equal(h.timers.size, 0);
+});

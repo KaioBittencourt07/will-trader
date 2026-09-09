@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { commissioningConfiguration, runCrossProviderCommissioning } from '../backend/src/crossProviderCommissioning.js';
+import { commissioningConfiguration, extractSaxoSubscriptionSnapshot, runCrossProviderCommissioning } from '../backend/src/crossProviderCommissioning.js';
 import { transformSaxoChartsOffline } from '../data/src/providers/saxoQualification.js';
 
 const NOW = Date.parse('2026-09-09T20:00:20Z');
@@ -32,6 +32,14 @@ test('only Saxo SIM and exact 13B authorization pass configuration', () => {
   assert.ok(commissioningConfiguration({ ...env, WILL_SAXO_ENVIRONMENT: 'live' }).reasonCodes.includes('SAXO_SIM_REQUIRED'));
 });
 
+test('missing WebSocket runtime fails before Saxo or Twelve access without reconnect loop', async () => {
+  let saxoCalls = 0;
+  const report = await runCrossProviderCommissioning({ env, webSocketFactory: null, saxoSubscribe: async () => { saxoCalls += 1; } });
+  assert.equal(report.result, 'BLOCKED_EXTERNAL');
+  assert.deepEqual(report.reasonCodes, ['TWELVE_WEBSOCKET_RUNTIME_UNAVAILABLE']);
+  assert.equal(report.twelve.reconnects, 0); assert.equal(report.sessions, 0); assert.equal(saxoCalls, 0);
+});
+
 test('bounded synthetic commissioning passes without decision authority', async () => {
   let socket;
   const report = await runCrossProviderCommissioning({ env, now: () => NOW, wait: async () => {},
@@ -52,4 +60,22 @@ test('Saxo unavailable or ambiguous fails closed', async () => {
 test('sanitized result never contains credential values', async () => {
   const report = await runCrossProviderCommissioning({ env: { ...env, WILL_CROSS_PROVIDER_COMMISSIONING_ENABLED: 'false' } });
   const text = JSON.stringify(report); assert.equal(text.includes('synthetic-saxo'), false); assert.equal(text.includes('synthetic-twelve'), false);
+});
+
+test('Saxo subscription wrapper and requested ChartInfo preserve exact Horizon 1', async () => {
+  const body = { Snapshot: { ChartInfo: { Horizon: 1, FirstSampleTime: '2020-01-01T00:00:00Z' }, DataVersion: 1,
+    Data: [{ Time: '2026-09-09T19:59:00Z', Open: 1.17, High: 1.171, Low: 1.169, Close: 1.1705 }] } };
+  assert.equal(extractSaxoSubscriptionSnapshot(body).ChartInfo.Horizon, 1);
+  assert.throws(() => extractSaxoSubscriptionSnapshot(body.Snapshot), /SAXO_SUBSCRIPTION_SNAPSHOT_MISSING/);
+  assert.throws(() => transformSaxoChartsOffline({ chartResponse: { ...body.Snapshot, ChartInfo: { ...body.Snapshot.ChartInfo, Horizon: 5 } },
+    sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(NOW).toISOString() }), /SAXO_RESPONSE_TIMEFRAME_MISMATCH/);
+});
+
+test('missing Twelve quote remains BLOCKED_EXTERNAL', async () => {
+  class NoQuoteSocket extends Socket { send(payload) { if (JSON.parse(payload).action === 'subscribe')
+    this.listeners.message({ data: JSON.stringify({ event: 'subscribe-status', status: 'ok', success: [{ symbol: 'EUR/USD' }] }) }); } }
+  const report = await runCrossProviderCommissioning({ env, now: () => NOW, wait: async () => {},
+    webSocketFactory: () => { const socket = new NoQuoteSocket(); queueMicrotask(() => socket.open()); return socket; }, saxoSubscribe: async () => saxo() });
+  assert.equal(report.result, 'BLOCKED_EXTERNAL'); assert.equal(report.composition.state, 'INVALID');
+  assert.ok(report.reasonCodes.includes('QUOTE_TIMESTAMP_INVALID'));
 });
