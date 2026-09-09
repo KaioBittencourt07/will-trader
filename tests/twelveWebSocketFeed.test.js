@@ -183,6 +183,22 @@ test('initial transport errors are redacted and cannot exceed one reconnect', ()
   const health = h.feed.health();
   assert.equal(health.reconnects, 1);
   assert.equal(JSON.stringify(health).includes('secret-key'), false);
+  assert.equal(health.lastTransportDiagnostic.phase, 'CONSTRUCTOR');
+  assert.equal(health.lastTransportDiagnostic.secretExposed, false);
   h.feed.stop();
   assert.equal(h.timers.size, 0);
+});
+
+test('pre-open ErrorEvent diagnostic is bounded, categorized and secret-free', () => {
+  const h = harness({ symbols: ['EUR/USD'], maxReconnects: 1 });
+  h.feed.start();
+  h.sockets[0].emit('error', { type: 'error', message: 'connect wss://ws.twelvedata.com/v1/quotes/price?apikey=secret-key failed',
+    error: Object.assign(new Error('dns lookup failed'), { code: 'ENOTFOUND' }) });
+  h.sockets[0].emit('close', { code: 1006 });
+  const health = h.feed.health();
+  assert.deepEqual([health.lastTransportDiagnostic.phase, health.lastTransportDiagnostic.category, health.lastTransportDiagnostic.code], ['PRE_OPEN', 'DNS', 'ENOTFOUND']);
+  assert.equal(JSON.stringify(health).includes('secret-key'), false);
+  assert.equal(health.reconnects, 1);
+  h.feed.stop();
+  for (const timer of h.timers.values()) assert.fail(`timer remained after stop: ${timer.delay}`);
 });

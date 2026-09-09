@@ -13,6 +13,12 @@ export function extractSaxoSubscriptionSnapshot(payload) {
   return payload.Snapshot;
 }
 
+export function buildSaxoSubscriptionBody({ contextId, referenceId }) {
+  return { ContextId: contextId, ReferenceId: referenceId, Format: 'application/json',
+    Arguments: { Uic: 21, AssetType: 'FxSpot', Horizon: 1, Count: 50,
+      ChartSampleFieldSet: 'Default', FieldGroups: ['ChartInfo', 'Data'] } };
+}
+
 export function commissioningConfiguration(env = {}) {
   const reasons = [];
   const enabled = env.WILL_CROSS_PROVIDER_COMMISSIONING_ENABLED === 'true';
@@ -32,8 +38,7 @@ export function commissioningConfiguration(env = {}) {
 async function subscribeSaxoSim({ token, fetchImpl, contextId, referenceId, now }) {
   const response = await fetchImpl('https://gateway.saxobank.com/sim/openapi/chart/v3/charts/subscriptions', {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ContextId: contextId, ReferenceId: referenceId, Format: 'application/json',
-      Arguments: { Uic: 21, AssetType: 'FxSpot', Horizon: 1, Count: 50, FieldGroups: ['ChartInfo'] } })
+    body: JSON.stringify(buildSaxoSubscriptionBody({ contextId, referenceId }))
   });
   if (!response.ok) { const error = new Error('SAXO_SUBSCRIPTION_REJECTED'); error.status = response.status; throw error; }
   const payload = await response.json();
@@ -85,6 +90,7 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
       completeness: saxoSnapshot?.candleCompleteness ?? 'UNVERIFIED', latestClosedCandleTimestamp: saxoSnapshot?.latestClosedCandleTimestamp ?? null },
     twelve: { connected: twelveHealth.connected, connections: twelveHealth.successfulConnections, subscriptions: twelveHealth.subscriptionsAccepted,
       reconnects: twelveHealth.reconnects, transportError: twelveHealth.lastError || null,
+      transportDiagnostic: twelveHealth.lastTransportDiagnostic,
       eventTimestamp: composition?.quoteTimestamp ?? null, quoteAgeMs: composition?.quoteAgeMs ?? null },
     composition: composition ? { state: composition.compositionState, separation: composition.separation } : null,
     stoppedBeforeExternalAccess: false };

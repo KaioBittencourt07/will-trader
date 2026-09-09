@@ -41,7 +41,8 @@ export function transformSaxoChartsOffline({
   if (chartResponse?.ChartInfo?.Horizon !== 1) fail('SAXO_RESPONSE_TIMEFRAME_MISMATCH');
   if (!Number.isInteger(chartResponse?.DataVersion)) fail('SAXO_DATA_VERSION_MISSING');
   if (!Number.isFinite(Date.parse(chartResponse?.ChartInfo?.FirstSampleTime ?? ''))) fail('SAXO_FIRST_SAMPLE_TIME_MISSING');
-  if (!Array.isArray(chartResponse?.Data) || !chartResponse.Data.length) fail('SAXO_OHLC_MISSING');
+  if (!Object.prototype.hasOwnProperty.call(chartResponse ?? {}, 'Data') || !Array.isArray(chartResponse.Data)) fail('SAXO_OHLC_DATA_MISSING');
+  if (!chartResponse.Data.length) fail('SAXO_OHLC_DATA_EMPTY');
 
   const samples = chartResponse.Data.map(mapSample).sort((left, right) => Date.parse(right.datetime) - Date.parse(left.datetime));
   let closedSamples;
@@ -99,4 +100,3 @@ export function transformSaxoChartsOffline({
     }
   };
 }
-

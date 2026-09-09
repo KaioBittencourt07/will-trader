@@ -56,7 +56,9 @@ test('orders by Time rather than array position and rejects malformed OHLC', () 
 
 test('missing sample, Time, DataVersion and FirstSampleTime fail closed', () => {
   const empty = payload(); empty.chartResponse.Data = [];
-  assert.throws(() => transformSaxoChartsOffline(empty), /OHLC_MISSING/);
+  assert.throws(() => transformSaxoChartsOffline(empty), /OHLC_DATA_EMPTY/);
+  const missing = payload(); delete missing.chartResponse.Data;
+  assert.throws(() => transformSaxoChartsOffline(missing), /OHLC_DATA_MISSING/);
   const time = payload(); delete time.chartResponse.Data[0].Time;
   assert.throws(() => transformSaxoChartsOffline(time), /OHLC_MALFORMED/);
   const version = payload(); delete version.chartResponse.DataVersion;
@@ -104,4 +106,3 @@ test('quote-freshness limitation fails unchanged multi-provider contract closed'
   } }] });
   await assert.rejects(() => multi.getSnapshot('EUR/USD'), (error) => error.code === 'ALL_PROVIDERS_UNAVAILABLE');
 });
-

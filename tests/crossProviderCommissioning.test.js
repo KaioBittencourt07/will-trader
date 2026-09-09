@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { commissioningConfiguration, extractSaxoSubscriptionSnapshot, runCrossProviderCommissioning } from '../backend/src/crossProviderCommissioning.js';
+import { buildSaxoSubscriptionBody, commissioningConfiguration, extractSaxoSubscriptionSnapshot, runCrossProviderCommissioning } from '../backend/src/crossProviderCommissioning.js';
 import { transformSaxoChartsOffline } from '../data/src/providers/saxoQualification.js';
 
 const NOW = Date.parse('2026-09-09T20:00:20Z');
@@ -69,6 +69,13 @@ test('Saxo subscription wrapper and requested ChartInfo preserve exact Horizon 1
   assert.throws(() => extractSaxoSubscriptionSnapshot(body.Snapshot), /SAXO_SUBSCRIPTION_SNAPSHOT_MISSING/);
   assert.throws(() => transformSaxoChartsOffline({ chartResponse: { ...body.Snapshot, ChartInfo: { ...body.Snapshot.ChartInfo, Horizon: 5 } },
     sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(NOW).toISOString() }), /SAXO_RESPONSE_TIMEFRAME_MISMATCH/);
+});
+
+test('Saxo request explicitly asks for documentary Data and ChartInfo groups', () => {
+  const body = buildSaxoSubscriptionBody({ contextId: 'ctx', referenceId: 'ref' });
+  assert.equal(body.Arguments.Horizon, 1);
+  assert.equal(body.Arguments.ChartSampleFieldSet, 'Default');
+  assert.deepEqual(body.Arguments.FieldGroups, ['ChartInfo', 'Data']);
 });
 
 test('missing Twelve quote remains BLOCKED_EXTERNAL', async () => {

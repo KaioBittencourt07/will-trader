@@ -53,6 +53,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Se o runtime existir e ainda houver falha, o relatório preserva apenas o erro redigido para atribuição futura, sem expor URL/key.
 - R1 é offline: nenhuma credencial, chamada provider, commissioning ou fallback REST.
 
+## Fase 20C.6.13B-R3 — root cause após R2
+
+- Saxo confirmada: R1 solicitou apenas `FieldGroups:["ChartInfo"]`. A API usa FieldGroups para definir os grupos retornados; por isso Horizon passou, mas `Snapshot.Data` ficou ausente. O request agora pede explicitamente `ChartInfo` e `Data`, com `ChartSampleFieldSet:Default`. O parser distingue Data ausente (`SAXO_OHLC_DATA_MISSING`), vazio (`SAXO_OHLC_DATA_EMPTY`) e sample incompleto/malformado (`SAXO_OHLC_MALFORMED`), sempre fail-closed.
+- O shape documental permanece `response.Snapshot.Data[]`, com `Time` e campos ChartSample. O transformer continua aceitando somente o conjunto OHLC direto `Open/High/Low/Close`; campos Bid/Ask não são silenciosamente convertidos em midpoint ou OHLC sintético.
+- Twelve: Node oferece WebSocket browser-compatible a partir das versões documentadas, mas o evento real R2 expôs apenas `WEBSOCKET_ERROR`; portanto TLS/DNS/proxy/firewall/auth não podem ser distinguidos retroativamente. O feed agora captura, quando fornecidos pelo runtime, `code`, `cause`, fase PRE_OPEN/POST_OPEN/CONSTRUCTOR, categoria conservadora e close code, com URL/key redigidos. O hard cap permanece 1.
+- R3 executou zero chamadas/provider credentials. Nova sessão deve ser autorizada separadamente e apenas para obter evidência sanitizada dos dois providers.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

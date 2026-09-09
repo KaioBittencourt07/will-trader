@@ -271,3 +271,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Saxo: ausência de `FieldGroups:["ChartInfo"]` no request produziu Snapshot sem a evidência Horizon; parser não foi relaxado. Wrapper `Snapshot`, ChartInfo.Horizon=1 e completed initial samples são obrigatórios.
 - Twelve: preflight de WebSocket bloqueia runtime incompatível antes de rede; hard cap real de um reconnect e uma subscription foi aplicado, excesso não agenda timer, e stop cancela qualquer retry pendente. Sem REST fallback ou quote sintética.
 - Gate 30.000 ms, PAPER/MANUAL, fail-closed, Champion e contratos decisórios permanecem congelados. Nova sessão depende de autorização separada após auditoria.
+
+## Fase 20C.6.13B-R3 — Offline Root-Cause após R2
+- Saxo R2 provou Snapshot/ChartInfo/Horizon 1, mas R1 havia pedido somente o grupo ChartInfo. Request corrigido para grupos `ChartInfo` + `Data`; Data ausente, vazio e OHLC malformado têm blockers distintos e não são inferidos.
+- Twelve R2 respeitou reconnect=1, porém o ErrorEvent genérico não permite atribuir retroativamente DNS/TLS/proxy/firewall/auth. Diagnóstico agora retém somente fase/categoria/code/close code sanitizados quando o runtime os fornece.
+- Zero chamadas/credenciais em R3. Gate, budgets, PAPER/MANUAL, fail-closed, Champion, thresholds e ausência de ordens/merge permanecem congelados.

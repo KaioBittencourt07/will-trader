@@ -26,6 +26,20 @@ function sanitizedDetail(value) {
     .slice(0, 200);
 }
 
+function transportDiagnostic(error, phase) {
+  const nested = error?.error ?? error?.cause ?? null;
+  const rawCode = error?.code ?? nested?.code ?? nested?.cause?.code ?? null;
+  const code = /^[A-Z0-9_]{2,60}$/.test(String(rawCode || '')) ? String(rawCode) : null;
+  const detail = sanitizedDetail(error?.message || nested?.message || error?.type || 'WEBSOCKET_ERROR');
+  let category = 'UNKNOWN';
+  if (/ENOTFOUND|EAI_AGAIN/.test(code || '')) category = 'DNS';
+  else if (/CERT|TLS|SSL/.test(code || '') || /certificate|tls/i.test(detail)) category = 'TLS';
+  else if (/PROXY/.test(code || '') || /proxy/i.test(detail)) category = 'PROXY';
+  else if (/ECONN|ETIMEDOUT|UND_ERR_CONNECT/.test(code || '')) category = 'NETWORK';
+  else if (/401|403|handshake|unexpected response/i.test(detail)) category = 'AUTH_OR_HANDSHAKE';
+  return { phase, category, code, detail, secretExposed: false };
+}
+
 function statusSymbols(value) {
   if (!Array.isArray(value)) return [];
   return normalizeSymbols(value.map((entry) => typeof entry === 'string' ? entry : entry?.symbol));
@@ -77,7 +91,8 @@ export function createTwelveWebSocketFeed({
     lastMessageAt: null,
     lastSubscriptionStatus: null,
     lastSubscriptionError: null,
-    lastError: null
+    lastError: null,
+    lastTransportDiagnostic: null
   };
   let socket = null;
   let heartbeatTimer = null;
@@ -199,7 +214,8 @@ export function createTwelveWebSocketFeed({
       });
       addListener(candidate, 'message', handleMessage);
       addListener(candidate, 'error', (error) => {
-        metrics.lastError = sanitizedDetail(error?.message || 'WEBSOCKET_ERROR');
+        metrics.lastTransportDiagnostic = transportDiagnostic(error, metrics.successfulConnections > 0 ? 'POST_OPEN' : 'PRE_OPEN');
+        metrics.lastError = metrics.lastTransportDiagnostic.detail;
       });
       addListener(candidate, 'close', (event) => {
         if (socket !== candidate) return;
@@ -211,6 +227,10 @@ export function createTwelveWebSocketFeed({
         metrics.lastDisconnectedAt = new Date(now()).toISOString();
         if (Number.isFinite(Number(event?.code))) metrics.lastDisconnectCode = Number(event.code);
         if (event?.reason) metrics.lastDisconnectReason = sanitizedDetail(event.reason);
+        if (metrics.successfulConnections === 0 && !metrics.lastTransportDiagnostic) {
+          metrics.lastTransportDiagnostic = { phase: 'PRE_OPEN', category: 'CLOSE_BEFORE_OPEN', code: null,
+            closeCode: metrics.lastDisconnectCode, detail: metrics.lastDisconnectReason, secretExposed: false };
+        }
         acceptedSymbols.clear();
         metrics.subscriptionsAccepted = 0;
         if (running) scheduleReconnect();
@@ -218,7 +238,8 @@ export function createTwelveWebSocketFeed({
       });
     } catch (error) {
       socket = null;
-      metrics.lastError = sanitizedDetail(error?.message || error);
+      metrics.lastTransportDiagnostic = transportDiagnostic(error, 'CONSTRUCTOR');
+      metrics.lastError = metrics.lastTransportDiagnostic.detail;
       scheduleReconnect();
     }
   }
