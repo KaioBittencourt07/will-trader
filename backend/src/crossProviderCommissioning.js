@@ -1,5 +1,5 @@
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
-import { transformSaxoChartsOffline, classifySaxoFailure } from '../../data/src/providers/saxoQualification.js';
+import { diagnoseSaxoChartSnapshotStructure, transformSaxoChartsOffline, classifySaxoFailure } from '../../data/src/providers/saxoQualification.js';
 import { composeSaxoClosedOhlcIndependentQuote } from '../../data/src/crossProviderComposition.js';
 
 export const CROSS_PROVIDER_COMMISSIONING_VERSION = 'cross-provider-readonly-commissioning-v1';
@@ -42,7 +42,18 @@ async function subscribeSaxoSim({ token, fetchImpl, contextId, referenceId, now 
   });
   if (!response.ok) { const error = new Error('SAXO_SUBSCRIPTION_REJECTED'); error.status = response.status; throw error; }
   const payload = await response.json();
-  return transformSaxoChartsOffline({ chartResponse: extractSaxoSubscriptionSnapshot(payload), sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(now()).toISOString() });
+  const chartResponse = extractSaxoSubscriptionSnapshot(payload);
+  try {
+    return transformSaxoChartsOffline({ chartResponse, sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(now()).toISOString() });
+  } catch (error) {
+    error.saxoStructure = diagnoseSaxoChartSnapshotStructure(chartResponse);
+    throw error;
+  }
+}
+
+export function describeWebSocketRuntime(WebSocketCtor = globalThis.WebSocket) {
+  return Object.freeze({ available: typeof WebSocketCtor === 'function', api: typeof WebSocketCtor === 'function' ? 'EVENT_TARGET_WEBSOCKET' : 'UNAVAILABLE',
+    implementation: typeof WebSocketCtor?.name === 'string' ? WebSocketCtor.name.slice(0, 60) : null, secretExposed: false });
 }
 
 export async function runCrossProviderCommissioning({ env = process.env, fetchImpl = fetch,
@@ -51,7 +62,7 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
   const configuration = commissioningConfiguration(env);
   const base = { commissioningVersion: CROSS_PROVIDER_COMMISSIONING_VERSION, configuration, canonicalSymbol: 'EUR/USD', timeframe: '1min',
     gateMs: 30_000, decisionImpact: 'NONE', prospectivePaperAuthorized: false, ordersExecuted: 0, sessions: 0,
-    secretExposed: false };
+    webSocketRuntime: describeWebSocketRuntime(webSocketFactory), secretExposed: false };
   if (!configuration.ready) return { ...base, result: 'BLOCKED_EXTERNAL', reasonCodes: configuration.reasonCodes,
     twelve: { connections: 0, subscriptions: 0 }, saxo: { subscriptions: 0 }, stoppedBeforeExternalAccess: true };
   if (typeof webSocketFactory !== 'function') return { ...base, result: 'BLOCKED_EXTERNAL',
@@ -65,11 +76,12 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
     webSocketFactory, staleAfterMs: 30_000, maxReconnects: 1, maxSubscriptionRequests: 1, now, logger: () => {} });
   let saxoSnapshot = null;
   let saxoReason = null;
+  let saxoStructure = null;
   let twelveHealth;
   feed.start();
   try {
     try { saxoSnapshot = await saxoSubscribe({ token: env.WILL_SAXO_ACCESS_TOKEN, fetchImpl, contextId, referenceId, now }); }
-    catch (error) { saxoReason = safeCode(error); }
+    catch (error) { saxoReason = safeCode(error); saxoStructure = error.saxoStructure ?? null; }
     await wait(boundedDuration);
   } finally { twelveHealth = feed.health(); feed.stop(); }
 
@@ -87,7 +99,8 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
   const passed = reasons.length === 0 && composition?.compositionState === 'COMPOSABLE_OFFLINE';
   return { ...base, result: passed ? 'READONLY_COMMISSIONING_PASSED' : 'BLOCKED_EXTERNAL', sessions: 1,
     reasonCodes: [...new Set(reasons)], saxo: { environment: 'sim', subscriptions: 1, result: saxoSnapshot ? 'OBSERVED' : 'BLOCKED',
-      completeness: saxoSnapshot?.candleCompleteness ?? 'UNVERIFIED', latestClosedCandleTimestamp: saxoSnapshot?.latestClosedCandleTimestamp ?? null },
+      completeness: saxoSnapshot?.candleCompleteness ?? 'UNVERIFIED', latestClosedCandleTimestamp: saxoSnapshot?.latestClosedCandleTimestamp ?? null,
+      structure: saxoStructure },
     twelve: { connected: twelveHealth.connected, connections: twelveHealth.successfulConnections, subscriptions: twelveHealth.subscriptionsAccepted,
       reconnects: twelveHealth.reconnects, transportError: twelveHealth.lastError || null,
       transportDiagnostic: twelveHealth.lastTransportDiagnostic,

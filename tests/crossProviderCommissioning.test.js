@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildSaxoSubscriptionBody, commissioningConfiguration, extractSaxoSubscriptionSnapshot, runCrossProviderCommissioning } from '../backend/src/crossProviderCommissioning.js';
+import { buildSaxoSubscriptionBody, commissioningConfiguration, describeWebSocketRuntime, extractSaxoSubscriptionSnapshot, runCrossProviderCommissioning } from '../backend/src/crossProviderCommissioning.js';
 import { transformSaxoChartsOffline } from '../data/src/providers/saxoQualification.js';
 
 const NOW = Date.parse('2026-09-09T20:00:20Z');
@@ -85,4 +85,11 @@ test('missing Twelve quote remains BLOCKED_EXTERNAL', async () => {
     webSocketFactory: () => { const socket = new NoQuoteSocket(); queueMicrotask(() => socket.open()); return socket; }, saxoSubscribe: async () => saxo() });
   assert.equal(report.result, 'BLOCKED_EXTERNAL'); assert.equal(report.composition.state, 'INVALID');
   assert.ok(report.reasonCodes.includes('QUOTE_TIMESTAMP_INVALID'));
+});
+
+test('WebSocket runtime diagnostic is local and contains no credentials', () => {
+  class NativeLikeWebSocket {}
+  const diagnostic = describeWebSocketRuntime(NativeLikeWebSocket);
+  assert.deepEqual([diagnostic.available, diagnostic.api, diagnostic.implementation], [true, 'EVENT_TARGET_WEBSOCKET', 'NativeLikeWebSocket']);
+  assert.equal(diagnostic.secretExposed, false);
 });

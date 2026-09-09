@@ -227,6 +227,10 @@ export function createTwelveWebSocketFeed({
         metrics.lastDisconnectedAt = new Date(now()).toISOString();
         if (Number.isFinite(Number(event?.code))) metrics.lastDisconnectCode = Number(event.code);
         if (event?.reason) metrics.lastDisconnectReason = sanitizedDetail(event.reason);
+        if (metrics.lastTransportDiagnostic) {
+          metrics.lastTransportDiagnostic = { ...metrics.lastTransportDiagnostic,
+            closeCode: metrics.lastDisconnectCode, closeReason: metrics.lastDisconnectReason, secretExposed: false };
+        }
         if (metrics.successfulConnections === 0 && !metrics.lastTransportDiagnostic) {
           metrics.lastTransportDiagnostic = { phase: 'PRE_OPEN', category: 'CLOSE_BEFORE_OPEN', code: null,
             closeCode: metrics.lastDisconnectCode, detail: metrics.lastDisconnectReason, secretExposed: false };

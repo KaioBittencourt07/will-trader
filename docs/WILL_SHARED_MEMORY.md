@@ -276,3 +276,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Saxo R2 provou Snapshot/ChartInfo/Horizon 1, mas R1 havia pedido somente o grupo ChartInfo. Request corrigido para grupos `ChartInfo` + `Data`; Data ausente, vazio e OHLC malformado têm blockers distintos e não são inferidos.
 - Twelve R2 respeitou reconnect=1, porém o ErrorEvent genérico não permite atribuir retroativamente DNS/TLS/proxy/firewall/auth. Diagnóstico agora retém somente fase/categoria/code/close code sanitizados quando o runtime os fornece.
 - Zero chamadas/credenciais em R3. Gate, budgets, PAPER/MANUAL, fail-closed, Champion, thresholds e ausência de ordens/merge permanecem congelados.
+
+## Fase 20C.6.13B-R5 — Offline Root-Cause após R4
+- Saxo FxSpot Default é documentalmente BidAsk; o parser single-OHLC corretamente bloqueou. Diagnóstico estrutural allowlisted reconhece o shape sem valores/payload bruto, mas nunca sintetiza midpoint ou escolhe bid/ask.
+- Twelve ErrorEvent PRE_OPEN permaneceu genérico. Runtime local, nested code/cause e close code/reason são agora capturados e redigidos quando disponíveis; nenhum DNS/TLS/provider preflight foi chamado.
+- R6 externa não é recomendada antes de decisão formal separada sobre semântica BidAsk. Gate 30s, budgets 1/1, PAPER/MANUAL, fail-closed, Champion/thresholds/dashboard e zero ordens/merge permanecem congelados.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifySaxoFailure, SAXO_QUALIFICATION, transformSaxoChartsOffline } from '../data/src/providers/saxoQualification.js';
+import { classifySaxoFailure, diagnoseSaxoChartSnapshotStructure, SAXO_QUALIFICATION, transformSaxoChartsOffline } from '../data/src/providers/saxoQualification.js';
 import { createMultiProviderOhlc } from '../data/src/multiProviderOhlc.js';
 
 const NOW = '2026-09-09T12:00:20.000Z';
@@ -105,4 +105,26 @@ test('quote-freshness limitation fails unchanged multi-provider contract closed'
     getProviderReadiness: () => ({ state: 'READY' }), getSnapshot: async () => snapshot
   } }] });
   await assert.rejects(() => multi.getSnapshot('EUR/USD'), (error) => error.code === 'ALL_PROVIDERS_UNAVAILABLE');
+});
+
+test('structural diagnostic recognizes documentary direct OHLC without raw values', () => {
+  const diagnostic = diagnoseSaxoChartSnapshotStructure(payload().chartResponse);
+  assert.equal(diagnostic.classification, 'DIRECT_OHLC'); assert.equal(diagnostic.sampleCount, 2);
+  assert.equal(diagnostic.validForSingleOhlcContract, true); assert.equal(diagnostic.rawPayloadIncluded, false);
+  assert.equal(JSON.stringify(diagnostic).includes('1.1705'), false);
+});
+
+test('documentary FxSpot BidAsk shape is classified but never synthesized into OHLC', () => {
+  const sample = { Time: '2026-09-09T11:59:00Z', OpenBid: 1.1, HighBid: 1.2, LowBid: 1.0, CloseBid: 1.15,
+    OpenAsk: 1.11, HighAsk: 1.21, LowAsk: 1.01, CloseAsk: 1.16 };
+  const chartResponse = { ...payload().chartResponse, Data: [sample] };
+  const diagnostic = diagnoseSaxoChartSnapshotStructure(chartResponse);
+  assert.equal(diagnostic.classification, 'BID_ASK_OHLC'); assert.equal(diagnostic.validForSingleOhlcContract, false);
+  assert.throws(() => transformSaxoChartsOffline({ ...payload(), chartResponse }), /SAXO_OHLC_MALFORMED/);
+});
+
+test('structural diagnostic distinguishes missing, empty and incomplete data', () => {
+  assert.equal(diagnoseSaxoChartSnapshotStructure({}).classification, 'DATA_MISSING');
+  assert.equal(diagnoseSaxoChartSnapshotStructure({ Data: [] }).classification, 'DATA_EMPTY');
+  assert.equal(diagnoseSaxoChartSnapshotStructure({ Data: [{ Time: NOW, Open: 1 }] }).classification, 'INCOMPLETE_OR_ALTERNATIVE');
 });

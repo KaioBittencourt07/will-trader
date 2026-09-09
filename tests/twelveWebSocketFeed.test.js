@@ -202,3 +202,13 @@ test('pre-open ErrorEvent diagnostic is bounded, categorized and secret-free', (
   h.feed.stop();
   for (const timer of h.timers.values()) assert.fail(`timer remained after stop: ${timer.delay}`);
 });
+
+test('pre-open close code and reason augment generic ErrorEvent safely', () => {
+  const h = harness({ symbols: ['EUR/USD'], maxReconnects: 1 });
+  h.feed.start(); h.sockets[0].emit('error', { type: 'error' });
+  h.sockets[0].emit('close', { code: 1006, reason: 'proxy failed apikey=secret-key' });
+  const diagnostic = h.feed.health().lastTransportDiagnostic;
+  assert.equal(diagnostic.phase, 'PRE_OPEN'); assert.equal(diagnostic.category, 'UNKNOWN'); assert.equal(diagnostic.closeCode, 1006);
+  assert.equal(JSON.stringify(diagnostic).includes('secret-key'), false);
+  h.feed.stop(); assert.equal(h.timers.size, 0);
+});

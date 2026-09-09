@@ -8,6 +8,29 @@ export const SAXO_QUALIFICATION = Object.freeze({
 const numeric = (value) => value !== null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
 function fail(code) { const error = new Error(code); error.code = code; throw error; }
 
+const directFields = ['Open', 'High', 'Low', 'Close'];
+const bidAskFields = ['OpenBid', 'HighBid', 'LowBid', 'CloseBid', 'OpenAsk', 'HighAsk', 'LowAsk', 'CloseAsk'];
+const diagnosticAllowlist = new Set(['Time', ...directFields, ...bidAskFields, 'Volume', 'Interest', 'MarketTradingState']);
+
+export function diagnoseSaxoChartSnapshotStructure(chartResponse) {
+  const dataPresent = Object.prototype.hasOwnProperty.call(chartResponse ?? {}, 'Data');
+  const samples = Array.isArray(chartResponse?.Data) ? chartResponse.Data : [];
+  const fieldNames = [...new Set(samples.flatMap((sample) => Object.keys(sample ?? {}).filter((key) => diagnosticAllowlist.has(key))))].sort();
+  const presence = Object.fromEntries([...directFields, ...bidAskFields].map((field) =>
+    [field, samples.length > 0 && samples.every((sample) => numeric(sample?.[field]) !== null)]));
+  const timestamps = samples.map((sample) => sample?.Time).filter((value) => Number.isFinite(Date.parse(value ?? ''))).sort();
+  const direct = directFields.every((field) => presence[field]);
+  const bidAsk = bidAskFields.every((field) => presence[field]);
+  let classification = !dataPresent || !Array.isArray(chartResponse?.Data) ? 'DATA_MISSING'
+    : samples.length === 0 ? 'DATA_EMPTY'
+      : direct ? 'DIRECT_OHLC'
+        : bidAsk ? 'BID_ASK_OHLC'
+          : 'INCOMPLETE_OR_ALTERNATIVE';
+  return Object.freeze({ sampleCount: samples.length, fieldNames, numericFieldPresence: presence,
+    firstSampleTimestamp: timestamps[0] ?? null, lastSampleTimestamp: timestamps.at(-1) ?? null,
+    classification, validForSingleOhlcContract: classification === 'DIRECT_OHLC', rawPayloadIncluded: false, secretExposed: false });
+}
+
 export function classifySaxoFailure(error) {
   const status = Number(error?.status);
   if (status === 401 || status === 403) return 'MISCONFIGURED';

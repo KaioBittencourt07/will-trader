@@ -60,6 +60,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Twelve: Node oferece WebSocket browser-compatible a partir das versões documentadas, mas o evento real R2 expôs apenas `WEBSOCKET_ERROR`; portanto TLS/DNS/proxy/firewall/auth não podem ser distinguidos retroativamente. O feed agora captura, quando fornecidos pelo runtime, `code`, `cause`, fase PRE_OPEN/POST_OPEN/CONSTRUCTOR, categoria conservadora e close code, com URL/key redigidos. O hard cap permanece 1.
 - R3 executou zero chamadas/provider credentials. Nova sessão deve ser autorizada separadamente e apenas para obter evidência sanitizada dos dois providers.
 
+## Fase 20C.6.13B-R5 — root cause após R4
+
+- Saxo root cause documental confirmada: `FxSpot` no field set Default usa samples BidAsk (`OpenBid/OpenAsk`, `HighBid/HighAsk`, `LowBid/LowAsk`, `CloseBid/CloseAsk`). O contrato atual exige um único OHLC direto e por isso rejeitou o shape como `SAXO_OHLC_MALFORMED`. R5 não escolhe bid, ask nem midpoint. Um diagnóstico estrutural registra apenas count, nomes allowlisted, presença numérica, timestamps válidos e classificação; nunca preços ou payload bruto.
+- Shapes classificados: `DIRECT_OHLC` é elegível ao transformer existente; `BID_ASK_OHLC` é documental, porém incompatível com o contrato single-OHLC; missing, empty e incomplete permanecem bloqueados separadamente.
+- Twelve continua sem root cause de transporte confirmável: o EventTarget WebSocket do Node pode emitir ErrorEvent genérico sem code/cause. R5 adiciona descrição local do runtime e agrega close code/reason sanitizados ao diagnóstico quando disponíveis. DNS/TLS/proxy preflight externo não foi executado porque violaria ZERO provider calls e não provaria o handshake autenticado.
+- Nova sessão R6 não é recomendada até existir decisão formal sobre qual semântica BidAsk, se alguma, pode alimentar o contrato OHLC. Twelve pode ser reobservado somente dentro dessa futura autorização única.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.
