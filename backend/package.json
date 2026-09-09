@@ -9,6 +9,7 @@
     "commission:ws": "node src/commissionTwelveWebSocket.js",
     "commission:oanda-readonly": "node src/commissionOandaReadOnly.js",
     "commission:cross-provider-readiness": "node src/commissionCrossProviderReadiness.js",
+    "commission:cross-provider-readonly": "node src/commissionCrossProviderReadOnly.js",
     "test": "node --test"
   },
   "dependencies": {

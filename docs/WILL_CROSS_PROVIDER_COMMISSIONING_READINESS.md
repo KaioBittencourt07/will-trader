@@ -45,3 +45,9 @@ The minimum future budget is one session, one symbol, one timeframe, one subscri
 Not verified: account/app availability, Brazilian eligibility, Saxo EUR/USD M1 entitlement in SIM/live, Twelve plan entitlement, simultaneous provider timing, reconnect/reset behavior, clock skew, or operational reliability. A separately authorized 13B would need explicit local operator authorization and bounded real credentials; none should be supplied through chat, GitHub, source, logs, or evidence.
 
 No account, token, app, login, external call, commissioning, batch, 20C.6 authorization, decision change, or merge occurred.
+
+## Fase 20C.6.13B — commissioning controlado
+
+O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.
+
+No ambiente Codex de 2026-09-09, ambas as credenciais estavam ausentes. Assim, nenhuma chamada, conexão ou assinatura foi realizada e entitlement/market data SIM permanecem externamente não verificados. O resultado desta execução é `BLOCKED_EXTERNAL`; isso não autoriza PAPER prospectivo, 20C.6 final ou ordens.

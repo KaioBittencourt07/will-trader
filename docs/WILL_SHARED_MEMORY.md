@@ -260,3 +260,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Relatório sanitizado inclui config/entitlement, conexão, freshness/completeness, reason codes e contadores, mas nunca valores de segredo. Entitlements permanecem `UNVERIFIED` até evidência externa.
 - Happy path continua `valid:false`, `decisionImpact:NONE`, `prospectivePaperAuthorized:false`; gate permanece 30.000 ms.
 - Fase 13B, 20C.6, PAPER prospectivo, chamadas externas, conta/app/token e merge permanecem não autorizados.
+
+## Fase 20C.6.13B — Controlled Read-Only Cross-Provider Commissioning
+- Resultado `BLOCKED_EXTERNAL`: Saxo e Twelve credentials estavam ausentes no runtime Codex; o harness parou antes de acesso externo, com zero sessões/conexões/subscriptions.
+- Harness isolado/default OFF exige autorização 13B exata e Saxo SIM; budget: uma sessão EUR/USD/1min, uma subscription por provider, zero retry, no máximo um reconnect.
+- Gate permanece 30.000 ms; Saxo somente OHLC fechado por contexto documental e Twelve somente quote freshness por event timestamp nativo.
+- `decisionImpact:NONE`, `prospectivePaperAuthorized:false`, zero ordens; 20C.6 final, PAPER prospectivo e merge continuam não autorizados.
