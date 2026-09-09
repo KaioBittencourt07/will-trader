@@ -221,3 +221,11 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Cache hits reavaliam freshness pelo quote timestamp atual; `storedAt` nunca rejuvenesce market data. O caso determinístico de 30,5s permanece `STALE_MARKET_DATA`.
 - O limiter de 60s preserva a fase do primeiro miss/process start; não arredonda para `:30`. Diagnostic -> opportunities reutiliza a mesma chave de 50 candles sem segunda espera.
 - Resultado para 20C.6: `BLOCKED/EXTERNAL PROVIDER SEMANTICS`. WS continua SHADOW e nenhum batch, Champion, threshold ou decisão foi alterado.
+
+## Fase 20C.6.9 — Tiingo FX Offline Qualification
+- A simbologia oficial prova `EUR/USD -> EURUSD`; o transformer offline usa somente esse mapping explícito e nunca infere aliases.
+- A documentação oficial prova os campos REST top-of-book e OHLC e a proveniência temporal do WebSocket, mas não prova explicitamente `resampleFreq=1min` nem fornece evidência de candle fechado/completo.
+- O resultado é `QUALIFIED_OFFLINE_WITH_LIMITATIONS`: candles Tiingo permanecem `UNVERIFIED_BY_PROVIDER_PAYLOAD`, sem `latestClosedCandleTimestamp`, e falham fechados no `multi-provider-ohlc-resilience-v1`.
+- Freshness continua derivada exclusivamente de `quoteTimestamp` sob o gate congelado de 30.000 ms; receive time, candle time e WebSocket nunca rejuvenescem o dado.
+- Nenhuma chamada, conta, token, commissioning, batch, 20C.6, mudança de Champion/estratégia/threshold ou merge foi autorizado ou executado.
+
