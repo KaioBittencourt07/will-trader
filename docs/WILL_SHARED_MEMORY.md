@@ -4,6 +4,11 @@
 - `ws-freshness-rest-ohlc-composition-v1` is an isolated SHADOW-only composer: WS is freshness evidence while REST remains the source of OHLC/history/features and all decision authority.
 - `COMPOSABLE` never authorizes a trade; stale REST remains `STALE_MARKET_DATA`. Provenance, timestamps, age, completeness and price divergence are explicit and fail closed.
 
+## Phase 20C.6.4
+- `provider-readiness-v1` centralizes fail-closed REST readiness. A 429 opens cooldown from safe provider headers or a 60-second local default and is never retried immediately.
+- Status inspection consumes zero provider requests; cooldown blocks new misses while cache timestamps retain their original provenance and freshness semantics.
+- WS remains SHADOW with `decisionImpact: NONE`; no live commissioning, 20C.6 or prospective batch is authorized by this phase.
+
 ## Purpose
 Keep ChatGPT and Codex aligned through the repository instead of relying on ephemeral chat memory.
 

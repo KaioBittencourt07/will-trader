@@ -20,3 +20,19 @@ test('builds a valid market snapshot from quote and candles', async () => {
   assert.equal(typeof result.structure, 'number');
   assert.equal(typeof result.volatility, 'number');
 });
+
+test('captures only safe rate-limit timing evidence from provider headers', async () => {
+  const headers = new Map([['retry-after', '7'], ['x-ratelimit-reset', '2000000000']]);
+  const provider = createTwelveDataProvider({
+    apiKey: 'test',
+    fetchImpl: async () => ({ ok: false, status: 429, headers: { get: (name) => headers.get(name) ?? null } })
+  });
+  await assert.rejects(() => provider.getSnapshot('EUR/USD'), (error) => {
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterMs, 7_000);
+    assert.equal(error.rateLimitResetAt, '2033-05-18T03:33:20.000Z');
+    assert.deepEqual(error.rateLimitEvidence, { httpStatus: 429, retryAfterProvided: true, resetProvided: true });
+    assert.equal(JSON.stringify(error).includes('test'), false);
+    return true;
+  });
+});

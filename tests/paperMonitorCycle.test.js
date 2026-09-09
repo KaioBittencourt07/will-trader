@@ -26,7 +26,7 @@ test('monitor cycle applies the same configured timeout to diagnostic and opport
     ok: true, status: null, scanned: 1, recommendation: 'EUR/USD',
     providerEfficiency: {
       version: 'provider-efficiency-v1', scope: 'paper-monitor-cycle', externalRequests: 2,
-      cacheHits: 1, cacheMisses: 1, deduplicated: 0, limiterWaitMs: 0,
+      cacheHits: 1, cacheMisses: 1, deduplicated: 0, blockedByCooldown: 0, rateLimitEvents: 0, limiterWaitMs: 0,
       externalLatencyMs: 12, creditsEstimated: 2, creditsEstimatedIsOfficial: false
     }
   });

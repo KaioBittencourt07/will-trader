@@ -82,8 +82,23 @@ async function fetchTwelveData(fetchImpl, url, options, { telemetry, creditsEsti
 function httpError(operation, response) {
   const error = new Error(`Twelve Data ${operation} HTTP ${response.status}`);
   error.status = response.status;
-  const retryAfter = Number(response.headers?.get?.('retry-after'));
-  if (Number.isFinite(retryAfter) && retryAfter >= 0) error.retryAfterMs = retryAfter * 1_000;
+  const retryAfterRaw = response.headers?.get?.('retry-after');
+  const retryAfterSeconds = Number(retryAfterRaw);
+  const retryAfterDateMs = Date.parse(retryAfterRaw ?? '');
+  if (retryAfterRaw !== null && retryAfterRaw !== undefined && Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) error.retryAfterMs = retryAfterSeconds * 1_000;
+  else if (Number.isFinite(retryAfterDateMs)) error.retryAfterAt = new Date(retryAfterDateMs).toISOString();
+  const resetRaw = response.headers?.get?.('x-ratelimit-reset')
+    ?? response.headers?.get?.('ratelimit-reset')
+    ?? response.headers?.get?.('x-api-ratelimit-reset');
+  const resetNumeric = Number(resetRaw);
+  if (Number.isFinite(resetNumeric) && resetNumeric > 0) {
+    error.rateLimitResetAt = new Date(resetNumeric > 10_000_000_000 ? resetNumeric : resetNumeric * 1_000).toISOString();
+  }
+  error.rateLimitEvidence = {
+    httpStatus: response.status,
+    retryAfterProvided: retryAfterRaw !== null && retryAfterRaw !== undefined,
+    resetProvided: resetRaw !== null && resetRaw !== undefined
+  };
   return error;
 }
 

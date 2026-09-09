@@ -16,11 +16,11 @@ export async function runPaperMonitorCycle({
   }
   const efficiency = {
     version: 'provider-efficiency-v1', scope: 'paper-monitor-cycle', externalRequests: 0,
-    cacheHits: 0, cacheMisses: 0, deduplicated: 0, limiterWaitMs: 0,
+    cacheHits: 0, cacheMisses: 0, deduplicated: 0, blockedByCooldown: 0, rateLimitEvents: 0, limiterWaitMs: 0,
     externalLatencyMs: 0, creditsEstimated: 0, creditsEstimatedIsOfficial: false
   };
   const addEfficiency = (value) => {
-    for (const key of ['externalRequests', 'cacheHits', 'cacheMisses', 'deduplicated', 'limiterWaitMs', 'externalLatencyMs', 'creditsEstimated']) {
+    for (const key of ['externalRequests', 'cacheHits', 'cacheMisses', 'deduplicated', 'blockedByCooldown', 'rateLimitEvents', 'limiterWaitMs', 'externalLatencyMs', 'creditsEstimated']) {
       const amount = Number(value?.[key]);
       if (Number.isFinite(amount) && amount >= 0) efficiency[key] += amount;
     }

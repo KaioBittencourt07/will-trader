@@ -82,17 +82,19 @@ test('records provider errors, 429s and upstream latency without turning them in
   assert.equal(metrics.upstreamLatencyMsAverage, 17);
 });
 
-test('honors Retry-After and recovers provider state only after a real success', async () => {
+test('honors Retry-After as fail-closed cooldown without an immediate retry', async () => {
   let calls = 0;
-  const waits = [];
+  let time = 1_000;
   const engine = createMarketDataEngine({
     provider: { getSnapshot: async () => { calls += 1; if (calls === 1) { const error = new Error('HTTP 429'); error.status = 429; error.retryAfterMs = 700; throw error; } return { price: 1 }; } },
-    minRequestIntervalMs: 0,
-    wait: async (ms) => waits.push(ms)
+    minRequestIntervalMs: 0, now: () => time
   });
+  await assert.rejects(() => engine.getSnapshot('EUR/USD'), /429/);
+  assert.equal(calls, 1);
+  assert.equal(engine.getMetrics().retries, 0);
+  assert.equal(engine.getProviderReadiness().cooldownRemainingMs, 700);
+  time += 700;
   assert.deepEqual(await engine.getSnapshot('EUR/USD'), { price: 1 });
-  assert.deepEqual(waits, [700]);
-  assert.equal(engine.getMetrics().retries, 1);
   assert.equal(engine.getMetrics().providerState, 'HEALTHY');
 });
 
@@ -130,4 +132,24 @@ test('diagnostic request shape warms the opportunity batch cache without a secon
   assert.equal(singleCalls, 1);
   assert.equal(batchCalls, 0);
   assert.equal(engine.getMetrics().rateLimitWaitCount, 0);
+});
+
+test('concurrent diagnostic and one-symbol scanner requests coalesce before provider access', async () => {
+  let calls = 0;
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const engine = createMarketDataEngine({
+    provider: {
+      getSnapshot: async (asset) => { calls += 1; await pending; return { asset, valid: true }; },
+      getSnapshots: async () => { throw new Error('one-symbol batch must share getSnapshot'); }
+    },
+    minRequestIntervalMs: 0
+  });
+  const diagnostic = engine.getSnapshot('EUR/USD', '1min', 50);
+  const scanner = engine.getSnapshots(['EUR/USD'], '1min', 50);
+  release();
+  assert.equal((await diagnostic).valid, true);
+  assert.equal((await scanner)[0].snapshot.valid, true);
+  assert.equal(calls, 1);
+  assert.equal(engine.getMetrics().deduplicated, 1);
 });

@@ -53,7 +53,7 @@ export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsiz
   }
   const body = await response.json().catch(() => null);
   if (body?.providerEfficiency && telemetry) {
-    for (const key of ['externalRequests', 'cacheHits', 'cacheMisses', 'deduplicated', 'limiterWaitMs', 'externalLatencyMs', 'creditsEstimated']) {
+    for (const key of ['externalRequests', 'cacheHits', 'cacheMisses', 'deduplicated', 'blockedByCooldown', 'rateLimitEvents', 'limiterWaitMs', 'externalLatencyMs', 'creditsEstimated']) {
       const value = Number(body.providerEfficiency[key]);
       if (Number.isFinite(value) && value >= 0) telemetry[key] += value;
     }
@@ -99,6 +99,7 @@ router.get('/market/status', (req, res) => {
   return res.json({
     ok: true,
     direct: getMarketDataEngine().getMetrics(),
+    providerReadiness: getMarketDataEngine().getProviderReadiness(),
     relay: getLocalRelayStatus(),
     webSocketShadow: req.app.locals.twelveWebSocketFeed?.health?.() ?? {
       mode: 'SHADOW_OBSERVABILITY', state: 'UNAVAILABLE', enabled: false, decisionImpact: 'NONE'
