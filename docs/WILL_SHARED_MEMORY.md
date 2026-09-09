@@ -19,6 +19,11 @@
 - `EUR/USD -> EUR_USD`, `1min -> M1`, midpoint candles, pricing quote timestamp and `complete=true` OHLC are independently validated without network or credentials.
 - Stale/malformed OANDA evidence remains blocked by the frozen 30-second gate; no live provider, commissioning, batch or authority change is enabled.
 
+## Phase 20C.6.8 Part A
+- `oanda-rest-v20-readonly-adapter-v1` and the one-shot `commission:oanda-readonly` command are implemented OFF by default with a strict two-GET budget and zero retries.
+- Configuration is secret-environment only; sanitized output never includes token/account values. All failures remain fail-closed through provider readiness/cooldown.
+- Status is `LIVE_READY_FOR_LOCAL_COMMISSIONING`; no live OANDA call was made by Codex and Part B still requires the explicit local external gate.
+
 ## Purpose
 Keep ChatGPT and Codex aligned through the repository instead of relying on ephemeral chat memory.
 

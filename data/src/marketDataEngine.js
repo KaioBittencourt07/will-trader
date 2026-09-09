@@ -57,7 +57,7 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     const remainingMs = Math.max(0, cooldownUntil - checkedAt);
     let state = 'READY';
     if (remainingMs > 0) state = 'COOLDOWN';
-    else if (metrics.providerState === 'OFFLINE') state = 'UNAVAILABLE';
+    else if (metrics.providerState === 'OFFLINE' || metrics.providerState === 'DEGRADED') state = 'UNAVAILABLE';
     else if (metrics.providerState === 'MISCONFIGURED') state = 'MISCONFIGURED';
     return {
       version: 'provider-readiness-v1', state, cause: remainingMs > 0 ? 'RATE_LIMITED' : null,
@@ -99,7 +99,7 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     metrics.lastErrorAt = new Date(now()).toISOString();
     const state = rateLimited(error)
       ? 'RATE_LIMITED'
-      : /API_KEY|credential|unauthori[sz]ed|forbidden/i.test(metrics.lastProviderError) ? 'MISCONFIGURED'
+      : [401, 403].includes(Number(error?.status)) || /API_KEY|credential|unauthori[sz]ed|forbidden/i.test(metrics.lastProviderError) ? 'MISCONFIGURED'
         : /ECONNREFUSED|ENOTFOUND|network unreachable/i.test(metrics.lastProviderError) ? 'OFFLINE' : 'DEGRADED';
     metrics.providerState = state;
     metrics.degradedSince ??= now();
