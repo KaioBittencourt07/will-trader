@@ -229,3 +229,12 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Freshness continua derivada exclusivamente de `quoteTimestamp` sob o gate congelado de 30.000 ms; receive time, candle time e WebSocket nunca rejuvenescem o dado.
 - Nenhuma chamada, conta, token, commissioning, batch, 20C.6, mudança de Champion/estratégia/threshold ou merge foi autorizado ou executado.
 
+## Fase 20C.6.10 — Massive Currencies Offline Qualification
+- Mappings oficiais são específicos por endpoint: aggregates/snapshot `C:EURUSD`, quotes históricas `C:EUR-USD`, last quote por `EUR/USD`, e WebSocket subscription `EUR-USD`; não há conversão silenciosa entre eles.
+- REST e WebSocket documentam aggregates de um minuto derivados de bid/ask/BBO, com lacunas quando não há novas quotes; nenhuma lacuna é preenchida sinteticamente.
+- `t` é início da janela REST e `s/e` são início/fim da janela WS. A documentação não garante aggregate finalizado/imutável, então `e` ou relógio após o fim nunca produz `VERIFIED_CLOSED`.
+- Resultado `QUALIFIED_OFFLINE_WITH_LIMITATIONS`: transformer puro, default OFF, candles `UNVERIFIED_BY_PROVIDER_PAYLOAD`, e rejeição pelo contrato congelado `multi-provider-ohlc-resilience-v1`.
+- Freshness permanece exatamente 30.000 ms sobre o timestamp original da last quote; nenhum receive/bar/WS timestamp rejuvenesce dados.
+- Basic Free documenta 5 calls/min, histórico limitado/EOD/minute aggregates, mas não quote/snapshot/WS real-time; uso futuro comercial exige plano/contrato e revisão próprios.
+- Zero provider consumption, conta, key, commissioning, batch, 20C.6, mudança decisória ou merge.
+
