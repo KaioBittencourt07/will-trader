@@ -245,3 +245,11 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Charts não fornece quote timestamp independente adequado e a própria Saxo recomenda `/InfoPrices` ou `/Prices` para preço atual; portanto o resultado é `QUALIFIED_OFFLINE_WITH_LIMITATIONS` e `QUOTE_FRESHNESS_UNVERIFIED` falha fechado no multi-provider.
 - Gate continua exatamente 30.000 ms. Adapter é puro/default OFF; zero conta, token, live/sim call, commissioning, batch, 20C.6, mudança decisória ou merge.
 
+## Fase 20C.6.12 — Cross-Provider Composition Qualification
+- Resultado `COMPOSABLE_OFFLINE` para fixtures controladas: Twelve WS é autoridade exclusiva de quote/freshness; Saxo Charts é autoridade exclusiva de OHLC M1 fechado.
+- `quoteTimestamp` vem somente do timestamp nativo do evento Twelve; `latestClosedCandleTimestamp` e todos os candles vêm somente da Saxo sob regra documental já qualificada.
+- Receive/cache/wall-clock/candle timestamps nunca rejuvenescem quote. Quote provider nunca declara candle fechado e não há merge de OHLC.
+- Gate permanece exatamente 30.000 ms. Stale/missing/invalid quote, completeness Saxo ambígua, mismatch ou proveniência insuficiente falham fechados.
+- Mesmo no happy path, saída é `OFFLINE_QUALIFIED`, `valid:false`, `decisionImpact:NONE` e sem autorização de PAPER prospectivo; o multi-provider congelado não é contornado.
+- Zero chamada, login, conta, token, app, commissioning, batch, 20C.6, alteração decisória ou merge.
+
