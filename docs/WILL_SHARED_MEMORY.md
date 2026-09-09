@@ -238,3 +238,10 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Basic Free documenta 5 calls/min, histórico limitado/EOD/minute aggregates, mas não quote/snapshot/WS real-time; uso futuro comercial exige plano/contrato e revisão próprios.
 - Zero provider consumption, conta, key, commissioning, batch, 20C.6, mudança decisória ou merge.
 
+## Fase 20C.6.11 — Saxo OpenAPI Charts Offline Qualification
+- Mapping oficial congelado: `EUR/USD -> EURUSD`, UIC `21`, `FxSpot`; WILL `1min -> Horizon=1`.
+- Snapshot inicial de subscription é documentado como samples recentemente concluídos. Em update que contém no mesmo evento o bar agora fechado e o novo bar, somente o mais antigo é fechado; o novo permanece current. REST GET, posição, relógio e intervalo temporal não provam closure.
+- `DataVersion`, `ChartInfo.FirstSampleTime`, `DelayedByMinutes` e `Data[].Time` permanecem proveniência separada e não rejuvenescem dados.
+- Charts não fornece quote timestamp independente adequado e a própria Saxo recomenda `/InfoPrices` ou `/Prices` para preço atual; portanto o resultado é `QUALIFIED_OFFLINE_WITH_LIMITATIONS` e `QUOTE_FRESHNESS_UNVERIFIED` falha fechado no multi-provider.
+- Gate continua exatamente 30.000 ms. Adapter é puro/default OFF; zero conta, token, live/sim call, commissioning, batch, 20C.6, mudança decisória ou merge.
+
