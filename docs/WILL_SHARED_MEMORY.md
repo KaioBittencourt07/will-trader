@@ -253,3 +253,10 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Mesmo no happy path, saída é `OFFLINE_QUALIFIED`, `valid:false`, `decisionImpact:NONE` e sem autorização de PAPER prospectivo; o multi-provider congelado não é contornado.
 - Zero chamada, login, conta, token, app, commissioning, batch, 20C.6, alteração decisória ou merge.
 
+## Fase 20C.6.13A — Cross-Provider Live Commissioning Readiness
+- Resultado `LIVE_COMPOSITION_READINESS_PREPARED`, apenas PREP: harness puro e comando local sem cliente de rede, default OFF e bloqueado sem autorização exata de 13B.
+- Budget futuro congelado: uma sessão, EUR/USD/1min, uma subscription por provider, zero retries, no máximo um reconnect observável; reset invalida continuidade.
+- Saxo permanece `OHLC_CLOSED_ONLY` nos contextos allowlisted; Twelve WS permanece `QUOTE_FRESHNESS_ONLY` pelo timestamp nativo do evento. Não há substituição temporal ou OHLC mixing.
+- Relatório sanitizado inclui config/entitlement, conexão, freshness/completeness, reason codes e contadores, mas nunca valores de segredo. Entitlements permanecem `UNVERIFIED` até evidência externa.
+- Happy path continua `valid:false`, `decisionImpact:NONE`, `prospectivePaperAuthorized:false`; gate permanece 30.000 ms.
+- Fase 13B, 20C.6, PAPER prospectivo, chamadas externas, conta/app/token e merge permanecem não autorizados.
