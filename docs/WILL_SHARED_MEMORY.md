@@ -14,6 +14,11 @@
 - Canonical WILL symbols and provider symbols are explicitly mapped. Provider readiness/cache remain isolated and all providers bad fails closed as `ALL_PROVIDERS_UNAVAILABLE`.
 - No secondary commercial provider or live commissioning is configured by this foundation; both require separate external and audit decisions.
 
+## Phase 20C.6.7
+- OANDA REST-v20 is `QUALIFIED_OFFLINE` under `secondary-provider-qualification-v1`; live eligibility remains `EXTERNAL_UNVERIFIED` and the adapter is OFF by default.
+- `EUR/USD -> EUR_USD`, `1min -> M1`, midpoint candles, pricing quote timestamp and `complete=true` OHLC are independently validated without network or credentials.
+- Stale/malformed OANDA evidence remains blocked by the frozen 30-second gate; no live provider, commissioning, batch or authority change is enabled.
+
 ## Purpose
 Keep ChatGPT and Codex aligned through the repository instead of relying on ephemeral chat memory.
 
