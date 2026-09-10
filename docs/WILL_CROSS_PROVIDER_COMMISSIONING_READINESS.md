@@ -119,6 +119,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Classificações são exclusivamente baseadas em evidência: sucesso completo, `SUBSCRIBE_REJECTED`, `APPLICATION_AUTH_OR_ENTITLEMENT_REJECTED`, `POST_UPGRADE_TIMEOUT`, `SUBSCRIBE_ACCEPTED_QUOTE_TIMEOUT`, `POST_UPGRADE_ABNORMAL_CLOSE`, `APPLICATION_PROTOCOL_UNRECOGNIZED` ou `POST_UPGRADE_INCONCLUSIVE`. Close/silêncio nunca inferem auth/entitlement.
 - Conclusão **A**: fluxo local/protocolo pós-101 validado e pronto tecnicamente para uma futura execução diagnóstica isolada, somente após auditoria/autorização separadas. Nenhuma R8B externa foi executada ou autorizada.
 
+## Fase 20C.6.13B-R8C-PREP — observação prolongada offline
+
+- `twelve-post-subscribe-observation-v1` permanece isolado e aceita uma janela configurável estritamente limitada a 60 segundos. O provider fica bloqueado sem autorização futura literal; nesta fase o harness RFC 6455 usou somente localhost e segredo sintético.
+- Uma conexão envia exatamente um subscribe EUR/USD. Quote imediata e tardia são observadas; silêncio e close após aceite ficam sem causa inferida; heartbeat, controle, JSON inválido e eventos desconhecidos são somente contados e não impedem uma quote posterior.
+- O relatório contém apenas contadores, tempos relativos, estados booleanos, close code e classificação. Não inclui key, URL/query, headers, frames, payload, preço, IP, token, texto livre ou Location.
+- Nenhuma R8C externa está autorizada. Zero provider calls, REST, Saxo, commissioning, Champion, PAPER, dashboard ou merge.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

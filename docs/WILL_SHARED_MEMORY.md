@@ -317,3 +317,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Harness RFC6455 localhost cobre accepted+quote, rejected, auth/entitlement explícito, unknown, timeout, close antes do status e accepted sem quote. Ordem é obrigatória; quote precoce falha fechado.
 - Saída é allowlisted e não contém query/key/header/frame/payload/preço/IP/token. Zero reconnect/retry/redirect/REST/Saxo.
 - Conclusão A: protocolo pós-101 validado offline; futura R8B diagnostic-only exige auditoria e autorização separadas. Nenhuma execução externa, credencial real, PAPER ou merge ocorreu.
+
+## Fase 20C.6.13B-R8C-PREP — Observação Prolongada Offline
+- `twelve-post-subscribe-observation-v1` prolonga somente a observação diagnóstica após subscribe aceito, com janela configurável e limite rígido de 60s.
+- Harness localhost prova quote imediata/tardia, silêncio, close, controle/heartbeat e múltiplas mensagens não-price antes da quote, sem inferir auth, entitlement, plano, mercado ou causa de provider.
+- Uma conexão, um subscribe EUR/USD, zero retry/reconnect/redirect/REST/Saxo e saída exclusivamente sanitizada. R8C externa, commissioning, Champion, PAPER, dashboard e merge não estão autorizados.
