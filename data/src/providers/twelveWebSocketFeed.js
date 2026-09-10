@@ -1,3 +1,5 @@
+import { classifyPreOpenHandshakeFailure } from './twelveHandshakeAnalysis.js';
+
 const WS_URL = 'wss://ws.twelvedata.com/v1/quotes/price';
 
 function normalizeSymbols(symbols) {
@@ -37,7 +39,12 @@ function transportDiagnostic(error, phase) {
   else if (/PROXY/.test(code || '') || /proxy/i.test(detail)) category = 'PROXY';
   else if (/ECONN|ETIMEDOUT|UND_ERR_CONNECT/.test(code || '')) category = 'NETWORK';
   else if (/401|403|handshake|unexpected response/i.test(detail)) category = 'AUTH_OR_HANDSHAKE';
-  return { phase, category, code, detail, secretExposed: false };
+  const rawStatusCode = error?.statusCode ?? error?.status ?? nested?.statusCode ?? nested?.status;
+  const observedStatusCode = rawStatusCode !== null && rawStatusCode !== undefined && rawStatusCode !== '' && Number.isInteger(Number(rawStatusCode))
+    ? Number(rawStatusCode) : null;
+  const handshake = phase === 'PRE_OPEN' ? classifyPreOpenHandshakeFailure({ statusCode: observedStatusCode,
+    timedOut: code === 'ETIMEDOUT', errorCode: code }) : null;
+  return { phase, category, code, detail, ...(handshake ? { handshake } : {}), secretExposed: false };
 }
 
 function statusSymbols(value) {
@@ -229,11 +236,17 @@ export function createTwelveWebSocketFeed({
         if (event?.reason) metrics.lastDisconnectReason = sanitizedDetail(event.reason);
         if (metrics.lastTransportDiagnostic) {
           metrics.lastTransportDiagnostic = { ...metrics.lastTransportDiagnostic,
-            closeCode: metrics.lastDisconnectCode, closeReason: metrics.lastDisconnectReason, secretExposed: false };
+            closeCode: metrics.lastDisconnectCode, closeReason: metrics.lastDisconnectReason,
+            handshake: metrics.successfulConnections === 0 ? classifyPreOpenHandshakeFailure({
+              statusCode: metrics.lastTransportDiagnostic.handshake?.observedStatusCode,
+              timedOut: metrics.lastTransportDiagnostic.handshake?.classification === 'PRE_OPEN_TIMEOUT',
+              closeCode: metrics.lastDisconnectCode, errorCode: metrics.lastTransportDiagnostic.code }) : undefined,
+            secretExposed: false };
         }
         if (metrics.successfulConnections === 0 && !metrics.lastTransportDiagnostic) {
           metrics.lastTransportDiagnostic = { phase: 'PRE_OPEN', category: 'CLOSE_BEFORE_OPEN', code: null,
-            closeCode: metrics.lastDisconnectCode, detail: metrics.lastDisconnectReason, secretExposed: false };
+            closeCode: metrics.lastDisconnectCode, detail: metrics.lastDisconnectReason,
+            handshake: classifyPreOpenHandshakeFailure({ closeCode: metrics.lastDisconnectCode }), secretExposed: false };
         }
         acceptedSymbols.clear();
         metrics.subscriptionsAccepted = 0;

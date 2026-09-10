@@ -299,3 +299,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Endpoint/path/query e payload subscribe atuais conferem com a documentação Twelve. Nenhuma chave ou conexão WebSocket foi usada nesta fase.
 - TRANSPORT_PREFLIGHT não autenticado: DNS + TCP 443 nu + TLS 443 com SNI/certificado, separadamente em IPv4/IPv6; sem HTTP, upgrade, subscribe ou payload. Resultado: ambos os families com TCP/TLS autorizado em TLS 1.3, sem proxy em variáveis de ambiente.
 - Conclusão B: transporte básico local saudável; erro R6 continua provável em upgrade/auth/entitlement/provider e só pode ser discriminado por futura sessão explicitamente autorizada. R7 não foi executada nem autorizada.
+
+## Fase 20C.6.13B-R8-PREP — Twelve Handshake Offline
+- Harness local confirmou request target/query placeholder, Upgrade RFC 6455, version 13, key válida, permessage-deflate e subscribe somente após OPEN. Node envia User-Agent `node`, sem Origin/Authorization neste caminho.
+- Redirect 302 e rejeição 403 locais colapsam na API pública para ErrorEvent vazio + close 1006; não se pode inferir status, auth ou entitlement de 1006. Classificações específicas só são usadas quando a evidência é observável; caso contrário fica `PRE_OPEN_ABNORMAL_CLOSE` com causa não confirmada.
+- Canais oficiais Undici foram auditados: close é redundante e socket_error não atribui a instância; rejeição HTTP não expôs status pelo canal. Nenhum hook privado, troca para `ws`, ProxyAgent ou dispatcher foi introduzido.
+- Conclusão B: implementação local e protocolo Twelve são compatíveis; blocker provável permanece auth/entitlement/upgrade/provider. Zero provider WebSocket, credenciais, R8, REST fallback, PAPER ou merge.

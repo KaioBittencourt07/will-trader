@@ -61,6 +61,7 @@ test('uses one central connection, subscribes controlled symbols and sends heart
   assert.equal(h.feed.start(), false);
   assert.equal(h.sockets.length, 1);
   assert.match(h.sockets[0].url, /^wss:\/\/ws\.twelvedata\.com\/v1\/quotes\/price\?apikey=/);
+  assert.deepEqual(h.sockets[0].sent, []);
   h.sockets[0].open();
   assert.deepEqual(h.sockets[0].sent[0], { action: 'subscribe', params: { symbols: 'EUR/USD,BTC/USD' } });
   h.sockets[0].message({ event: 'subscribe-status', status: 'ok', success: [{ symbol: 'EUR/USD' }, { symbol: 'BTC/USD' }], fails: [] });
@@ -157,6 +158,7 @@ test('hard reconnect limit prevents an initial error loop and stop cancels the b
   const h = harness({ maxReconnects: 1, reconnectBaseMs: 100 });
   h.feed.start();
   h.sockets[0].emit('close', { code: 1006 });
+  assert.equal(h.feed.health().lastTransportDiagnostic.handshake.classification, 'PRE_OPEN_ABNORMAL_CLOSE');
   let retry = [...h.timers.entries()].find(([, timer]) => timer.delay === 100)?.[0];
   h.runTimer(retry);
   h.sockets[1].emit('close', { code: 1006 });
@@ -209,6 +211,25 @@ test('pre-open close code and reason augment generic ErrorEvent safely', () => {
   h.sockets[0].emit('close', { code: 1006, reason: 'proxy failed apikey=secret-key' });
   const diagnostic = h.feed.health().lastTransportDiagnostic;
   assert.equal(diagnostic.phase, 'PRE_OPEN'); assert.equal(diagnostic.category, 'UNKNOWN'); assert.equal(diagnostic.closeCode, 1006);
+  assert.equal(diagnostic.handshake.classification, 'PRE_OPEN_ABNORMAL_CLOSE');
+  assert.equal(diagnostic.handshake.authOrEntitlement, 'UNVERIFIED'); assert.equal(diagnostic.handshake.causeConfirmed, false);
   assert.equal(JSON.stringify(diagnostic).includes('secret-key'), false);
   h.feed.stop(); assert.equal(h.timers.size, 0);
+});
+
+test('observable pre-open status and timeout classifications remain conservative and sanitized', () => {
+  for (const [event, expected] of [
+    [{ type: 'error', statusCode: 403, message: 'token=secret-key' }, 'UPGRADE_HTTP_REJECTED'],
+    [{ type: 'error', statusCode: 302, message: 'redirect apikey=secret-key' }, 'REDIRECT_REJECTED'],
+    [{ type: 'error', code: 'ETIMEDOUT', message: 'timeout apikey=secret-key' }, 'PRE_OPEN_TIMEOUT']
+  ]) {
+    const h = harness({ symbols: ['EUR/USD'], maxReconnects: 1 });
+    h.feed.start(); h.sockets[0].emit('error', event); h.sockets[0].emit('close', { code: 1006 });
+    const diagnostic = h.feed.health().lastTransportDiagnostic;
+    assert.equal(diagnostic.handshake.classification, expected);
+    assert.equal(diagnostic.handshake.providerCauseConfirmed, false);
+    assert.equal(JSON.stringify(diagnostic).includes('secret-key'), false);
+    assert.equal(h.feed.health().reconnects, 1);
+    h.feed.stop(); assert.equal(h.timers.size, 0);
+  }
 });
