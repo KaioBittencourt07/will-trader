@@ -87,6 +87,9 @@ export function composeSaxoClosedOhlcIndependentQuote({
   }
 
   const evidence = {
+    providerEvidenceValid: reasons.length === 0,
+    marketDataRepresentation: 'DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE',
+    championCompatible: true,
     canonicalSymbol: symbol,
     timeframe,
     freshnessMaxAgeMs: 30_000,
@@ -104,7 +107,8 @@ export function composeSaxoClosedOhlcIndependentQuote({
       quoteReceivedAt: 'will.local_clock_when_ws_event_received_non_authoritative',
       latestClosedCandleTimestamp: saxoSnapshot?.timestampOrigins?.candleTimestamp ?? null
     },
-    separation: { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false, mixedOhlc: false, timestampSubstitution: false },
+    separation: { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false,
+      mixedOhlc: false, timestampSubstitution: false, championBypass: false },
     offlineOnly: true,
     prospectivePaperAuthorized: false
   };

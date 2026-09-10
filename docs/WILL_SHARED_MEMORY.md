@@ -287,3 +287,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Saxo documental BidAsk pode ter `providerEvidenceValid:true` e `marketDataRepresentation:BID_ASK_OHLC`, mas permanece `championCompatible:false`.
 - Validação é independente por lado; nenhum cross-side hard gate foi criado sem garantia documental. Single-OHLC e Champion permanecem inalterados.
 - Com Twelve fresh, composição é somente provider evidence offline e não gera direção, score, decisão ou PAPER. Zero calls/credentials; R6 continua não autorizada.
+
+## Fase 20C.6.13B-R6-PREFLIGHT — Auditoria Offline do Gate
+- Readiness do runner exige o contrato explícito `DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE`; somente `COMPOSABLE_OFFLINE` não basta.
+- BidAsk válido + Twelve fresh é provado por regressão como `BLOCKED_EXTERNAL`, com todos os marcadores não decisórios expostos no relatório sanitizado e sem conversão, midpoint, lado escolhido ou Champion bypass.
+- Twelve permanece limitado a exatamente uma conexão/subscription request/accept, reconnect <= 1, gate 30s e zero REST fallback.
+- Recomendação de R6 depende desta prova e de auditoria independente; este preflight não executa nem autoriza R6.

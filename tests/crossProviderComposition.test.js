@@ -56,7 +56,8 @@ test('provider source separation and provenance are explicit', () => {
   assert.equal(value.latestClosedCandleTimestamp, '2026-09-09T11:59:00.000Z');
   assert.equal(value.timestampOrigins.quoteTimestamp, 'twelvedata.websocket.price.timestamp');
   assert.equal(value.timestampOrigins.latestClosedCandleTimestamp, 'saxo.chart.v3.response.Data[].Time');
-  assert.deepEqual(value.separation, { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false, mixedOhlc: false, timestampSubstitution: false });
+  assert.deepEqual(value.separation, { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false,
+    mixedOhlc: false, timestampSubstitution: false, championBypass: false });
 });
 
 test('freshness gate remains exactly 30 seconds', () => {
@@ -90,4 +91,3 @@ test('offline qualification cannot bypass multi-provider decision gate', async (
   } }] });
   await assert.rejects(() => multi.getSnapshot('EUR/USD'), (error) => error.code === 'ALL_PROVIDERS_UNAVAILABLE');
 });
-

@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildSaxoSubscriptionBody, commissioningConfiguration, describeWebSocketRuntime, extractSaxoSubscriptionSnapshot, runCrossProviderCommissioning } from '../backend/src/crossProviderCommissioning.js';
-import { transformSaxoChartsOffline } from '../data/src/providers/saxoQualification.js';
+import { transformSaxoBidAskChartsOffline, transformSaxoChartsOffline } from '../data/src/providers/saxoQualification.js';
 
 const NOW = Date.parse('2026-09-09T20:00:20Z');
 const env = { WILL_CROSS_PROVIDER_COMMISSIONING_ENABLED: 'true', WILL_CROSS_PROVIDER_AUTHORIZATION: '13B_EXPLICITLY_AUTHORIZED',
   WILL_SAXO_ENVIRONMENT: 'sim', WILL_SAXO_ACCESS_TOKEN: 'synthetic-saxo', TWELVE_DATA_API_KEY: 'synthetic-twelve' };
 const saxo = () => transformSaxoChartsOffline({ chartResponse: { ChartInfo: { Horizon: 1, FirstSampleTime: '2020-01-01T00:00:00Z' }, DataVersion: 1,
   Data: [{ Time: '2026-09-09T19:59:00Z', Open: 1.17, High: 1.171, Low: 1.169, Close: 1.1705 }] }, sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(NOW).toISOString() });
+const saxoBidAsk = () => transformSaxoBidAskChartsOffline({ chartResponse: { ChartInfo: { Horizon: 1, FirstSampleTime: '2020-01-01T00:00:00Z' }, DataVersion: 1,
+  Data: [{ Time: '2026-09-09T19:59:00Z', OpenBid: 1.17, HighBid: 1.171, LowBid: 1.169, CloseBid: 1.1705,
+    OpenAsk: 1.1701, HighAsk: 1.1711, LowAsk: 1.1691, CloseAsk: 1.1706 }] }, sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(NOW).toISOString() });
 
 class Socket {
   static OPEN = 1; OPEN = 1; readyState = 0; listeners = {};
@@ -48,6 +51,29 @@ test('bounded synthetic commissioning passes without decision authority', async 
   assert.equal(report.result, 'READONLY_COMMISSIONING_PASSED');
   assert.equal(report.sessions, 1); assert.equal(report.ordersExecuted, 0); assert.equal(report.decisionImpact, 'NONE');
   assert.equal(report.prospectivePaperAuthorized, false); assert.equal(report.gateMs, 30_000);
+  assert.equal(report.composition.marketDataRepresentation, 'DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE');
+  assert.equal(report.composition.championCompatible, true);
+});
+
+test('valid BidAsk evidence and a fresh quote cannot pass the commissioning gate', async () => {
+  let socket;
+  const report = await runCrossProviderCommissioning({ env, now: () => NOW, wait: async () => {},
+    webSocketFactory: () => { socket = new Socket(); queueMicrotask(() => socket.open()); return socket; },
+    saxoSubscribe: async () => saxoBidAsk() });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(report.result, 'BLOCKED_EXTERNAL');
+  assert.ok(report.reasonCodes.includes('CHAMPION_INCOMPATIBLE_BID_ASK'));
+  assert.deepEqual(report.composition, {
+    state: 'PROVIDER_EVIDENCE_COMPOSABLE_OFFLINE', providerEvidenceValid: true,
+    marketDataRepresentation: 'BID_ASK_OHLC_PLUS_INDEPENDENT_QUOTE', championCompatible: false,
+    valid: false, decisionImpact: 'NONE', prospectivePaperAuthorized: false, ordersExecuted: 0,
+    midpoint: null, selectedSide: null,
+    separation: { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false,
+      representationConversion: false, midpointCreated: false, selectedSide: false, championBypass: false }
+  });
+  assert.equal(report.twelve.connections, 1); assert.equal(report.twelve.subscriptions, 1);
+  assert.equal(report.twelve.reconnects, 0); assert.equal(report.ordersExecuted, 0);
+  assert.equal('direction' in report, false); assert.equal('score' in report, false);
 });
 
 test('Saxo unavailable or ambiguous fails closed', async () => {

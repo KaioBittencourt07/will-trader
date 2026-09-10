@@ -75,6 +75,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Com Twelve quote fresh independente, a composição pode ser `PROVIDER_EVIDENCE_COMPOSABLE_OFFLINE`, sempre `valid:false`, `decisionImpact:NONE` e sem consumidor Champion/PAPER.
 - Single-OHLC permanece separado e backward compatible. R5S fez zero chamadas e não autoriza R6.
 
+## Fase 20C.6.13B-R6-PREFLIGHT — auditoria offline do gate
+
+- O gate de commissioning agora exige conjuntamente a versão single-OHLC, `COMPOSABLE_OFFLINE`, `DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE`, `championCompatible:true` e ausência de bypass. A igualdade do estado, isoladamente, não concede passagem.
+- Saxo BidAsk válido mais quote Twelve fresca permanece `PROVIDER_EVIDENCE_COMPOSABLE_OFFLINE`, `championCompatible:false`, `valid:false`, `decisionImpact:NONE`, sem midpoint/side selection, e termina em `BLOCKED_EXTERNAL` com `CHAMPION_INCOMPATIBLE_BID_ASK`.
+- O runner exige exatamente uma conexão, uma solicitação e uma aceitação de subscription; reconnect continua no máximo 1, freshness em 30.000 ms e o feed declara zero consumo REST.
+- A prova é inteiramente sintética/offline. Nenhuma R6, provider call, credencial, PAPER, decisão, ordem ou merge foi autorizada.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.
