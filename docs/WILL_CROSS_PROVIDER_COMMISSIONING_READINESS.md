@@ -103,6 +103,14 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Conclusão **B**: handshake local/protocolo compatível; blocker provável em auth/entitlement/rejeição de upgrade/provider, sem causa confirmada. Nenhuma conexão ao provider, credencial ou R8 foi usada.
 - Referências: https://github.com/nodejs/undici/blob/main/docs/docs/api/WebSocket.md, https://github.com/nodejs/undici/blob/main/docs/docs/api/DiagnosticsChannel.md, https://twelvedata.com/docs/websocket/ws-overview, https://support.twelvedata.com/en/articles/5620516-how-to-stream-the-data e https://support.twelvedata.com/en/articles/5194610-websocket-faq.
 
+## Fase 20C.6.13B-R8A-PREP — diagnosticador HTTP Upgrade offline
+
+- `twelve-handshake-diagnostic-v1` é um cliente RFC 6455 mínimo separado do feed, commissioning, composição e Champion. Ele faz no máximo um GET Upgrade, não segue redirects, não repete, nunca envia frame/subscription e encerra imediatamente após observar a resposta.
+- O alvo externo exato fica fail-closed sem uma autorização futura específica; nesta fase somente localhost com flag sintética foi permitido. Nenhuma credencial real ou host provider foi usado.
+- O relatório contém apenas status HTTP, classificação, presença/validade do `Sec-WebSocket-Accept`, presença de Location/Retry-After e contadores fixos. API key, WebSocket key, Location, headers, IP, body e payload bruto nunca são retornados.
+- Servidores locais provaram: 101 com accept válido → `HANDSHAKE_OBSERVED`; 101 inválido → bloqueado; 302 → `REDIRECT_REJECTED`; 401/403 → `AUTH_OR_ENTITLEMENT_REJECTED`; 429 → `RATE_LIMITED`; timeout → `PRE_OPEN_TIMEOUT`. Todos com attempts=1, retries=0, redirects=false, subscribe=false e zero bytes de aplicação.
+- O diagnosticador não substitui o WebSocket principal e não altera Champion, PAPER, dashboard, thresholds, Saxo, BidAsk, freshness ou budgets. R8A externa não foi autorizada.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

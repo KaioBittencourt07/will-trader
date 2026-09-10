@@ -305,3 +305,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Redirect 302 e rejeição 403 locais colapsam na API pública para ErrorEvent vazio + close 1006; não se pode inferir status, auth ou entitlement de 1006. Classificações específicas só são usadas quando a evidência é observável; caso contrário fica `PRE_OPEN_ABNORMAL_CLOSE` com causa não confirmada.
 - Canais oficiais Undici foram auditados: close é redundante e socket_error não atribui a instância; rejeição HTTP não expôs status pelo canal. Nenhum hook privado, troca para `ws`, ProxyAgent ou dispatcher foi introduzido.
 - Conclusão B: implementação local e protocolo Twelve são compatíveis; blocker provável permanece auth/entitlement/upgrade/provider. Zero provider WebSocket, credenciais, R8, REST fallback, PAPER ou merge.
+
+## Fase 20C.6.13B-R8A-PREP — Diagnosticador de Upgrade Offline
+- `twelve-handshake-diagnostic-v1` é isolado do feed/commissioning/Champion: uma tentativa, nenhum redirect/retry/frame/subscribe e fechamento após a resposta HTTP Upgrade.
+- Saída allowlisted observa 101/302/401/403/429/timeout sem API key, Sec-WebSocket-Key, Location, headers, IP, body ou payload bruto. 101 também exige prova criptográfica de `Sec-WebSocket-Accept`.
+- Apenas servidores localhost sintéticos foram usados. Alvo externo exige autorização futura exata e permaneceu bloqueado; zero provider calls e zero credenciais reais nesta fase.
+- R8A externa, PAPER e merge permanecem não autorizados.
