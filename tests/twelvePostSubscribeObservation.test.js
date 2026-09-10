@@ -20,6 +20,7 @@ async function scenario(mode) {
       frames += 1; subscribe = JSON.parse(decode(chunk));
       if (mode === 'immediate') socket.write(Buffer.concat([frame(status), frame(quote)]));
       if (mode === 'late') { socket.write(frame(status)); setTimeout(() => socket.write(frame(quote)), 60); }
+      if (mode === 'delayed_status_quote') setTimeout(() => { socket.write(frame(status)); setTimeout(() => socket.write(frame(quote)), 80); }, 80);
       if (mode === 'silent') socket.write(frame(status));
       if (mode === 'close') { socket.write(Buffer.concat([frame(status), frame(Buffer.from([0x03, 0xf0]), 8)])); setImmediate(() => socket.end()); }
       if (mode === 'control') socket.write(Buffer.concat([frame(status), frame(JSON.stringify({ event: 'heartbeat' })), frame(quote)]));
@@ -30,7 +31,7 @@ async function scenario(mode) {
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const endpoint = `ws://127.0.0.1:${server.address().port}/socket`;
-  const report = await observeTwelvePostSubscribe({ endpoint, apiKey: 'SYNTHETIC_SECRET', allowLocalSynthetic: true, observationWindowMs: 120 });
+  const report = await observeTwelvePostSubscribe({ endpoint, apiKey: 'SYNTHETIC_SECRET', allowLocalSynthetic: true, observationWindowMs: 120, preAcceptTimeoutMs: 200 });
   for (const socket of sockets) socket.destroy(); await new Promise((resolve) => server.close(resolve));
   return { report, frames, subscribe };
 }
@@ -44,6 +45,19 @@ test('immediate and delayed quotes are observed inside the bounded window', asyn
 test('silence and close after accepted subscribe remain conservative', async () => {
   const silent = (await scenario('silent')).report; assert.equal(silent.classification, 'SUBSCRIBE_ACCEPTED_NO_QUOTE_WITHIN_WINDOW'); assert.equal(silent.causeConfirmed, false);
   const closed = (await scenario('close')).report; assert.equal(closed.classification, 'POST_SUBSCRIBE_ABNORMAL_CLOSE'); assert.equal(closed.causeConfirmed, false);
+});
+
+test('delay before acceptance does not consume the post-accept quote window', async () => {
+  const { report } = await scenario('delayed_status_quote');
+  assert.equal(report.classification, 'QUOTE_OBSERVED_WITHIN_WINDOW');
+  assert.ok(report.elapsedMsToSubscribeStatus >= 50);
+  assert.ok(report.elapsedMsToFirstQuote >= 50 && report.elapsedMsToFirstQuote < report.observationWindowMs);
+});
+
+test('pre-accept timeout is separate, bounded and fail-closed', async () => {
+  const { report } = await scenario('never_status');
+  assert.equal(report.classification, 'PRE_ACCEPT_TIMEOUT'); assert.equal(report.subscribeAccepted, false);
+  assert.equal(report.firstQuoteObserved, false); assert.equal(report.causeConfirmed, false);
 });
 
 test('control and multiple unknown messages do not hide a later quote or infer auth', async () => {
@@ -63,4 +77,5 @@ test('only explicit protocol evidence classifies auth and budgets stay frozen', 
 test('external target and observation windows above 60 seconds fail before access', async () => {
   await assert.rejects(() => observeTwelvePostSubscribe({ apiKey: 'SYNTHETIC_SECRET' }), /NOT_AUTHORIZED/);
   await assert.rejects(() => observeTwelvePostSubscribe({ endpoint: 'ws://127.0.0.1:1', apiKey: 'SYNTHETIC_SECRET', allowLocalSynthetic: true, observationWindowMs: 60_001 }), /WINDOW_INVALID/);
+  await assert.rejects(() => observeTwelvePostSubscribe({ endpoint: 'ws://127.0.0.1:1', apiKey: 'SYNTHETIC_SECRET', allowLocalSynthetic: true, preAcceptTimeoutMs: 60_001 }), /PRE_ACCEPT_TIMEOUT_INVALID/);
 });

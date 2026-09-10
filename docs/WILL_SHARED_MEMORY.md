@@ -322,3 +322,4 @@ When Codex starts a new substantial task, treat the following as the default ins
 - `twelve-post-subscribe-observation-v1` prolonga somente a observação diagnóstica após subscribe aceito, com janela configurável e limite rígido de 60s.
 - Harness localhost prova quote imediata/tardia, silêncio, close, controle/heartbeat e múltiplas mensagens não-price antes da quote, sem inferir auth, entitlement, plano, mercado ou causa de provider.
 - Uma conexão, um subscribe EUR/USD, zero retry/reconnect/redirect/REST/Saxo e saída exclusivamente sanitizada. R8C externa, commissioning, Champion, PAPER, dashboard e merge não estão autorizados.
+- Audit fix: pre-accept possui timeout próprio; somente o aceite explícito de EUR/USD inicia a janela pós-subscribe. O tempo até a primeira quote é medido desde esse aceite.

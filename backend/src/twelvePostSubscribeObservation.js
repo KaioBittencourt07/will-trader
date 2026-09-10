@@ -5,7 +5,7 @@ const symbolList = (value) => Array.isArray(value) ? value.map((item) => String(
 const explicitAuthRejection = (payload) => payload?.status === 'error' && /auth|api.?key|entitlement|permission|not.?authorized|forbidden/i.test(String(payload?.message ?? payload?.code ?? ''));
 
 export async function observeTwelvePostSubscribe({ endpoint = OFFICIAL_ENDPOINT, apiKey, authorization,
-  allowLocalSynthetic = false, observationWindowMs = 60_000, now = () => Date.now(),
+  allowLocalSynthetic = false, observationWindowMs = 60_000, preAcceptTimeoutMs = 5_000, now = () => Date.now(),
   webSocketFactory = (url) => new globalThis.WebSocket(url) } = {}) {
   const target = new URL(endpoint);
   const local = ['localhost', '127.0.0.1', '::1'].includes(target.hostname);
@@ -13,14 +13,15 @@ export async function observeTwelvePostSubscribe({ endpoint = OFFICIAL_ENDPOINT,
   if (!(allowLocalSynthetic && local) && !externalAuthorized) throw new Error('POST_SUBSCRIBE_OBSERVATION_NOT_AUTHORIZED');
   if (!apiKey) throw new Error('POST_SUBSCRIBE_OBSERVATION_KEY_MISSING');
   if (!Number.isFinite(observationWindowMs) || observationWindowMs < 100 || observationWindowMs > 60_000) throw new Error('POST_SUBSCRIBE_OBSERVATION_WINDOW_INVALID');
+  if (!Number.isFinite(preAcceptTimeoutMs) || preAcceptTimeoutMs < 100 || preAcceptTimeoutMs > 60_000) throw new Error('POST_SUBSCRIBE_PRE_ACCEPT_TIMEOUT_INVALID');
   target.search = ''; target.searchParams.set('apikey', apiKey);
   const startedAt = now();
   const state = { connections: 0, handshakeAccepted: false, subscribeSent: false, subscribeAttempts: 0,
     subscribeAccepted: false, firstQuoteObserved: false, quoteMessagesObserved: 0, nonPriceMessagesObserved: 0,
-    elapsedMsToSubscribeStatus: null, elapsedMsToFirstQuote: null, observationWindowMs,
+    elapsedMsToSubscribeStatus: null, elapsedMsToFirstQuote: null, observationWindowMs, preAcceptTimeoutMs,
     closeCode: null, retries: 0, reconnects: 0, redirects: 0, applicationMessagesSent: 0 };
   return new Promise((resolve) => {
-    let settled = false; let socket; let timer; let protocolUnknownObserved = false;
+    let settled = false; let socket; let timer; let acceptedAt = null; let protocolUnknownObserved = false;
     const finish = (classification, causeConfirmed) => {
       if (settled) return; settled = true; clearTimeout(timer);
       const report = Object.freeze({ diagnosticVersion: TWELVE_POST_SUBSCRIBE_OBSERVATION_VERSION, ...state,
@@ -31,7 +32,7 @@ export async function observeTwelvePostSubscribe({ endpoint = OFFICIAL_ENDPOINT,
     };
     try { socket = webSocketFactory(target.toString()); }
     catch { finish('APPLICATION_PROTOCOL_INCONCLUSIVE', false); return; }
-    timer = setTimeout(() => finish(state.subscribeAccepted && !protocolUnknownObserved ? 'SUBSCRIBE_ACCEPTED_NO_QUOTE_WITHIN_WINDOW' : 'APPLICATION_PROTOCOL_INCONCLUSIVE', false), observationWindowMs);
+    timer = setTimeout(() => finish('PRE_ACCEPT_TIMEOUT', false), preAcceptTimeoutMs);
     socket.addEventListener('open', () => {
       if (settled || state.subscribeAttempts) return;
       state.connections = 1; state.handshakeAccepted = true; state.subscribeAttempts = 1;
@@ -48,12 +49,14 @@ export async function observeTwelvePostSubscribe({ endpoint = OFFICIAL_ENDPOINT,
         const accepted = symbolList(payload.success).includes('EUR/USD');
         const rejected = symbolList(payload.fails ?? payload.failed).includes('EUR/USD') || payload.status === 'error';
         if (rejected || !accepted) { finish('APPLICATION_PROTOCOL_INCONCLUSIVE', false); return; }
-        state.subscribeAccepted = true; return;
+        state.subscribeAccepted = true; acceptedAt = now(); clearTimeout(timer);
+        timer = setTimeout(() => finish(protocolUnknownObserved ? 'APPLICATION_PROTOCOL_INCONCLUSIVE' : 'SUBSCRIBE_ACCEPTED_NO_QUOTE_WITHIN_WINDOW', false), observationWindowMs);
+        return;
       }
       if (payload?.event === 'price' && String(payload?.symbol ?? '').toUpperCase() === 'EUR/USD') {
         if (!state.subscribeAccepted) { state.nonPriceMessagesObserved += 1; return; }
         state.firstQuoteObserved = true; state.quoteMessagesObserved += 1;
-        state.elapsedMsToFirstQuote = Math.max(0, now() - startedAt);
+        state.elapsedMsToFirstQuote = Math.max(0, now() - acceptedAt);
         finish('QUOTE_OBSERVED_WITHIN_WINDOW', true); return;
       }
       state.nonPriceMessagesObserved += 1;

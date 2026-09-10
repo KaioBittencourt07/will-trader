@@ -125,6 +125,7 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Uma conexão envia exatamente um subscribe EUR/USD. Quote imediata e tardia são observadas; silêncio e close após aceite ficam sem causa inferida; heartbeat, controle, JSON inválido e eventos desconhecidos são somente contados e não impedem uma quote posterior.
 - O relatório contém apenas contadores, tempos relativos, estados booleanos, close code e classificação. Não inclui key, URL/query, headers, frames, payload, preço, IP, token, texto livre ou Location.
 - Nenhuma R8C externa está autorizada. Zero provider calls, REST, Saxo, commissioning, Champion, PAPER, dashboard ou merge.
+- Correção de auditoria: o timeout pré-aceite é separado e fail-closed; a janela de quote inicia somente após o `subscribe-status` aceitar explicitamente EUR/USD. `elapsedMsToFirstQuote` é relativo a esse aceite, portanto atraso de handshake/status não consome a janela pós-aceite.
 
 ## Fase 20C.6.13B — commissioning controlado
 
