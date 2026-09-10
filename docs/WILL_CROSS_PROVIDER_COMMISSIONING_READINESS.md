@@ -67,6 +67,14 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Twelve continua sem root cause de transporte confirmável: o EventTarget WebSocket do Node pode emitir ErrorEvent genérico sem code/cause. R5 adiciona descrição local do runtime e agrega close code/reason sanitizados ao diagnóstico quando disponíveis. DNS/TLS/proxy preflight externo não foi executado porque violaria ZERO provider calls e não provaria o handshake autenticado.
 - Nova sessão R6 não é recomendada até existir decisão formal sobre qual semântica BidAsk, se alguma, pode alimentar o contrato OHLC. Twelve pode ser reobservado somente dentro dessa futura autorização única.
 
+## Fase 20C.6.13B-R5S — decisão semântica Bid/Ask offline
+
+- Contrato `bid-ask-ohlc-v1`: bid e ask preservam OHLC independentes, timestamp e evidência de fechamento. Não existe midpoint nem lado selecionado.
+- `providerEvidenceValid:true` não implica compatibilidade: Saxo BidAsk documental é `marketDataRepresentation:BID_ASK_OHLC` e `championCompatible:false`.
+- Cada lado valida numericidade e range internamente. Não há hard gate cross-side `ask >= bid`, pois a documentação consultada descreve campos, mas não estabelece esse invariante como contrato universal por sample.
+- Com Twelve quote fresh independente, a composição pode ser `PROVIDER_EVIDENCE_COMPOSABLE_OFFLINE`, sempre `valid:false`, `decisionImpact:NONE` e sem consumidor Champion/PAPER.
+- Single-OHLC permanece separado e backward compatible. R5S fez zero chamadas e não autoriza R6.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

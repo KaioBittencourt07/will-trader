@@ -50,6 +50,10 @@ getMarketSnapshot({ asset, timeframe, requiredBars, maxAgeMs })
 
 Hard rule: invalid/stale market data must not become an executable signal.
 
+### Parallel Bid/Ask OHLC representation
+
+`bid-ask-ohlc-v1` preserves each closed provider sample as `{ timestamp, bid:{open,high,low,close}, ask:{open,high,low,close} }`. It never creates midpoint or selects a primary side. Provider validity, representation and consumer compatibility are independent: valid provider evidence may still be `championCompatible:false`. The existing single-OHLC contract and Champion remain unchanged; no BidAsk snapshot may enter features, scoring, decisions or PAPER without a separately authorized consumer.
+
 ## 2. Feature Engine
 Input: immutable candle/quote snapshot.
 Output: deterministic feature vector + feature version.

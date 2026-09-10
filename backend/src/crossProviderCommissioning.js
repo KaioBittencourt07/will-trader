@@ -1,6 +1,6 @@
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
-import { diagnoseSaxoChartSnapshotStructure, transformSaxoChartsOffline, classifySaxoFailure } from '../../data/src/providers/saxoQualification.js';
-import { composeSaxoClosedOhlcIndependentQuote } from '../../data/src/crossProviderComposition.js';
+import { diagnoseSaxoChartSnapshotStructure, transformSaxoBidAskChartsOffline, transformSaxoChartsOffline, classifySaxoFailure } from '../../data/src/providers/saxoQualification.js';
+import { composeSaxoBidAskIndependentQuote, composeSaxoClosedOhlcIndependentQuote } from '../../data/src/crossProviderComposition.js';
 
 export const CROSS_PROVIDER_COMMISSIONING_VERSION = 'cross-provider-readonly-commissioning-v1';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,7 +44,9 @@ async function subscribeSaxoSim({ token, fetchImpl, contextId, referenceId, now 
   const payload = await response.json();
   const chartResponse = extractSaxoSubscriptionSnapshot(payload);
   try {
-    return transformSaxoChartsOffline({ chartResponse, sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(now()).toISOString() });
+    const structure = diagnoseSaxoChartSnapshotStructure(chartResponse);
+    const transformer = structure.classification === 'BID_ASK_OHLC' ? transformSaxoBidAskChartsOffline : transformSaxoChartsOffline;
+    return transformer({ chartResponse, sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(now()).toISOString() });
   } catch (error) {
     error.saxoStructure = diagnoseSaxoChartSnapshotStructure(chartResponse);
     throw error;
@@ -93,8 +95,11 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
   if (twelveHealth.reconnects > 1) reasons.push('TWELVE_RECONNECT_BUDGET_EXCEEDED');
   let composition = null;
   if (saxoSnapshot && twelveHealth.symbols?.length) {
-    composition = composeSaxoClosedOhlcIndependentQuote({ saxoSnapshot, quoteHealth: twelveHealth, now: now(), maxAgeMs: 30_000 });
-    if (composition.compositionState !== 'COMPOSABLE_OFFLINE') reasons.push(...composition.reasonCodes);
+    composition = saxoSnapshot.marketDataRepresentation === 'BID_ASK_OHLC'
+      ? composeSaxoBidAskIndependentQuote({ saxoSnapshot, quoteHealth: twelveHealth, now: now(), maxAgeMs: 30_000 })
+      : composeSaxoClosedOhlcIndependentQuote({ saxoSnapshot, quoteHealth: twelveHealth, now: now(), maxAgeMs: 30_000 });
+    if (composition.compositionState !== 'COMPOSABLE_OFFLINE') reasons.push(...composition.reasonCodes,
+      ...(composition.compositionState === 'PROVIDER_EVIDENCE_COMPOSABLE_OFFLINE' ? ['CHAMPION_INCOMPATIBLE_BID_ASK'] : []));
   }
   const passed = reasons.length === 0 && composition?.compositionState === 'COMPOSABLE_OFFLINE';
   return { ...base, result: passed ? 'READONLY_COMMISSIONING_PASSED' : 'BLOCKED_EXTERNAL', sessions: 1,

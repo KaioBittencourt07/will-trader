@@ -281,3 +281,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Saxo FxSpot Default é documentalmente BidAsk; o parser single-OHLC corretamente bloqueou. Diagnóstico estrutural allowlisted reconhece o shape sem valores/payload bruto, mas nunca sintetiza midpoint ou escolhe bid/ask.
 - Twelve ErrorEvent PRE_OPEN permaneceu genérico. Runtime local, nested code/cause e close code/reason são agora capturados e redigidos quando disponíveis; nenhum DNS/TLS/provider preflight foi chamado.
 - R6 externa não é recomendada antes de decisão formal separada sobre semântica BidAsk. Gate 30s, budgets 1/1, PAPER/MANUAL, fail-closed, Champion/thresholds/dashboard e zero ordens/merge permanecem congelados.
+
+## Fase 20C.6.13B-R5S — Decisão Semântica Bid/Ask
+- `bid-ask-ohlc-v1` preserva OHLC bid e ask separadamente; midpoint e side selection são nulos/proibidos.
+- Saxo documental BidAsk pode ter `providerEvidenceValid:true` e `marketDataRepresentation:BID_ASK_OHLC`, mas permanece `championCompatible:false`.
+- Validação é independente por lado; nenhum cross-side hard gate foi criado sem garantia documental. Single-OHLC e Champion permanecem inalterados.
+- Com Twelve fresh, composição é somente provider evidence offline e não gera direção, score, decisão ou PAPER. Zero calls/credentials; R6 continua não autorizada.
