@@ -293,3 +293,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - BidAsk válido + Twelve fresh é provado por regressão como `BLOCKED_EXTERNAL`, com todos os marcadores não decisórios expostos no relatório sanitizado e sem conversão, midpoint, lado escolhido ou Champion bypass.
 - Twelve permanece limitado a exatamente uma conexão/subscription request/accept, reconnect <= 1, gate 30s e zero REST fallback.
 - Recomendação de R6 depende desta prova e de auditoria independente; este preflight não executa nem autoriza R6.
+
+## Fase 20C.6.13B-R7-PREP — Twelve Transport Root-Cause
+- Node 24.20.0/Undici 7.29.0 expõe WebSocket EventTarget; o ErrorEvent genérico pré-open não trouxe code/cause público e close 1006 não atribui a camada da falha. Não há canal oficial estável de diagnostics_channel específico para causa do upgrade WebSocket.
+- Endpoint/path/query e payload subscribe atuais conferem com a documentação Twelve. Nenhuma chave ou conexão WebSocket foi usada nesta fase.
+- TRANSPORT_PREFLIGHT não autenticado: DNS + TCP 443 nu + TLS 443 com SNI/certificado, separadamente em IPv4/IPv6; sem HTTP, upgrade, subscribe ou payload. Resultado: ambos os families com TCP/TLS autorizado em TLS 1.3, sem proxy em variáveis de ambiente.
+- Conclusão B: transporte básico local saudável; erro R6 continua provável em upgrade/auth/entitlement/provider e só pode ser discriminado por futura sessão explicitamente autorizada. R7 não foi executada nem autorizada.

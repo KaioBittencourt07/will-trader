@@ -82,6 +82,16 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - O runner exige exatamente uma conexão, uma solicitação e uma aceitação de subscription; reconnect continua no máximo 1, freshness em 30.000 ms e o feed declara zero consumo REST.
 - A prova é inteiramente sintética/offline. Nenhuma R6, provider call, credencial, PAPER, decisão, ordem ou merge foi autorizada.
 
+## Fase 20C.6.13B-R7-PREP — Twelve transport root cause
+
+- Runtime observado: Node `24.20.0`, WebSocket global browser-compatible/EventTarget, Undici `7.29.0`. O `ErrorEvent` pré-open não oferece `code`/`cause` públicos neste runtime; o `CloseEvent` oferece `code`, `reason` e `wasClean`. O close `1006` significa fechamento anormal, mas sozinho não discrimina DNS, TCP, TLS, proxy, autenticação ou rejeição do upgrade.
+- `diagnostics_channel` é API oficial estável, porém os canais oficiais documentados não fornecem um diagnóstico WebSocket/Undici específico que atribua este erro. O canal `net.client.socket` é experimental e expõe o socket, não uma causa estável do upgrade WebSocket; por isso não foi acoplado ao runner.
+- O protocolo implementado confere com a documentação Twelve atual: `wss://ws.twelvedata.com/v1/quotes/price?apikey=...` e subscribe JSON `{action:"subscribe",params:{symbols:"EUR/USD"}}`. A chave continua somente no runtime de commissioning e não foi usada no preflight.
+- Uma medição `TRANSPORT_PREFLIGHT` não autenticada fez: uma resolução DNS; para IPv4 e IPv6, uma conexão TCP 443 nua e uma conexão TLS 443 separada com SNI/validação de certificado. Não enviou HTTP, WebSocket upgrade, API key, subscribe ou payload de aplicação.
+- Resultado local: DNS IPv4+IPv6 resolvido; TCP alcançável em ambas; TLS handshake autorizado em ambas; TLS 1.3; nenhum proxy detectado nas variáveis de ambiente examinadas. Endereços resolvidos não são emitidos. Classificação: `TRANSPORT_BASIC_HEALTHY`.
+- Conclusão **B**: transporte básico saudável; a falha R6 permanece provável no upgrade WebSocket, autenticação/entitlement ou comportamento do provider. O preflight não distingue essas hipóteses e não é commissioning.
+- Referências oficiais: https://twelvedata.com/docs/websocket/ws-overview, https://support.twelvedata.com/en/articles/5620516-how-to-stream-the-data, https://nodejs.org/api/globals.html#class-websocket e https://nodejs.org/api/diagnostics_channel.html.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

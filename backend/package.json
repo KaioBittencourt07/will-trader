@@ -10,6 +10,7 @@
     "commission:oanda-readonly": "node src/commissionOandaReadOnly.js",
     "commission:cross-provider-readiness": "node src/commissionCrossProviderReadiness.js",
     "commission:cross-provider-readonly": "node src/commissionCrossProviderReadOnly.js",
+    "preflight:twelve-transport": "node src/preflightTwelveTransport.js",
     "test": "node --test"
   },
   "dependencies": {
