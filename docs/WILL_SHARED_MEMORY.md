@@ -311,3 +311,9 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Saída allowlisted observa 101/302/401/403/429/timeout sem API key, Sec-WebSocket-Key, Location, headers, IP, body ou payload bruto. 101 também exige prova criptográfica de `Sec-WebSocket-Accept`.
 - Apenas servidores localhost sintéticos foram usados. Alvo externo exige autorização futura exata e permaneceu bloqueado; zero provider calls e zero credenciais reais nesta fase.
 - R8A externa, PAPER e merge permanecem não autorizados.
+
+## Fase 20C.6.13B-R8B-PREP — Fluxo Pós-101 Offline
+- `twelve-post-101-diagnostic-v1` observa OPEN, um subscribe EUR/USD, primeiro status, primeira quote e close/timeout, isolado de feed/commissioning/Champion/PAPER.
+- Harness RFC6455 localhost cobre accepted+quote, rejected, auth/entitlement explícito, unknown, timeout, close antes do status e accepted sem quote. Ordem é obrigatória; quote precoce falha fechado.
+- Saída é allowlisted e não contém query/key/header/frame/payload/preço/IP/token. Zero reconnect/retry/redirect/REST/Saxo.
+- Conclusão A: protocolo pós-101 validado offline; futura R8B diagnostic-only exige auditoria e autorização separadas. Nenhuma execução externa, credencial real, PAPER ou merge ocorreu.

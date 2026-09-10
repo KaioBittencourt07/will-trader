@@ -111,6 +111,14 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Servidores locais provaram: 101 com accept válido → `HANDSHAKE_OBSERVED`; 101 inválido → bloqueado; 302 → `REDIRECT_REJECTED`; 401/403 → `AUTH_OR_ENTITLEMENT_REJECTED`; 429 → `RATE_LIMITED`; timeout → `PRE_OPEN_TIMEOUT`. Todos com attempts=1, retries=0, redirects=false, subscribe=false e zero bytes de aplicação.
 - O diagnosticador não substitui o WebSocket principal e não altera Champion, PAPER, dashboard, thresholds, Saxo, BidAsk, freshness ou budgets. R8A externa não foi autorizada.
 
+## Fase 20C.6.13B-R8B-PREP — fluxo pós-101 offline
+
+- `twelve-post-101-diagnostic-v1` é separado do feed, handshake-only diagnostic, commissioning, Saxo, composição, Champion e PAPER. O alvo provider permanece bloqueado sem autorização futura literal; somente localhost e placeholder sintético foram usados.
+- Após OPEN/101, envia exatamente uma mensagem `{action:"subscribe",params:{symbols:"EUR/USD"}}`; zero reconnect/retry/redirect/REST e nenhum segundo subscribe. O relatório nunca inclui URL/query, key, headers, frame/payload, preço, IP, token ou texto livre do provider.
+- Harness RFC 6455 local validou em ordem: subscribe accepted + quote; subscribe rejected; rejeição explícita de auth/entitlement na aplicação; payload desconhecido; silêncio pós-upgrade; close antes de status; e accepted sem quote. Quote antes de subscribe accepted falha como protocolo não reconhecido.
+- Classificações são exclusivamente baseadas em evidência: sucesso completo, `SUBSCRIBE_REJECTED`, `APPLICATION_AUTH_OR_ENTITLEMENT_REJECTED`, `POST_UPGRADE_TIMEOUT`, `SUBSCRIBE_ACCEPTED_QUOTE_TIMEOUT`, `POST_UPGRADE_ABNORMAL_CLOSE`, `APPLICATION_PROTOCOL_UNRECOGNIZED` ou `POST_UPGRADE_INCONCLUSIVE`. Close/silêncio nunca inferem auth/entitlement.
+- Conclusão **A**: fluxo local/protocolo pós-101 validado e pronto tecnicamente para uma futura execução diagnóstica isolada, somente após auditoria/autorização separadas. Nenhuma R8B externa foi executada ou autorizada.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.
