@@ -351,3 +351,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Provider event freshness != local arrival recency. Readiness aceita evidência versionada, mas freshness PASS isolado não remove requisito longitudinal nem autoriza commissioning/PAPER.
 - Histórico R8C/R8D/R8F segue freshness `UNVERIFIED`; R8H externa, provider calls, dashboard, Champion, ordem e merge não autorizados.
 - Correção de auditoria R8H: evidência de freshness é aceita somente quando `freshnessGate`, idade, contrato de 30s, blocker, subgates e flags observadas são semanticamente coerentes. Evidência adulterada ou contraditória falha fechado como `DATA_INVALID`; um rótulo `PASS` isolado nunca é confiado.
+
+## Fase 20C.6.13B-R8H-EXEC-PREP — Native Freshness Observer Offline
+- R8H-PREP foi aprovado offline. O observer isolado usa o contrato explícito do payload Twelve: `timestamp` em `UNIX_SECONDS`, receive time em `UNIX_MILLISECONDS` capturado no mesmo processamento e avaliação por `twelve-ws-event-freshness-v1`.
+- Saída contém somente ages/contagens sanitizadas; nunca timestamps absolutos. Mistura PASS/FAIL falha conservadoramente e ausência de quote não cria PASS.
+- Tests/prep usam apenas localhost sintético e reportam `externalProviderCalls:0`. Alvo externo, R8H real, commissioning, PAPER, Champion, dashboard, ordens e merge continuam não autorizados.

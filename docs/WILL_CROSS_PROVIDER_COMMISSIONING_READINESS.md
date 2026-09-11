@@ -166,6 +166,14 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Provider event freshness != local arrival recency. R8H externa não autorizada; zero provider/credencial/dashboard/Champion/ordem/merge.
 - Correção de integridade R8H: readiness não confia no rótulo de uma evidência pré-computada. Cada estado é revalidado contra idade, contrato congelado, blocker, subgates e flags de observação; qualquer contradição vira `DATA_INVALID` / `INVALID_EVENT_FRESHNESS_EVIDENCE`.
 
+## Fase 20C.6.13B-R8H-EXEC-PREP — observer de freshness offline
+
+- R8H-PREP e sua correção de integridade foram aprovados offline. `twelve-ws-freshness-observation-v1` prepara uma futura sessão one-shot, mas nesta fase roda apenas contra WebSocket localhost sintético.
+- O contrato existente trata o campo Twelve `timestamp` como `UNIX_SECONDS`; o receive time é capturado em `UNIX_MILLISECONDS` no mesmo handler da quote. Nenhuma unidade é inferida por magnitude.
+- O relatório contém somente contagens, ages e uma evidência sanitizada coerente para readiness; nunca timestamp absoluto, preço, URL, payload ou segredo. Freshness permanece separada de continuidade de chegada e diversidade de timestamp.
+- Resultado misto PASS/FAIL escolhe FAIL conservador; ausência de quote não produz PASS. Uma conexão, uma subscription EUR/USD, heartbeat >=10s após aceite, janela <=60s e zero retry/reconnect/redirect/REST/Saxo.
+- Mesmo com fixtures sintéticos PASS, provider permanece não comissionado, o gate longitudinal permanece prospectivo e PAPER continua não autorizado. Alvo externo e R8H real ainda não estão autorizados.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.
