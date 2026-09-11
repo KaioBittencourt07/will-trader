@@ -12,6 +12,7 @@
     "commission:cross-provider-readonly": "node src/commissionCrossProviderReadOnly.js",
     "preflight:twelve-transport": "node src/preflightTwelveTransport.js",
     "observe:twelve-r8i": "node src/runTwelveR8i.js",
+    "observe:twelve-r8j": "node src/runTwelveR8j.js",
     "test": "node --test"
   },
   "dependencies": {
