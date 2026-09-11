@@ -158,6 +158,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Provider continua não comissionado e PAPER não autorizado; zero provider call, R8G externa, dashboard, Champion, ordem ou merge.
 - Correção de auditoria: `observationWindowMs-lastQuoteElapsedMs` descreve apenas recência local de chegada e agora aparece somente como `arrivalTailObservationGate:DESCRIPTIVE_ONLY`. Não é idade do evento provider. Sem medida sanitizada de timestamp nativo versus receive/decision time, `freshnessCompatibilityGate` permanece `UNVERIFIED`; o contrato de 30s não é declarado satisfeito.
 
+## Fase 20C.6.13B-R8H-PREP — freshness nativa offline
+
+- `twelve-ws-event-freshness-v1` compara timestamp nativo e receive time fornecidos explicitamente, com unidades obrigatórias `UNIX_SECONDS`/`UNIX_MILLISECONDS`, e retorna somente age/deltas sanitizados. Não usa `Date.now()` implícito nem expõe timestamps absolutos.
+- O contrato congelado é inclusivo: age <=30.000ms passa; >30.000ms falha. Timestamp futuro usa tolerância zero e falha sem clamp; ausente fica `UNVERIFIED`; inválido/unidade ambígua fica `DATA_INVALID`.
+- Readiness pode consumir essa evidência versionada, mas um PASS isolado não satisfaz o gate longitudinal nem promove commissioning/PAPER. Fixtures R8C/R8D/R8F sem essa medida continuam freshness `UNVERIFIED` e `REQUIRES_PROSPECTIVE_VALIDATION`.
+- Provider event freshness != local arrival recency. R8H externa não autorizada; zero provider/credencial/dashboard/Champion/ordem/merge.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

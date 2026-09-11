@@ -53,6 +53,12 @@ test('historical R8C R8D R8F fixtures cannot commission or authorize PAPER', () 
   assert.equal(report.arrivalTailObservationGate, 'DESCRIPTIVE_ONLY'); assert.equal(report.freshnessCompatibilityGate, 'UNVERIFIED');
   assert.equal(report.prospectivePaperAuthorized, false); assert.equal(report.decisionImpact, 'NONE'); assert.equal(report.ordersExecuted, 0); assert.equal(report.externalProviderCalls, 0);
 });
+test('valid explicit freshness is consumed without bypassing longitudinal evidence', async () => {
+  const { evaluateTwelveWsEventFreshness } = await import('../backend/src/twelveWsEventFreshness.js');
+  const freshness = evaluateTwelveWsEventFreshness({ eventTimestamp: 1_800_000_000, eventTimestampUnit: 'UNIX_SECONDS', receiveTimestamp: 1_800_000_001_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' });
+  const report = evaluateTwelveWsCommissioningReadiness([r8f], freshness); assert.equal(report.freshnessCompatibilityGate, 'PASS');
+  assert.equal(report.classification, 'REQUIRES_PROSPECTIVE_VALIDATION'); assert.equal(report.providerCommissioning, false); assert.equal(report.prospectivePaperAuthorized, false);
+});
 test('output is allowlisted and never carries raw provider values or secrets', () => {
   const text = JSON.stringify(evaluateTwelveWsCommissioningReadiness([r8f]));
   for (const forbidden of ['9.99', 'apikey=', 'wss://', 'SYNTHETIC_SECRET', '59049']) assert.equal(text.includes(forbidden), false);

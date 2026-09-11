@@ -30,7 +30,18 @@ function normalize(record) {
   return normalized;
 }
 
-export function evaluateTwelveWsCommissioningReadiness(evidence = []) {
+function consumeFreshness(evidence) {
+  if (evidence === undefined || evidence === null) return { gate: 'UNVERIFIED', invalid: false };
+  const keys = ['freshnessVersion', 'eventTimestampObserved', 'receiveTimestampObserved', 'eventAgeMs', 'freshnessContractMs', 'freshnessGate', 'blocker',
+    'clockComparabilityGate', 'timestampUnitGate', 'futureTimestampGate', 'providerCommissioning', 'decisionImpact', 'prospectivePaperAuthorized', 'ordersExecuted', 'externalProviderCalls'];
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) || Object.keys(evidence).some((key) => !keys.includes(key)) ||
+      evidence.freshnessVersion !== 'twelve-ws-event-freshness-v1' || evidence.freshnessContractMs !== FROZEN_QUOTE_MAX_AGE_MS ||
+      !['PASS', 'FAIL', 'UNVERIFIED', 'DATA_INVALID'].includes(evidence.freshnessGate) || evidence.providerCommissioning !== false ||
+      evidence.decisionImpact !== 'NONE' || evidence.prospectivePaperAuthorized !== false || evidence.ordersExecuted !== 0 || evidence.externalProviderCalls !== 0) return { gate: 'DATA_INVALID', invalid: true };
+  return { gate: evidence.freshnessGate, invalid: evidence.freshnessGate === 'DATA_INVALID' };
+}
+
+export function evaluateTwelveWsCommissioningReadiness(evidence = [], freshnessEvidence = null) {
   const input = Array.isArray(evidence) ? evidence : []; const parsed = input.map(normalize); const invalidEvidenceCount = parsed.filter((item) => !item).length;
   const records = [...new Map(parsed.filter(Boolean).map((item) => [canonical(item), item])).values()];
   const transportGate = records.some((item) => item.handshake) ? 'PASS' : 'FAIL';
@@ -44,16 +55,18 @@ export function evaluateTwelveWsCommissioningReadiness(evidence = []) {
   const eventOrderingGate = records.some((item) => item.outOfOrder > 0) ? 'FAIL' : records.length ? 'PASS' : 'UNVERIFIED';
   const connectionIntegrityGate = records.some((item) => item.closeCode !== null || item.retries || item.reconnects || item.redirects) ? 'FAIL' : records.length ? 'PASS' : 'UNVERIFIED';
   const arrivalTailObservationGate = complete.some((item) => item.quotes > 0 && item.lastQuote !== null) ? 'DESCRIPTIVE_ONLY' : 'UNVERIFIED';
-  const freshnessCompatibilityGate = 'UNVERIFIED';
+  const freshness = consumeFreshness(freshnessEvidence); const freshnessCompatibilityGate = freshness.gate;
   const longitudinalEvidenceGate = 'REQUIRES_PROSPECTIVE_VALIDATION';
   const blockers = [];
   if (invalidEvidenceCount) blockers.push('INVALID_OR_UNSANITIZED_EVIDENCE');
+  if (freshness.invalid) blockers.push('INVALID_EVENT_FRESHNESS_EVIDENCE');
   if (transportGate === 'FAIL') blockers.push('HANDSHAKE_NOT_OBSERVED');
   if (subscriptionGate === 'FAIL') blockers.push('SUBSCRIBE_ACCEPTANCE_NOT_OBSERVED');
   if (quoteDeliveryGate === 'FAIL') blockers.push('QUOTE_DELIVERY_NOT_OBSERVED');
   if (eventOrderingGate === 'FAIL') blockers.push('OUT_OF_ORDER_EVENTS_OBSERVED');
   if (connectionIntegrityGate === 'FAIL') blockers.push('CONNECTION_INTEGRITY_FAILURE');
-  let classification = invalidEvidenceCount ? 'DATA_INVALID' : blockers.length ? 'NOT_READY' : 'REQUIRES_PROSPECTIVE_VALIDATION';
+  if (freshnessCompatibilityGate === 'FAIL') blockers.push('FROZEN_FRESHNESS_CONTRACT_NOT_MET');
+  let classification = invalidEvidenceCount || freshness.invalid ? 'DATA_INVALID' : blockers.length ? 'NOT_READY' : 'REQUIRES_PROSPECTIVE_VALIDATION';
   return Object.freeze({ readinessVersion: TWELVE_WS_COMMISSIONING_READINESS_VERSION, provider: 'twelve-ws', symbol: 'EUR/USD',
     evidenceCount: input.length, validDistinctEvidenceCount: records.length, invalidEvidenceCount, frozenQuoteMaxAgeMs: FROZEN_QUOTE_MAX_AGE_MS,
     transportGate, subscriptionGate, quoteDeliveryGate, observationCompletenessGate, arrivalContinuityGate,

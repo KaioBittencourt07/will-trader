@@ -345,3 +345,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - `twelve-ws-commissioning-readiness-v1` avalia dez dimensões independentes e reutiliza exclusivamente freshness congelada de 30s. Sem cutoff prévio, continuidade/gap/timestamps ficam descritivos e longitudinal exige validação prospectiva.
 - Fixture R8C+R8D+R8F = `REQUIRES_PROSPECTIVE_VALIDATION`, providerCommissioning/PAPER falsos, zero execução/rede/dashboard/Champion/merge.
 - Audit fix: chegada local tardia não prova freshness do timestamp nativo. Arrival-tail é apenas descritivo e freshness fica `UNVERIFIED` até existir medição sanitizada sob o contrato congelado de 30s.
+
+## Fase 20C.6.13B-R8H-PREP — Native Event Freshness Offline
+- `twelve-ws-event-freshness-v1` exige timestamp/receive time e unidades explícitas, retorna somente eventAgeMs e gates. <=30s inclusivo; futuro sem tolerância, inválido e unidade ambígua falham fechado.
+- Provider event freshness != local arrival recency. Readiness aceita evidência versionada, mas freshness PASS isolado não remove requisito longitudinal nem autoriza commissioning/PAPER.
+- Histórico R8C/R8D/R8F segue freshness `UNVERIFIED`; R8H externa, provider calls, dashboard, Champion, ordem e merge não autorizados.
