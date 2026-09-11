@@ -1,3 +1,5 @@
+import { observeTwelveR8kMetadata } from './twelveR8kMetadataObservation.js';
+
 export const TWELVE_R8K_EXECUTION_VERSION = 'twelve-r8k-execution-v1';
 export const TWELVE_R8K_AUTHORIZATION = 'R8K_TIMESTAMP_SEMANTICS_EXPLICITLY_AUTHORIZED';
 export const TWELVE_R8K_LIMITS = Object.freeze({
@@ -31,7 +33,7 @@ function safeMetadata(value) {
     value.rawTimestampRetained === false;
 }
 
-export async function runTwelveR8kExecution({ env = process.env, observer } = {}) {
+export async function runTwelveR8kExecution({ env = process.env, observer = observeTwelveR8kMetadata } = {}) {
   const reasons = [];
   if (env.WILL_TWELVE_R8K_ENABLED !== 'true') reasons.push('R8K_DISABLED');
   if (env.WILL_TWELVE_R8K_AUTHORIZATION !== TWELVE_R8K_AUTHORIZATION) reasons.push('R8K_AUTHORIZATION_INVALID');
