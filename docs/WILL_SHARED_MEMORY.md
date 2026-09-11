@@ -361,3 +361,7 @@ When Codex starts a new substantial task, treat the following as the default ins
 - R8H externa foi consumida: 31 freshness samples, 12 PASS/19 FAIL, sem mudança no gate congelado de 30s. O provider segue não comissionado e PAPER não autorizado.
 - A documentação Twelve assegura timestamp UNIX no evento price, mas não a cadência/unicidade exigida para inferir semântica. O diagnóstico versionado mede repetição, avanço, regressão, deltas positivos e multiplicidade sem timestamps absolutos/preços.
 - Timestamp repetido é descritivo; regressão ou malformed falha fechado. Progressão, freshness, chegada e frequência permanecem eixos separados. R8I-PREP é offline; nenhuma R8I externa foi autorizada.
+
+## R8I — Controlled Entrypoint
+- O gate `twelve-r8i-execution-v1` aceita somente `R8I_TIMESTAMP_PROGRESSION_EXPLICITLY_AUTHORIZED`; R8H não é reutilizado. Limites são fixos em 1 conexão/subscription EUR/USD, 5s pre-accept, 60s observation, heartbeat 10s e zero retries/reconnects/REST/Saxo/Avalon.
+- O comando preparado é `npm.cmd run observe:twelve-r8i` em `backend`, com enable/autorização/API key configurados separadamente no runtime. Saída é allowlisted; providerCommissioning/PAPER/ordens permanecem falsos/zero.

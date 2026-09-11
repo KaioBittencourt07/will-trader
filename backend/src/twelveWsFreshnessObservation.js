@@ -32,7 +32,8 @@ export async function observeTwelveWsEventFreshness({ endpoint = OFFICIAL_ENDPOI
   heartbeatIntervalMs = 10_000, eventTimestampUnit = TWELVE_WS_NATIVE_EVENT_TIMESTAMP_UNIT,
   now = () => Date.now(), timers = nativeTimers, webSocketFactory = (url) => new globalThis.WebSocket(url) } = {}) {
   const target = new URL(endpoint); const local = ['localhost', '127.0.0.1', '::1'].includes(target.hostname);
-  const external = endpoint === OFFICIAL_ENDPOINT && authorization === 'R8H_FRESHNESS_OBSERVATION_EXPLICITLY_AUTHORIZED';
+  const externalAuthorizations = new Set(['R8H_FRESHNESS_OBSERVATION_EXPLICITLY_AUTHORIZED', 'R8I_TIMESTAMP_PROGRESSION_EXPLICITLY_AUTHORIZED']);
+  const external = endpoint === OFFICIAL_ENDPOINT && externalAuthorizations.has(authorization);
   if (!(allowLocalSynthetic && local) && !external) throw new Error('FRESHNESS_OBSERVATION_NOT_AUTHORIZED');
   if (!apiKey) throw new Error('FRESHNESS_OBSERVATION_KEY_MISSING');
   if (!Number.isFinite(preAcceptTimeoutMs) || preAcceptTimeoutMs < 100 || preAcceptTimeoutMs > 5_000) throw new Error('FRESHNESS_PRE_ACCEPT_TIMEOUT_INVALID');

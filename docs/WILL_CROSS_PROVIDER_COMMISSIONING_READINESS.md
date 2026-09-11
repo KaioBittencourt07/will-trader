@@ -182,6 +182,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Regressão e dados malformados falham fechado; igualdade sem regressão permanece descritiva. Freshness, continuidade de chegada, progressão nativa e frequência de quotes continuam dimensões separadas, sem causalidade atribuída a heartbeat.
 - R8I-PREP usa somente fixtures/localhost sintéticos. R8I externa, commissioning e PAPER não estão autorizados; provider permanece não comissionado.
 
+## R8I — entrypoint controlado preparado
+
+- `twelve-r8i-execution-v1` exige simultaneamente enable explícito, API key em runtime e o literal exclusivo `R8I_TIMESTAMP_PROGRESSION_EXPLICITLY_AUTHORIZED`. O literal R8H não abre este gate.
+- O entrypoint fixa uma conexão, uma subscription EUR/USD, pre-accept 5s, janela 60s, heartbeat 10s e zero retry/reconnect/redirect/REST/Saxo/Avalon. Overrides operacionais não são lidos do ambiente.
+- Saída do observer é validada por allowlist e invariantes antes de ser impressa; saída desconhecida, secreta ou fora do envelope vira `BLOCKED` sem ecoar conteúdo.
+- Com ambiente previamente configurado e uma autorização externa formal ainda válida, o comando one-shot é `npm.cmd run observe:twelve-r8i` a partir de `backend`. A implementação/testes desta etapa não executaram esse comando contra o provider.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.
