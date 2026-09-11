@@ -150,6 +150,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Classificações distinguem zero, uma e múltiplas quotes, close, pre-accept timeout, auth explícita e protocolo inconclusivo. Gap é medido, mas nenhuma regra de freshness/estabilidade ou causalidade de heartbeat é fabricada.
 - R8F externa NÃO está autorizada; zero provider/credencial/commissioning/Champion/PAPER/dashboard/ordem/merge.
 
+## Fase 20C.6.13B-R8G-PREP — pré-registro offline de commissioning
+
+- R8F one-shot foi consumida: houve 30 chegadas na janela única, mas continuidade longitudinal, confiabilidade e freshness operacional não foram estabelecidas. Os valores R8F são fixtures históricos e não definem thresholds.
+- `twelve-ws-commissioning-readiness-v1` é puro/network-free e separa dez gates. Reutiliza somente o contrato congelado de quote freshness `maxAgeMs=30000`; gap, múltiplas chegadas e diversidade de timestamp permanecem descritivos por ausência de cutoff prévio.
+- O fixture R8C+R8D+R8F retorna `REQUIRES_PROSPECTIVE_VALIDATION`: uma janela positiva não satisfaz evidência longitudinal independente. Nenhum score/probabilidade, causalidade de heartbeat, estabilidade ou rentabilidade é inferido.
+- Provider continua não comissionado e PAPER não autorizado; zero provider call, R8G externa, dashboard, Champion, ordem ou merge.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

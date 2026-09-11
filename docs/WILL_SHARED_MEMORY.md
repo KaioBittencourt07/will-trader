@@ -339,3 +339,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - `twelve-ws-stability-observation-v1` não para na primeira quote: observa até timeout/close e agrega volume, tempos relativos, gaps, cardinalidade/ordem de timestamp sem valores brutos.
 - Pre-accept <=5s, pós-aceite <=60s, heartbeat >=10s somente após aceite, uma conexão/subscribe e zero retry/reconnect/REST/Saxo. Nenhuma regra de estabilidade/freshness é inferida.
 - R8F externa não autorizada; zero provider, credencial, commissioning, Champion, PAPER, dashboard, ordem ou merge.
+
+## Fase 20C.6.13B-R8G-PREP — Commissioning Criteria Offline
+- R8F one-shot consumida observou múltiplas chegadas apenas em uma janela; seus valores não calibram thresholds. Longo prazo e freshness operacional seguem não provados.
+- `twelve-ws-commissioning-readiness-v1` avalia dez dimensões independentes e reutiliza exclusivamente freshness congelada de 30s. Sem cutoff prévio, continuidade/gap/timestamps ficam descritivos e longitudinal exige validação prospectiva.
+- Fixture R8C+R8D+R8F = `REQUIRES_PROSPECTIVE_VALIDATION`, providerCommissioning/PAPER falsos, zero execução/rede/dashboard/Champion/merge.
