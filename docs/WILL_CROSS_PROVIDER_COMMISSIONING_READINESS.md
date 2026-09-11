@@ -156,6 +156,7 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - `twelve-ws-commissioning-readiness-v1` é puro/network-free e separa dez gates. Reutiliza somente o contrato congelado de quote freshness `maxAgeMs=30000`; gap, múltiplas chegadas e diversidade de timestamp permanecem descritivos por ausência de cutoff prévio.
 - O fixture R8C+R8D+R8F retorna `REQUIRES_PROSPECTIVE_VALIDATION`: uma janela positiva não satisfaz evidência longitudinal independente. Nenhum score/probabilidade, causalidade de heartbeat, estabilidade ou rentabilidade é inferido.
 - Provider continua não comissionado e PAPER não autorizado; zero provider call, R8G externa, dashboard, Champion, ordem ou merge.
+- Correção de auditoria: `observationWindowMs-lastQuoteElapsedMs` descreve apenas recência local de chegada e agora aparece somente como `arrivalTailObservationGate:DESCRIPTIVE_ONLY`. Não é idade do evento provider. Sem medida sanitizada de timestamp nativo versus receive/decision time, `freshnessCompatibilityGate` permanece `UNVERIFIED`; o contrato de 30s não é declarado satisfeito.
 
 ## Fase 20C.6.13B — commissioning controlado
 

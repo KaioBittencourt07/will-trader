@@ -43,8 +43,8 @@ export function evaluateTwelveWsCommissioningReadiness(evidence = []) {
   const eventTimestampProgressionGate = records.some((item) => item.timestamps > 1) ? 'DESCRIPTIVE_ONLY' : 'INSUFFICIENT_PREREGISTERED_EVIDENCE';
   const eventOrderingGate = records.some((item) => item.outOfOrder > 0) ? 'FAIL' : records.length ? 'PASS' : 'UNVERIFIED';
   const connectionIntegrityGate = records.some((item) => item.closeCode !== null || item.retries || item.reconnects || item.redirects) ? 'FAIL' : records.length ? 'PASS' : 'UNVERIFIED';
-  const freshnessSamples = complete.filter((item) => item.quotes > 0 && item.lastQuote !== null).map((item) => item.window - item.lastQuote);
-  const freshnessCompatibilityGate = !complete.length ? 'UNVERIFIED' : freshnessSamples.length && freshnessSamples.every((tailAge) => tailAge >= 0 && tailAge <= FROZEN_QUOTE_MAX_AGE_MS) ? 'PASS' : 'FAIL';
+  const arrivalTailObservationGate = complete.some((item) => item.quotes > 0 && item.lastQuote !== null) ? 'DESCRIPTIVE_ONLY' : 'UNVERIFIED';
+  const freshnessCompatibilityGate = 'UNVERIFIED';
   const longitudinalEvidenceGate = 'REQUIRES_PROSPECTIVE_VALIDATION';
   const blockers = [];
   if (invalidEvidenceCount) blockers.push('INVALID_OR_UNSANITIZED_EVIDENCE');
@@ -53,12 +53,11 @@ export function evaluateTwelveWsCommissioningReadiness(evidence = []) {
   if (quoteDeliveryGate === 'FAIL') blockers.push('QUOTE_DELIVERY_NOT_OBSERVED');
   if (eventOrderingGate === 'FAIL') blockers.push('OUT_OF_ORDER_EVENTS_OBSERVED');
   if (connectionIntegrityGate === 'FAIL') blockers.push('CONNECTION_INTEGRITY_FAILURE');
-  if (freshnessCompatibilityGate === 'FAIL') blockers.push('FROZEN_FRESHNESS_CONTRACT_NOT_MET');
   let classification = invalidEvidenceCount ? 'DATA_INVALID' : blockers.length ? 'NOT_READY' : 'REQUIRES_PROSPECTIVE_VALIDATION';
   return Object.freeze({ readinessVersion: TWELVE_WS_COMMISSIONING_READINESS_VERSION, provider: 'twelve-ws', symbol: 'EUR/USD',
     evidenceCount: input.length, validDistinctEvidenceCount: records.length, invalidEvidenceCount, frozenQuoteMaxAgeMs: FROZEN_QUOTE_MAX_AGE_MS,
     transportGate, subscriptionGate, quoteDeliveryGate, observationCompletenessGate, arrivalContinuityGate,
-    eventTimestampProgressionGate, eventOrderingGate, connectionIntegrityGate, freshnessCompatibilityGate, longitudinalEvidenceGate,
+    eventTimestampProgressionGate, eventOrderingGate, connectionIntegrityGate, arrivalTailObservationGate, freshnessCompatibilityGate, longitudinalEvidenceGate,
     classification, blockers: Object.freeze(blockers.sort()), providerCommissioning: false, decisionImpact: 'NONE',
     prospectivePaperAuthorized: false, ordersExecuted: 0, externalProviderCalls: 0 });
 }

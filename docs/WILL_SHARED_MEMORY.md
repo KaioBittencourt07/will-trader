@@ -344,3 +344,4 @@ When Codex starts a new substantial task, treat the following as the default ins
 - R8F one-shot consumida observou múltiplas chegadas apenas em uma janela; seus valores não calibram thresholds. Longo prazo e freshness operacional seguem não provados.
 - `twelve-ws-commissioning-readiness-v1` avalia dez dimensões independentes e reutiliza exclusivamente freshness congelada de 30s. Sem cutoff prévio, continuidade/gap/timestamps ficam descritivos e longitudinal exige validação prospectiva.
 - Fixture R8C+R8D+R8F = `REQUIRES_PROSPECTIVE_VALIDATION`, providerCommissioning/PAPER falsos, zero execução/rede/dashboard/Champion/merge.
+- Audit fix: chegada local tardia não prova freshness do timestamp nativo. Arrival-tail é apenas descritivo e freshness fica `UNVERIFIED` até existir medição sanitizada sob o contrato congelado de 30s.

@@ -40,14 +40,17 @@ test('incomplete window requires preregistered evidence', () => {
   const report = evaluateTwelveWsCommissioningReadiness([{ ...r8f, observationWindowMs: 59999 }]);
   assert.equal(report.observationCompletenessGate, 'INSUFFICIENT_PREREGISTERED_EVIDENCE'); assert.equal(report.classification, 'REQUIRES_PROSPECTIVE_VALIDATION');
 });
-test('frozen 30-second freshness contract is reused without tuning', () => {
+test('late local arrival cannot prove provider event freshness', () => {
   assert.equal(FROZEN_QUOTE_MAX_AGE_MS, 30000);
-  assert.equal(evaluateTwelveWsCommissioningReadiness([{ ...r8f, lastQuoteElapsedMs: 29999 }]).freshnessCompatibilityGate, 'FAIL');
-  assert.equal(evaluateTwelveWsCommissioningReadiness([{ ...r8f, lastQuoteElapsedMs: 30000 }]).freshnessCompatibilityGate, 'PASS');
+  for (const lastQuoteElapsedMs of [29999, 30000, 59999]) {
+    const report = evaluateTwelveWsCommissioningReadiness([{ ...r8f, lastQuoteElapsedMs }]);
+    assert.equal(report.arrivalTailObservationGate, 'DESCRIPTIVE_ONLY'); assert.equal(report.freshnessCompatibilityGate, 'UNVERIFIED');
+  }
 });
 test('historical R8C R8D R8F fixtures cannot commission or authorize PAPER', () => {
   const report = evaluateTwelveWsCommissioningReadiness([r8c, r8d, r8f]); assert.equal(report.classification, 'REQUIRES_PROSPECTIVE_VALIDATION');
   assert.equal(report.longitudinalEvidenceGate, 'REQUIRES_PROSPECTIVE_VALIDATION'); assert.equal(report.providerCommissioning, false);
+  assert.equal(report.arrivalTailObservationGate, 'DESCRIPTIVE_ONLY'); assert.equal(report.freshnessCompatibilityGate, 'UNVERIFIED');
   assert.equal(report.prospectivePaperAuthorized, false); assert.equal(report.decisionImpact, 'NONE'); assert.equal(report.ordersExecuted, 0); assert.equal(report.externalProviderCalls, 0);
 });
 test('output is allowlisted and never carries raw provider values or secrets', () => {
