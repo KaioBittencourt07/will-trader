@@ -5,6 +5,7 @@ import { buildMultiTimeframeContext } from '../../../context/src/multiTimeframe.
 import { classifyTwelveDataFailure, diagnoseTwelveData, TWELVE_DATA_DIAGNOSTIC_VERSION } from '../../../data/src/providers/twelveDataDiagnostics.js';
 import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
 import { composeWsFreshnessRestOhlc } from '../../../data/src/wsRestComposition.js';
+import { attachMarketAuthoritativeFreshness } from '../marketAuthoritativeFreshness.js';
 
 const router = Router();
 let marketDataEngine;
@@ -87,7 +88,8 @@ router.get('/market', async (req, res) => {
   const outputsize = Math.min(Math.max(Number(req.query.outputsize || 50), 12), 200);
   const telemetry = createProviderEfficiencyTelemetry('api-market-request');
   try {
-    const snapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize, { telemetry });
+    const rawSnapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize, { telemetry });
+    const snapshot = attachMarketAuthoritativeFreshness(rawSnapshot);
     return res.json({ ok: snapshot.valid, snapshot, providerEfficiency: providerEfficiencySnapshot(telemetry) });
   } catch (error) {
     console.error('Market provider error:', error.message);
@@ -147,7 +149,10 @@ router.get('/market/multi', async (req, res) => {
   const outputsize = Math.min(Math.max(Number(req.query.outputsize || 50), 20), 200);
   try {
     const snapshots = [];
-    for (const timeframe of timeframes) snapshots.push(await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize));
+    for (const timeframe of timeframes) {
+      const rawSnapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize);
+      snapshots.push(attachMarketAuthoritativeFreshness(rawSnapshot));
+    }
     const context = buildMultiTimeframeContext(snapshots);
     return res.json({ ok: snapshots.every((snapshot) => snapshot.valid), snapshots, context });
   } catch (error) {
@@ -157,4 +162,3 @@ router.get('/market/multi', async (req, res) => {
 });
 
 export default router;
-
