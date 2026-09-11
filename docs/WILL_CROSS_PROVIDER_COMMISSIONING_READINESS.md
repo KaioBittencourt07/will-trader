@@ -127,6 +127,14 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Nenhuma R8C externa está autorizada. Zero provider calls, REST, Saxo, commissioning, Champion, PAPER, dashboard ou merge.
 - Correção de auditoria: o timeout pré-aceite é separado e fail-closed; a janela de quote inicia somente após o `subscribe-status` aceitar explicitamente EUR/USD. `elapsedMsToFirstQuote` é relativo a esse aceite, portanto atraso de handshake/status não consome a janela pós-aceite.
 
+## Fase 20C.6.13B-R8D-PREP — diagnóstico heartbeat-aware offline
+
+- R8C foi consumida com handshake e subscribe aceitos, mas nenhuma price em 60s; a causa permanece não confirmada.
+- `twelve-heartbeat-observation-v1` é isolado e envia `{action:"heartbeat"}` somente após aceite explícito de EUR/USD. Default 10s; qualquer uso externo futuro rejeita intervalo menor que 10s e limita a janela pós-aceite a 60s.
+- Harness sintético local prova quote antes do primeiro heartbeat, quote após heartbeats, silêncio, close, tráfego control/unknown antes da quote, timeout pré-aceite e cancelamento definitivo dos timers. Heartbeat é apenas variável protocolar e nenhuma causalidade é inferida.
+- Uma conexão, um subscribe, zero retry/reconnect/redirect/REST/Saxo. Saída allowlisted sem segredo, URL/query, header, frame, payload, preço, IP, token, texto livre ou Location.
+- R8D externa NÃO está autorizada; zero provider calls, credenciais reais, commissioning, Champion, PAPER, dashboard, ordens ou merge.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

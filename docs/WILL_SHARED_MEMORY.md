@@ -323,3 +323,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - Harness localhost prova quote imediata/tardia, silêncio, close, controle/heartbeat e múltiplas mensagens não-price antes da quote, sem inferir auth, entitlement, plano, mercado ou causa de provider.
 - Uma conexão, um subscribe EUR/USD, zero retry/reconnect/redirect/REST/Saxo e saída exclusivamente sanitizada. R8C externa, commissioning, Champion, PAPER, dashboard e merge não estão autorizados.
 - Audit fix: pre-accept possui timeout próprio; somente o aceite explícito de EUR/USD inicia a janela pós-subscribe. O tempo até a primeira quote é medido desde esse aceite.
+
+## Fase 20C.6.13B-R8D-PREP — Heartbeat-Aware Offline
+- R8C foi consumida sem quote em 60s e sem causa confirmada. `twelve-heartbeat-observation-v1` testa apenas a variável protocolar heartbeat após aceite explícito, sem atribuir causalidade.
+- Default heartbeat 10s; futuro uso externo não aceita frequência maior que uma vez por 10s. Janela pós-aceite <=60s, timeout pré-aceite separado, uma conexão/subscribe e timers cancelados no STOP.
+- Harness sintético cobre quote antes/depois de heartbeats, silêncio, close, mensagens recebidas e ausência de status. R8D externa permanece não autorizada; zero provider/credencial/REST/Saxo/commissioning/Champion/PAPER/dashboard/ordem/merge.
