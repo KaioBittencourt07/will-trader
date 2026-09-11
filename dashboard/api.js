@@ -48,7 +48,13 @@ export function analyzeMarket(market, context = {}) {
   return request(`${WILL_API.baseUrl}${WILL_API.analyzePath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ market, context })
+    body: JSON.stringify({
+      market,
+      context: {
+        ...context,
+        requireAuthoritativeFreshness: true
+      }
+    })
   });
 }
 
