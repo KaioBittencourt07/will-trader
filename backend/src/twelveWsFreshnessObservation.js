@@ -1,4 +1,5 @@
 import { evaluateTwelveWsEventFreshness } from './twelveWsEventFreshness.js';
+import { diagnoseTwelveWsTimestampProgression } from './twelveWsTimestampProgression.js';
 
 export const TWELVE_WS_FRESHNESS_OBSERVATION_VERSION = 'twelve-ws-freshness-observation-v1';
 export const TWELVE_WS_NATIVE_EVENT_TIMESTAMP_UNIT = 'UNIX_SECONDS';
@@ -43,11 +44,12 @@ export async function observeTwelveWsEventFreshness({ endpoint = OFFICIAL_ENDPOI
     observationWindowMs, preAcceptTimeoutMs, heartbeatIntervalMs, heartbeatsSent: 0, closeCode: null,
     retries: 0, reconnects: 0, redirects: 0, applicationMessagesSent: 0 };
   return new Promise((resolve) => {
-    let settled = false; let socket; let deadline; let heartbeatTimer; const samples = [];
+    let settled = false; let socket; let deadline; let heartbeatTimer; const samples = []; const nativeEventTimestamps = [];
     const finish = (terminalClassification = null) => {
       if (settled) return; settled = true; timers.clearTimeout(deadline); timers.clearInterval(heartbeatTimer);
       const aggregate = aggregateFreshness(samples);
-      const report = Object.freeze({ observationVersion: TWELVE_WS_FRESHNESS_OBSERVATION_VERSION, ...state, ...aggregate,
+      const progression = diagnoseTwelveWsTimestampProgression(nativeEventTimestamps, effectiveTimestampUnit);
+      const report = Object.freeze({ observationVersion: TWELVE_WS_FRESHNESS_OBSERVATION_VERSION, ...state, ...aggregate, ...progression,
         classification: terminalClassification ?? aggregate.classification, providerCommissioning: false, decisionImpact: 'NONE',
         prospectivePaperAuthorized: false, ordersExecuted: 0, externalProviderCalls: external ? state.connections : 0,
         restRequests: 0, saxoRequests: 0, secretExposed: false });
@@ -71,6 +73,7 @@ export async function observeTwelveWsEventFreshness({ endpoint = OFFICIAL_ENDPOI
       }
       if (payload?.event === 'price' && String(payload?.symbol ?? '').toUpperCase() === 'EUR/USD' && state.subscribeAccepted) {
         const receiveTimestamp = now(); state.quoteMessagesObserved += 1;
+        nativeEventTimestamps.push(payload.timestamp);
         samples.push(evaluateTwelveWsEventFreshness({ eventTimestamp: payload.timestamp,
           eventTimestampUnit: effectiveTimestampUnit, receiveTimestamp, receiveTimestampUnit: 'UNIX_MILLISECONDS' }));
       }

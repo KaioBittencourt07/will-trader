@@ -53,6 +53,15 @@ test('no quote cannot create a freshness PASS', async () => {
 test('mixed fresh and stale quotes classify conservatively', async () => {
   const { report } = await scenario([1_800_000_000, 1_799_999_960]); assert.equal(report.freshnessPassCount, 1); assert.equal(report.freshnessFailCount, 1);
   assert.equal(report.classification, 'FRESHNESS_CONTRACT_FAILED'); assert.equal(report.freshnessEvidence.freshnessGate, 'FAIL');
+  assert.equal(report.timestampProgressionClassification, 'TIMESTAMP_REGRESSION_OBSERVED');
+});
+test('observer keeps progression separate from freshness and fails malformed timestamps closed', async () => {
+  const repeated = (await scenario([1_799_999_999, 1_799_999_999, 1_800_000_000])).report;
+  assert.equal(repeated.timestampProgressionClassification, 'REPEATED_TIMESTAMP_PATTERN_OBSERVED'); assert.equal(repeated.repeatedTimestampQuoteCount, 1);
+  assert.equal(repeated.timestampAdvanceCount, 1); assert.equal(repeated.freshnessPassCount, 3);
+  assert.equal(repeated.providerCommissioning, false); assert.equal(repeated.prospectivePaperAuthorized, false); assert.equal(repeated.ordersExecuted, 0);
+  const malformed = (await scenario([1_800_000_000, 'bad'])).report;
+  assert.equal(malformed.timestampProgressionClassification, 'DATA_INVALID'); assert.equal(malformed.freshnessInvalidCount, 1);
 });
 test('sanitized output contains no absolute timestamp, price, URL or secret', async () => {
   const text = JSON.stringify((await scenario([1_800_000_000])).report);

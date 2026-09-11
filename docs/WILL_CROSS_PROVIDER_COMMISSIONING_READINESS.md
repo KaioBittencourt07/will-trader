@@ -174,6 +174,14 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Resultado misto PASS/FAIL escolhe FAIL conservador; ausência de quote não produz PASS. Uma conexão, uma subscription EUR/USD, heartbeat >=10s após aceite, janela <=60s e zero retry/reconnect/redirect/REST/Saxo.
 - Mesmo com fixtures sintéticos PASS, provider permanece não comissionado, o gate longitudinal permanece prospectivo e PAPER continua não autorizado. Alvo externo e R8H real ainda não estão autorizados.
 
+## Fase 20C.6.13B-R8I-PREP — semântica/progressão de timestamp offline
+
+- A autorização R8H one-shot foi consumida. Na janela bounded houve 31 amostras: 12 PASS e 19 FAIL, com classificação `FRESHNESS_CONTRACT_FAILED`; isso não altera nem recalibra o contrato congelado de 30.000ms.
+- A documentação pública Twelve garante timestamp UNIX em eventos price, mas não uma cadência ou unicidade por mensagem suficiente para o contrato WILL. Repetições são portanto evidência descritiva, não PASS/FAIL de readiness.
+- `twelve-ws-timestamp-progression-v1` mede distinct timestamps, repetições, avanços, regressões, passos positivos mínimo/máximo e maior multiplicidade sem emitir timestamps absolutos ou preços.
+- Regressão e dados malformados falham fechado; igualdade sem regressão permanece descritiva. Freshness, continuidade de chegada, progressão nativa e frequência de quotes continuam dimensões separadas, sem causalidade atribuída a heartbeat.
+- R8I-PREP usa somente fixtures/localhost sintéticos. R8I externa, commissioning e PAPER não estão autorizados; provider permanece não comissionado.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

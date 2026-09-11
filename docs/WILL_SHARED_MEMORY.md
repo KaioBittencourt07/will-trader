@@ -356,3 +356,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - R8H-PREP foi aprovado offline. O observer isolado usa o contrato explícito do payload Twelve: `timestamp` em `UNIX_SECONDS`, receive time em `UNIX_MILLISECONDS` capturado no mesmo processamento e avaliação por `twelve-ws-event-freshness-v1`.
 - Saída contém somente ages/contagens sanitizadas; nunca timestamps absolutos. Mistura PASS/FAIL falha conservadoramente e ausência de quote não cria PASS.
 - Tests/prep usam apenas localhost sintético e reportam `externalProviderCalls:0`. Alvo externo, R8H real, commissioning, PAPER, Champion, dashboard, ordens e merge continuam não autorizados.
+
+## Fase 20C.6.13B-R8I-PREP — Timestamp Progression Offline
+- R8H externa foi consumida: 31 freshness samples, 12 PASS/19 FAIL, sem mudança no gate congelado de 30s. O provider segue não comissionado e PAPER não autorizado.
+- A documentação Twelve assegura timestamp UNIX no evento price, mas não a cadência/unicidade exigida para inferir semântica. O diagnóstico versionado mede repetição, avanço, regressão, deltas positivos e multiplicidade sem timestamps absolutos/preços.
+- Timestamp repetido é descritivo; regressão ou malformed falha fechado. Progressão, freshness, chegada e frequência permanecem eixos separados. R8I-PREP é offline; nenhuma R8I externa foi autorizada.
