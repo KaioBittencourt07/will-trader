@@ -1,9 +1,11 @@
 import { evaluateTwelveWsEventFreshness } from './twelveWsEventFreshness.js';
 import { diagnoseTwelveWsTimestampProgression } from './twelveWsTimestampProgression.js';
+import { diagnoseTwelveWsArrivalNative } from './twelveWsArrivalNativeDiagnostic.js';
 
 export const TWELVE_WS_FRESHNESS_OBSERVATION_VERSION = 'twelve-ws-freshness-observation-v1';
 export const TWELVE_WS_NATIVE_EVENT_TIMESTAMP_UNIT = 'UNIX_SECONDS';
 const OFFICIAL_ENDPOINT = 'wss://ws.twelvedata.com/v1/quotes/price';
+const R8J_AUTHORIZATION = 'R8J_TEMPORAL_SEMANTICS_EXPLICITLY_AUTHORIZED';
 const SUBSCRIBE = Object.freeze({ action: 'subscribe', params: Object.freeze({ symbols: 'EUR/USD' }) });
 const HEARTBEAT = Object.freeze({ action: 'heartbeat' });
 const symbols = (value) => Array.isArray(value) ? value.map((item) => String(item?.symbol ?? item).toUpperCase()) : [];
@@ -28,13 +30,16 @@ function aggregateFreshness(samples) {
 }
 
 export async function observeTwelveWsEventFreshness({ endpoint = OFFICIAL_ENDPOINT, apiKey, authorization,
-  allowLocalSynthetic = false, observationWindowMs = 60_000, preAcceptTimeoutMs = 5_000,
+  allowLocalSynthetic = false, includeArrivalNativeDiagnostic = false, observationWindowMs = 60_000, preAcceptTimeoutMs = 5_000,
   heartbeatIntervalMs = 10_000, eventTimestampUnit = TWELVE_WS_NATIVE_EVENT_TIMESTAMP_UNIT,
   now = () => Date.now(), timers = nativeTimers, webSocketFactory = (url) => new globalThis.WebSocket(url) } = {}) {
   const target = new URL(endpoint); const local = ['localhost', '127.0.0.1', '::1'].includes(target.hostname);
-  const externalAuthorizations = new Set(['R8H_FRESHNESS_OBSERVATION_EXPLICITLY_AUTHORIZED', 'R8I_TIMESTAMP_PROGRESSION_EXPLICITLY_AUTHORIZED']);
+  const externalAuthorizations = new Set(['R8H_FRESHNESS_OBSERVATION_EXPLICITLY_AUTHORIZED', 'R8I_TIMESTAMP_PROGRESSION_EXPLICITLY_AUTHORIZED', R8J_AUTHORIZATION]);
   const external = endpoint === OFFICIAL_ENDPOINT && externalAuthorizations.has(authorization);
+  const r8jExternal = endpoint === OFFICIAL_ENDPOINT && authorization === R8J_AUTHORIZATION;
   if (!(allowLocalSynthetic && local) && !external) throw new Error('FRESHNESS_OBSERVATION_NOT_AUTHORIZED');
+  if (external && includeArrivalNativeDiagnostic && !r8jExternal) throw new Error('ARRIVAL_NATIVE_DIAGNOSTIC_NOT_AUTHORIZED');
+  if (r8jExternal && includeArrivalNativeDiagnostic !== true) throw new Error('R8J_TEMPORAL_DIAGNOSTIC_REQUIRED');
   if (!apiKey) throw new Error('FRESHNESS_OBSERVATION_KEY_MISSING');
   if (!Number.isFinite(preAcceptTimeoutMs) || preAcceptTimeoutMs < 100 || preAcceptTimeoutMs > 5_000) throw new Error('FRESHNESS_PRE_ACCEPT_TIMEOUT_INVALID');
   if (!Number.isFinite(observationWindowMs) || observationWindowMs < 100 || observationWindowMs > 60_000) throw new Error('FRESHNESS_OBSERVATION_WINDOW_INVALID');
@@ -45,12 +50,14 @@ export async function observeTwelveWsEventFreshness({ endpoint = OFFICIAL_ENDPOI
     observationWindowMs, preAcceptTimeoutMs, heartbeatIntervalMs, heartbeatsSent: 0, closeCode: null,
     retries: 0, reconnects: 0, redirects: 0, applicationMessagesSent: 0 };
   return new Promise((resolve) => {
-    let settled = false; let socket; let deadline; let heartbeatTimer; const samples = []; const nativeEventTimestamps = [];
+    let settled = false; let socket; let deadline; let heartbeatTimer; const samples = []; const nativeEventTimestamps = []; const arrivalNativeSamples = [];
     const finish = (terminalClassification = null) => {
       if (settled) return; settled = true; timers.clearTimeout(deadline); timers.clearInterval(heartbeatTimer);
       const aggregate = aggregateFreshness(samples);
       const progression = diagnoseTwelveWsTimestampProgression(nativeEventTimestamps, effectiveTimestampUnit);
-      const report = Object.freeze({ observationVersion: TWELVE_WS_FRESHNESS_OBSERVATION_VERSION, ...state, ...aggregate, ...progression,
+      const temporal = includeArrivalNativeDiagnostic ? { arrivalNativeDiagnostic: diagnoseTwelveWsArrivalNative(arrivalNativeSamples, {
+        nativeTimestampUnit: effectiveTimestampUnit, receiveTimestampUnit: 'UNIX_MILLISECONDS' }) } : {};
+      const report = Object.freeze({ observationVersion: TWELVE_WS_FRESHNESS_OBSERVATION_VERSION, ...state, ...aggregate, ...progression, ...temporal,
         classification: terminalClassification ?? aggregate.classification, providerCommissioning: false, decisionImpact: 'NONE',
         prospectivePaperAuthorized: false, ordersExecuted: 0, externalProviderCalls: external ? state.connections : 0,
         restRequests: 0, saxoRequests: 0, secretExposed: false });
@@ -75,6 +82,7 @@ export async function observeTwelveWsEventFreshness({ endpoint = OFFICIAL_ENDPOI
       if (payload?.event === 'price' && String(payload?.symbol ?? '').toUpperCase() === 'EUR/USD' && state.subscribeAccepted) {
         const receiveTimestamp = now(); state.quoteMessagesObserved += 1;
         nativeEventTimestamps.push(payload.timestamp);
+        if (includeArrivalNativeDiagnostic) arrivalNativeSamples.push({ nativeTimestamp: payload.timestamp, receiveTimestamp });
         samples.push(evaluateTwelveWsEventFreshness({ eventTimestamp: payload.timestamp,
           eventTimestampUnit: effectiveTimestampUnit, receiveTimestamp, receiveTimestampUnit: 'UNIX_MILLISECONDS' }));
       }
