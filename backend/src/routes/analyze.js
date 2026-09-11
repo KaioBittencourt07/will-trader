@@ -4,6 +4,7 @@ import { normalizeMarketSnapshot } from '../../../data/src/marketAdapter.js';
 import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
 import { resolveAdvisorConsensus } from '../consensus.js';
+import { evaluateAnalyzeTemporalAdmission } from '../analyzeTemporalAdmission.js';
 
 const router = Router();
 
@@ -77,6 +78,40 @@ router.post('/analyze', async (req, res) => {
         data: normalized,
         audit: createAuditEntry({
           signal: rawMarket,
+          decision,
+          context
+        })
+      });
+    }
+
+    /*
+     * TEMPORAL AUTHORITY GUARD
+     *
+     * O dashboard opera em modo estrito e não pode transformar chegada recente
+     * em prova de event time. Chamadas legadas permanecem compatíveis até a
+     * migração completa, mas não recebem autoridade operacional nova.
+     */
+    const temporalAdmission = evaluateAnalyzeTemporalAdmission(rawMarket, context);
+    if (!temporalAdmission.allowed) {
+      const decision = {
+        direction: 'WAIT',
+        score: 0,
+        confidence: 0,
+        executable: false,
+        blocked: true,
+        clickTime: null,
+        timing: null,
+        reason: `Temporal Authority Guard: ${temporalAdmission.blocker}`,
+        blockReasons: [temporalAdmission.blocker, 'AUTHORITATIVE_FRESHNESS_REQUIRED']
+      };
+
+      return respond({
+        ok: true,
+        source: 'temporal-authority-guard',
+        decision,
+        data: { ...normalized, temporalAdmission },
+        audit: createAuditEntry({
+          signal: normalized,
           decision,
           context
         })
@@ -192,4 +227,3 @@ router.post('/analyze', async (req, res) => {
 });
 
 export default router;
-
