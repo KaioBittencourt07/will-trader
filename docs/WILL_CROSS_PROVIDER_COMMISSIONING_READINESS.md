@@ -143,6 +143,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - R8E externa não está autorizada; zero provider, credencial, REST, Saxo, commissioning, Champion, PAPER, dashboard, ordem ou merge.
 - Ajuste de auditoria: após deduplicação, `latestEvidenceClassification` e `latestQuoteObserved` preservam a última evidência na ordem de entrada; ordenação canônica não é usada para afirmar recência.
 
+## Fase 20C.6.13B-R8F-PREP — observador contínuo offline
+
+- `twelve-ws-stability-observation-v1` observa toda a janela pós-aceite (<=60s) sem parar na primeira quote. Agrega contagem, primeiro/último tempo relativo, maior gap de chegada, quantidade distinta de timestamps e eventos fora de ordem, sem expor timestamps ou preços.
+- Timeout pré-aceite tem default/máximo 5s. Heartbeat só inicia após aceite, com intervalo mínimo 10s. Uma conexão/subscribe, zero retry/reconnect/redirect/REST/Saxo; timers são cancelados definitivamente no STOP.
+- Classificações distinguem zero, uma e múltiplas quotes, close, pre-accept timeout, auth explícita e protocolo inconclusivo. Gap é medido, mas nenhuma regra de freshness/estabilidade ou causalidade de heartbeat é fabricada.
+- R8F externa NÃO está autorizada; zero provider/credencial/commissioning/Champion/PAPER/dashboard/ordem/merge.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

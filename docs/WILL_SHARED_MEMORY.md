@@ -334,3 +334,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - `twelve-ws-provider-readiness-v1` avalia somente evidência sanitizada, deduplica por conteúdo canônico e falha fechado para raw/segredo/malformed. Não possui rede.
 - Fixture R8C+R8D = `INTERMITTENT_BEHAVIOR_OBSERVED`, sem commissioning/PAPER/Champion/dashboard/ordem/merge. R8E externa não autorizada.
 - Audit fix: `latest*` usa a última evidência na ordem de entrada após deduplicação; não fabrica recência por ordenação canônica.
+
+## Fase 20C.6.13B-R8F-PREP — Continuous Stability Observer Offline
+- `twelve-ws-stability-observation-v1` não para na primeira quote: observa até timeout/close e agrega volume, tempos relativos, gaps, cardinalidade/ordem de timestamp sem valores brutos.
+- Pre-accept <=5s, pós-aceite <=60s, heartbeat >=10s somente após aceite, uma conexão/subscribe e zero retry/reconnect/REST/Saxo. Nenhuma regra de estabilidade/freshness é inferida.
+- R8F externa não autorizada; zero provider, credencial, commissioning, Champion, PAPER, dashboard, ordem ou merge.
