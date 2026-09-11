@@ -34,7 +34,7 @@ test('quote before first heartbeat ends a one-connection one-subscribe session',
 });
 
 test('quote after heartbeats is observed without claiming heartbeat causality', async () => {
-  const { report, socket } = await scenario('after'); assert.equal(report.classification, 'QUOTE_OBSERVED_WITH_HEARTBEAT_SESSION');
+  const { report, socket } = await scenario('after', { observationWindowMs: 500 }); assert.equal(report.classification, 'QUOTE_OBSERVED_WITH_HEARTBEAT_SESSION');
   assert.equal(report.causeConfirmed, true); assert.equal(report.heartbeatsSent, 2); assert.equal(socket.sent.filter((x) => x.action === 'subscribe').length, 1);
 });
 
@@ -48,7 +48,7 @@ test('close after accepted subscribe is fail-closed', async () => {
 });
 
 test('incoming control and unknown messages can precede a quote without secret exposure', async () => {
-  const { report } = await scenario('incoming'); assert.equal(report.classification, 'QUOTE_OBSERVED_WITH_HEARTBEAT_SESSION'); assert.equal(report.nonPriceMessagesObserved, 4);
+  const { report } = await scenario('incoming', { observationWindowMs: 500 }); assert.equal(report.classification, 'QUOTE_OBSERVED_WITH_HEARTBEAT_SESSION'); assert.equal(report.nonPriceMessagesObserved, 4);
   assert.equal(JSON.stringify(report).includes('SYNTHETIC_SECRET'), false); assert.equal(JSON.stringify(report).includes('9.9'), false);
 });
 

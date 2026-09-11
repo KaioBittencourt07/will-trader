@@ -135,6 +135,13 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - Uma conexão, um subscribe, zero retry/reconnect/redirect/REST/Saxo. Saída allowlisted sem segredo, URL/query, header, frame, payload, preço, IP, token, texto livre ou Location.
 - R8D externa NÃO está autorizada; zero provider calls, credenciais reais, commissioning, Champion, PAPER, dashboard, ordens ou merge.
 
+## Fase 20C.6.13B-R8E-PREP — gate offline de readiness Twelve WS
+
+- R8D foi consumida e observou quote 477ms após aceite, antes do primeiro heartbeat; isso prova entrega possível, não causalidade de heartbeat nem confiabilidade contínua. O silêncio R8C permanece sem causa confirmada.
+- `twelve-ws-provider-readiness-v1` é função pura, sem capacidade de rede, que aceita apenas evidência sanitizada R8B/R8C/R8D, normaliza variantes, deduplica registros idênticos e rejeita campos raw/secretos ou invariantes operacionais alterados.
+- O fixture congelado R8C sem quote + R8D com quote resulta em `INTERMITTENT_BEHAVIOR_OBSERVED`, `providerCommissioning:false`, `decisionImpact:NONE`, PAPER falso e zero ordens. Nenhuma estabilidade, causa, plano, mercado, heartbeat ou rentabilidade é inferida.
+- R8E externa não está autorizada; zero provider, credencial, REST, Saxo, commissioning, Champion, PAPER, dashboard, ordem ou merge.
+
 ## Fase 20C.6.13B — commissioning controlado
 
 O harness `cross-provider-readonly-commissioning-v1` limita a execução a uma sessão EUR/USD 1min, Saxo SIM Charts e uma assinatura Twelve WS. Ele exige autorização 13B exata, possui zero retry, preserva o gate de 30.000 ms e retorna somente evidência sanitizada. Sem as duas credenciais runtime, encerra antes de rede como `BLOCKED_EXTERNAL`.

@@ -328,3 +328,8 @@ When Codex starts a new substantial task, treat the following as the default ins
 - R8C foi consumida sem quote em 60s e sem causa confirmada. `twelve-heartbeat-observation-v1` testa apenas a variável protocolar heartbeat após aceite explícito, sem atribuir causalidade.
 - Default heartbeat 10s; futuro uso externo não aceita frequência maior que uma vez por 10s. Janela pós-aceite <=60s, timeout pré-aceite separado, uma conexão/subscribe e timers cancelados no STOP.
 - Harness sintético cobre quote antes/depois de heartbeats, silêncio, close, mensagens recebidas e ausência de status. R8D externa permanece não autorizada; zero provider/credencial/REST/Saxo/commissioning/Champion/PAPER/dashboard/ordem/merge.
+
+## Fase 20C.6.13B-R8E-PREP — Twelve WS Readiness Gate Offline
+- R8D consumida observou quote antes do primeiro heartbeat: entrega EUR/USD é possível, mas heartbeat causal e confiabilidade contínua não foram provados; R8C segue sem causa.
+- `twelve-ws-provider-readiness-v1` avalia somente evidência sanitizada, deduplica por conteúdo canônico e falha fechado para raw/segredo/malformed. Não possui rede.
+- Fixture R8C+R8D = `INTERMITTENT_BEHAVIOR_OBSERVED`, sem commissioning/PAPER/Champion/dashboard/ordem/merge. R8E externa não autorizada.
