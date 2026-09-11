@@ -47,7 +47,7 @@ const median = (numbers) => { if (!numbers.length) return null; const middle = M
 
 export function evaluateTwelveWsProviderReadiness(evidence = []) {
   const records = Array.isArray(evidence) ? evidence : []; const normalized = records.map(normalize); const invalid = normalized.filter((item) => !item).length;
-  const unique = [...new Map(normalized.filter(Boolean).map((item) => [canonical(item), item])).values()].sort((a, b) => canonical(a).localeCompare(canonical(b)));
+  const unique = [...new Map(normalized.filter(Boolean).map((item) => [canonical(item), item])).values()];
   const quoteSuccessCount = unique.filter((item) => item.quoteObserved).length;
   const quoteFailureCount = unique.filter((item) => item.subscribeAccepted && !item.quoteObserved).length;
   const abnormalCloseCount = unique.filter((item) => item.classification.includes('ABNORMAL_CLOSE')).length;

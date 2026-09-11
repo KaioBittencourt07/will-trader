@@ -141,6 +141,7 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - `twelve-ws-provider-readiness-v1` é função pura, sem capacidade de rede, que aceita apenas evidência sanitizada R8B/R8C/R8D, normaliza variantes, deduplica registros idênticos e rejeita campos raw/secretos ou invariantes operacionais alterados.
 - O fixture congelado R8C sem quote + R8D com quote resulta em `INTERMITTENT_BEHAVIOR_OBSERVED`, `providerCommissioning:false`, `decisionImpact:NONE`, PAPER falso e zero ordens. Nenhuma estabilidade, causa, plano, mercado, heartbeat ou rentabilidade é inferida.
 - R8E externa não está autorizada; zero provider, credencial, REST, Saxo, commissioning, Champion, PAPER, dashboard, ordem ou merge.
+- Ajuste de auditoria: após deduplicação, `latestEvidenceClassification` e `latestQuoteObserved` preservam a última evidência na ordem de entrada; ordenação canônica não é usada para afirmar recência.
 
 ## Fase 20C.6.13B — commissioning controlado
 

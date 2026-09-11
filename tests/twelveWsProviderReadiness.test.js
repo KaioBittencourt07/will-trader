@@ -43,9 +43,13 @@ test('abnormal close mixed with success is intermittent', () => {
   const result = evaluateTwelveWsProviderReadiness([base, close]); assert.equal(result.abnormalCloseCount, 1); assert.equal(result.readiness, 'INTERMITTENT_BEHAVIOR_OBSERVED');
 });
 
-test('identical evidence is deduplicated and insertion order is deterministic', () => {
+test('identical evidence is deduplicated while latest fields preserve input order', () => {
   const one = evaluateTwelveWsProviderReadiness([base, noQuote, base]); const two = evaluateTwelveWsProviderReadiness([noQuote, base, base]);
-  assert.equal(one.validEvidenceCount, 2); assert.deepEqual(one, two);
+  assert.equal(one.validEvidenceCount, 2); assert.equal(two.validEvidenceCount, 2);
+  assert.equal(one.latestEvidenceClassification, noQuote.classification); assert.equal(one.latestQuoteObserved, false);
+  assert.equal(two.latestEvidenceClassification, base.classification); assert.equal(two.latestQuoteObserved, true);
+  const omitLatest = ({ latestEvidenceClassification, latestQuoteObserved, ...result }) => result;
+  assert.deepEqual(omitLatest(one), omitLatest(two));
 });
 
 test('raw, secret-bearing, malformed and authority-changing records fail closed', () => {

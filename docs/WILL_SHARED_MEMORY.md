@@ -333,3 +333,4 @@ When Codex starts a new substantial task, treat the following as the default ins
 - R8D consumida observou quote antes do primeiro heartbeat: entrega EUR/USD é possível, mas heartbeat causal e confiabilidade contínua não foram provados; R8C segue sem causa.
 - `twelve-ws-provider-readiness-v1` avalia somente evidência sanitizada, deduplica por conteúdo canônico e falha fechado para raw/segredo/malformed. Não possui rede.
 - Fixture R8C+R8D = `INTERMITTENT_BEHAVIOR_OBSERVED`, sem commissioning/PAPER/Champion/dashboard/ordem/merge. R8E externa não autorizada.
+- Audit fix: `latest*` usa a última evidência na ordem de entrada após deduplicação; não fabrica recência por ordenação canônica.
