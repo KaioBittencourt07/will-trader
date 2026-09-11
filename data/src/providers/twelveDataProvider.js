@@ -19,8 +19,6 @@ function standardDeviation(values) {
 }
 
 function priceActionFlags(values, { sma12, noise }) {
-  // Twelve Data sends newest first. Price action requires chronological candles
-  // and is deliberately unavailable when OHLC fields are incomplete.
   const candles = values.map((value) => ({
     open: num(value.open), high: num(value.high), low: num(value.low), close: num(value.close)
   })).filter((candle) => Object.values(candle).every((value) => value !== null)).reverse();
@@ -44,8 +42,6 @@ function priceActionFlags(values, { sma12, noise }) {
   const priorClose = candles.at(-4).close;
   const trendDirection = Math.sign(last.close - sma12);
   const recentDirection = Math.sign(last.close - priorClose);
-  // A pullback is a counter-trend move with meaningful magnitude. It is not
-  // itself an entry; the existing trend, score and confidence gates still apply.
   const pullback = trendDirection !== 0 && recentDirection !== 0
     && trendDirection !== recentDirection
     && Math.abs((last.close - priorClose) / priorClose) >= noise * 0.5;
@@ -102,12 +98,6 @@ function httpError(operation, response) {
   return error;
 }
 
-/**
- * Converts price movement into a scale-free representation.  A 0.02% move
- * means something very different in EUR/USD and BTC/USD; its size relative to
- * the recent noise is the useful evidence.  The resulting factors remain in
- * the existing -1..1 contract used by the deterministic engine.
- */
 export function deriveTechnical(values) {
   const closes = values.map((v) => num(v.close)).filter((v) => v !== null).reverse();
   if (closes.length < 12) throw new Error('Histórico insuficiente para análise técnica.');
@@ -118,8 +108,6 @@ export function deriveTechnical(values) {
   const returns = closes.slice(1).map((v, i) => (v - closes[i]) / closes[i]).filter(Number.isFinite);
   const meanAbsoluteReturn = returns.reduce((sum, value) => sum + Math.abs(value), 0) / returns.length;
   const realizedVolatility = standardDeviation(returns);
-  // The floor prevents a perfectly flat or rounded feed from creating an
-  // artificial infinite-strength trend.
   const noise = Math.max(realizedVolatility, meanAbsoluteReturn * 0.35, Number.EPSILON);
   const trend = clamp(((last - sma12) / sma12) / (noise * 2.5), -1, 1);
   const momentum = clamp(((last - closes.at(-6)) / closes.at(-6)) / (noise * Math.sqrt(5) * 1.75), -1, 1);
@@ -127,9 +115,6 @@ export function deriveTechnical(values) {
   const range = Math.max(...recent) - Math.min(...recent);
   const structure = clamp(range > 0 ? ((last - Math.min(...recent)) / range) * 2 - 1 : 0, -1, 1);
   const recentVolatility = standardDeviation(returns.slice(-8));
-  // This is a relative volatility regime, not raw percentage volatility:
-  // 0.5 means normal recent pace, while 1 flags a pace at least twice the
-  // recent baseline.  It therefore works across FX, crypto and equities.
   const volatility = realizedVolatility <= Number.EPSILON
     ? 0
     : clamp(recentVolatility / (realizedVolatility * 2), 0, 1);
@@ -163,6 +148,19 @@ function parseQuoteTimestamp(value) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 
+function selectQuoteTimestamp(quote = {}) {
+  const candidates = [
+    ['last_quote_at', quote.last_quote_at],
+    ['last_update_at', quote.last_update_at],
+    ['timestamp', quote.timestamp]
+  ];
+  for (const [field, rawValue] of candidates) {
+    const parsed = parseQuoteTimestamp(rawValue);
+    if (parsed) return { field, timestamp: parsed };
+  }
+  return { field: null, timestamp: null };
+}
+
 function snapshotFromApi(asset, timeframe, quote, series, maxAgeMs, receivedAtMs) {
   if (quote?.status === 'error') throw new Error(`Twelve Data quote: ${quote.message || 'erro'}`);
   if (series?.status === 'error') throw new Error(`Twelve Data time_series: ${series.message || 'erro'}`);
@@ -172,8 +170,8 @@ function snapshotFromApi(asset, timeframe, quote, series, maxAgeMs, receivedAtMs
   const candleTimestamp = candleDate
     ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(candleDate) ? candleDate : `${candleDate.replace(' ', 'T')}Z`).toISOString()
     : null;
-  const rawQuoteTime = quote.last_quote_at ?? quote.timestamp;
-  const quoteTimestamp = parseQuoteTimestamp(rawQuoteTime);
+  const selectedQuoteTime = selectQuoteTimestamp(quote);
+  const quoteTimestamp = selectedQuoteTime.timestamp;
   if (!candleTimestamp || !quoteTimestamp) throw new Error('Twelve Data não retornou timestamp válido.');
   const quoteAgeMs = receivedAtMs - Date.parse(quoteTimestamp);
   const candleAgeMs = receivedAtMs - Date.parse(candleTimestamp);
@@ -188,11 +186,12 @@ function snapshotFromApi(asset, timeframe, quote, series, maxAgeMs, receivedAtMs
     candleAgeMs,
     candleCompleteness: 'UNVERIFIED_BY_PROVIDER_PAYLOAD',
     cacheAgeMs: 0,
-    freshnessBasis: 'REST_QUOTE_TIMESTAMP',
+    freshnessBasis: `REST_QUOTE_${String(selectedQuoteTime.field).toUpperCase()}`,
     freshnessPolicyVersion: 'rest-quote-freshness-v1',
     freshnessMaxAgeMs: maxAgeMs,
     timestampOrigins: {
-      quoteTimestamp: 'twelvedata.quote.last_quote_at_or_timestamp',
+      quoteTimestamp: `twelvedata.quote.${selectedQuoteTime.field}`,
+      quoteTimestampField: selectedQuoteTime.field,
       candleTimestamp: 'twelvedata.time_series.values[0].datetime',
       providerReceivedAt: 'will.local_clock_after_response_parse'
     },
