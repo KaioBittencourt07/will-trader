@@ -350,3 +350,4 @@ When Codex starts a new substantial task, treat the following as the default ins
 - `twelve-ws-event-freshness-v1` exige timestamp/receive time e unidades explícitas, retorna somente eventAgeMs e gates. <=30s inclusivo; futuro sem tolerância, inválido e unidade ambígua falham fechado.
 - Provider event freshness != local arrival recency. Readiness aceita evidência versionada, mas freshness PASS isolado não remove requisito longitudinal nem autoriza commissioning/PAPER.
 - Histórico R8C/R8D/R8F segue freshness `UNVERIFIED`; R8H externa, provider calls, dashboard, Champion, ordem e merge não autorizados.
+- Correção de auditoria R8H: evidência de freshness é aceita somente quando `freshnessGate`, idade, contrato de 30s, blocker, subgates e flags observadas são semanticamente coerentes. Evidência adulterada ou contraditória falha fechado como `DATA_INVALID`; um rótulo `PASS` isolado nunca é confiado.

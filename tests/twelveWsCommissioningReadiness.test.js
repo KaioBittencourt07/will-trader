@@ -59,6 +59,47 @@ test('valid explicit freshness is consumed without bypassing longitudinal eviden
   const report = evaluateTwelveWsCommissioningReadiness([r8f], freshness); assert.equal(report.freshnessCompatibilityGate, 'PASS');
   assert.equal(report.classification, 'REQUIRES_PROSPECTIVE_VALIDATION'); assert.equal(report.providerCommissioning, false); assert.equal(report.prospectivePaperAuthorized, false);
 });
+test('tampered freshness evidence fails closed instead of producing a freshness PASS', async () => {
+  const { evaluateTwelveWsEventFreshness } = await import('../backend/src/twelveWsEventFreshness.js');
+  const valid = evaluateTwelveWsEventFreshness({ eventTimestamp: 1_800_000_000, eventTimestampUnit: 'UNIX_SECONDS', receiveTimestamp: 1_800_000_001_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' });
+  const mutations = [
+    { eventAgeMs: 30001 },
+    { futureTimestampGate: 'FAIL' },
+    { blocker: 'EVENT_OLDER_THAN_FROZEN_CONTRACT' },
+    { freshnessContractMs: 29999 },
+    { eventTimestampObserved: false },
+    { receiveTimestampObserved: false },
+    { clockComparabilityGate: 'UNVERIFIED' },
+    { timestampUnitGate: 'FAIL' }
+  ];
+  for (const mutation of mutations) {
+    const report = evaluateTwelveWsCommissioningReadiness([r8f], { ...valid, ...mutation });
+    assert.equal(report.freshnessCompatibilityGate, 'DATA_INVALID');
+    assert.equal(report.classification, 'DATA_INVALID');
+    assert.ok(report.blockers.includes('INVALID_EVENT_FRESHNESS_EVIDENCE'));
+  }
+});
+test('contradictory FAIL UNVERIFIED and DATA_INVALID freshness states fail closed', async () => {
+  const { evaluateTwelveWsEventFreshness } = await import('../backend/src/twelveWsEventFreshness.js');
+  const stale = evaluateTwelveWsEventFreshness({ eventTimestamp: 1_800_000_000, eventTimestampUnit: 'UNIX_SECONDS', receiveTimestamp: 1_800_000_031_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' });
+  const missing = evaluateTwelveWsEventFreshness({ receiveTimestamp: 1_800_000_001_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' });
+  const future = evaluateTwelveWsEventFreshness({ eventTimestamp: 1_800_000_002, eventTimestampUnit: 'UNIX_SECONDS', receiveTimestamp: 1_800_000_001_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' });
+  for (const evidence of [{ ...stale, eventAgeMs: 1000 }, { ...missing, eventAgeMs: 0 }, { ...missing, blocker: null },
+    { ...future, futureTimestampGate: 'PASS' }, { ...stale, freshnessGate: 'PASS' }]) {
+    const report = evaluateTwelveWsCommissioningReadiness([r8f], evidence);
+    assert.equal(report.freshnessCompatibilityGate, 'DATA_INVALID');
+    assert.equal(report.classification, 'DATA_INVALID');
+  }
+});
+test('coherent stale missing and invalid native freshness retain their conservative gates', async () => {
+  const { evaluateTwelveWsEventFreshness } = await import('../backend/src/twelveWsEventFreshness.js');
+  const inputs = [
+    [{ eventTimestamp: 1_800_000_000, eventTimestampUnit: 'UNIX_SECONDS', receiveTimestamp: 1_800_000_031_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' }, 'FAIL'],
+    [{ receiveTimestamp: 1_800_000_001_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' }, 'UNVERIFIED'],
+    [{ eventTimestamp: 1_800_000_002, eventTimestampUnit: 'UNIX_SECONDS', receiveTimestamp: 1_800_000_001_000, receiveTimestampUnit: 'UNIX_MILLISECONDS' }, 'DATA_INVALID']
+  ];
+  for (const [input, gate] of inputs) assert.equal(evaluateTwelveWsCommissioningReadiness([r8f], evaluateTwelveWsEventFreshness(input)).freshnessCompatibilityGate, gate);
+});
 test('output is allowlisted and never carries raw provider values or secrets', () => {
   const text = JSON.stringify(evaluateTwelveWsCommissioningReadiness([r8f]));
   for (const forbidden of ['9.99', 'apikey=', 'wss://', 'SYNTHETIC_SECRET', '59049']) assert.equal(text.includes(forbidden), false);

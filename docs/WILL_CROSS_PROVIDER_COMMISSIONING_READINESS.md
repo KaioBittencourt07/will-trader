@@ -164,6 +164,7 @@ No account, token, app, login, external call, commissioning, batch, 20C.6 author
 - O contrato congelado é inclusivo: age <=30.000ms passa; >30.000ms falha. Timestamp futuro usa tolerância zero e falha sem clamp; ausente fica `UNVERIFIED`; inválido/unidade ambígua fica `DATA_INVALID`.
 - Readiness pode consumir essa evidência versionada, mas um PASS isolado não satisfaz o gate longitudinal nem promove commissioning/PAPER. Fixtures R8C/R8D/R8F sem essa medida continuam freshness `UNVERIFIED` e `REQUIRES_PROSPECTIVE_VALIDATION`.
 - Provider event freshness != local arrival recency. R8H externa não autorizada; zero provider/credencial/dashboard/Champion/ordem/merge.
+- Correção de integridade R8H: readiness não confia no rótulo de uma evidência pré-computada. Cada estado é revalidado contra idade, contrato congelado, blocker, subgates e flags de observação; qualquer contradição vira `DATA_INVALID` / `INVALID_EVENT_FRESHNESS_EVIDENCE`.
 
 ## Fase 20C.6.13B — commissioning controlado
 

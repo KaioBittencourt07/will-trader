@@ -34,10 +34,38 @@ function consumeFreshness(evidence) {
   if (evidence === undefined || evidence === null) return { gate: 'UNVERIFIED', invalid: false };
   const keys = ['freshnessVersion', 'eventTimestampObserved', 'receiveTimestampObserved', 'eventAgeMs', 'freshnessContractMs', 'freshnessGate', 'blocker',
     'clockComparabilityGate', 'timestampUnitGate', 'futureTimestampGate', 'providerCommissioning', 'decisionImpact', 'prospectivePaperAuthorized', 'ordersExecuted', 'externalProviderCalls'];
-  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) || Object.keys(evidence).some((key) => !keys.includes(key)) ||
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) || Object.keys(evidence).length !== keys.length ||
+      Object.keys(evidence).some((key) => !keys.includes(key)) ||
       evidence.freshnessVersion !== 'twelve-ws-event-freshness-v1' || evidence.freshnessContractMs !== FROZEN_QUOTE_MAX_AGE_MS ||
       !['PASS', 'FAIL', 'UNVERIFIED', 'DATA_INVALID'].includes(evidence.freshnessGate) || evidence.providerCommissioning !== false ||
       evidence.decisionImpact !== 'NONE' || evidence.prospectivePaperAuthorized !== false || evidence.ordersExecuted !== 0 || evidence.externalProviderCalls !== 0) return { gate: 'DATA_INVALID', invalid: true };
+  const observedFlagsValid = typeof evidence.eventTimestampObserved === 'boolean' && typeof evidence.receiveTimestampObserved === 'boolean';
+  const ageValid = Number.isSafeInteger(evidence.eventAgeMs) && evidence.eventAgeMs >= 0;
+  const supportingGatesPass = evidence.timestampUnitGate === 'PASS' && evidence.clockComparabilityGate === 'PASS' && evidence.futureTimestampGate === 'PASS';
+  let coherent = false;
+  if (observedFlagsValid && evidence.freshnessGate === 'PASS') coherent = evidence.eventTimestampObserved && evidence.receiveTimestampObserved && ageValid &&
+    evidence.eventAgeMs <= FROZEN_QUOTE_MAX_AGE_MS && evidence.blocker === null && supportingGatesPass;
+  if (observedFlagsValid && evidence.freshnessGate === 'FAIL') coherent = evidence.eventTimestampObserved && evidence.receiveTimestampObserved && ageValid &&
+    evidence.eventAgeMs > FROZEN_QUOTE_MAX_AGE_MS && evidence.blocker === 'EVENT_OLDER_THAN_FROZEN_CONTRACT' && supportingGatesPass;
+  if (observedFlagsValid && evidence.freshnessGate === 'UNVERIFIED') coherent = evidence.eventAgeMs === null &&
+    evidence.clockComparabilityGate === 'UNVERIFIED' && evidence.timestampUnitGate === 'UNVERIFIED' && evidence.futureTimestampGate === 'UNVERIFIED' &&
+    ((!evidence.eventTimestampObserved && evidence.blocker === 'EVENT_TIMESTAMP_MISSING') ||
+      (evidence.eventTimestampObserved && !evidence.receiveTimestampObserved && evidence.blocker === 'RECEIVE_TIMESTAMP_MISSING'));
+  if (observedFlagsValid && evidence.freshnessGate === 'DATA_INVALID') {
+    const invalidStates = {
+      UNSANITIZED_INPUT: ['UNVERIFIED', 'UNVERIFIED', 'UNVERIFIED'],
+      TIMESTAMP_NOT_FINITE: ['UNVERIFIED', 'UNVERIFIED', 'UNVERIFIED'],
+      TIMESTAMP_UNIT_AMBIGUOUS: ['FAIL', 'UNVERIFIED', 'UNVERIFIED'],
+      TIMESTAMP_NOT_SAFE_INTEGER: ['PASS', 'FAIL', 'UNVERIFIED'],
+      EVENT_TIMESTAMP_IN_FUTURE: ['PASS', 'PASS', 'FAIL']
+    };
+    const expected = invalidStates[evidence.blocker];
+    const observedStateCoherent = evidence.blocker === 'UNSANITIZED_INPUT' ||
+      (evidence.eventTimestampObserved && evidence.receiveTimestampObserved);
+    coherent = evidence.eventAgeMs === null && observedStateCoherent && Array.isArray(expected) && evidence.timestampUnitGate === expected[0] &&
+      evidence.clockComparabilityGate === expected[1] && evidence.futureTimestampGate === expected[2];
+  }
+  if (!coherent) return { gate: 'DATA_INVALID', invalid: true };
   return { gate: evidence.freshnessGate, invalid: evidence.freshnessGate === 'DATA_INVALID' };
 }
 
