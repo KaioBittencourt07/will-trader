@@ -4,13 +4,18 @@ export const MARKET_SNAPSHOT_ATTESTATION_VERSION = 'market-snapshot-attestation-
 export const MARKET_SNAPSHOT_ATTESTATION_TTL_MS = 30_000;
 
 const registry = new Map();
+const ATTESTATION_ENVELOPE_KEYS = new Set([
+  'snapshotAttestationId',
+  'snapshotAttestationVersion',
+  'snapshotAttestationExpiresAt'
+]);
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.keys(value)
-      .filter((key) => key !== 'authoritativeFreshness' && key !== 'snapshotAttestationId')
+      .filter((key) => key !== 'authoritativeFreshness' && !ATTESTATION_ENVELOPE_KEYS.has(key))
       .sort()
       .map((key) => [key, canonicalize(value[key])])
   );
