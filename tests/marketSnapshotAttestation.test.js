@@ -22,11 +22,16 @@ function snapshot() {
   };
 }
 
-test('attests and resolves an unchanged snapshot inside frozen TTL', () => {
+test('attests and resolves the server envelope inside frozen TTL', () => {
   clearMarketSnapshotAttestationsForTest();
   const base = snapshot();
   const attestation = attestMarketSnapshot(base, { now: () => 1_000 });
-  const result = resolveMarketSnapshotAttestation({ ...base, snapshotAttestationId: attestation.id }, { now: () => 10_000 });
+  const result = resolveMarketSnapshotAttestation({
+    ...base,
+    snapshotAttestationId: attestation.id,
+    snapshotAttestationVersion: attestation.version,
+    snapshotAttestationExpiresAt: attestation.expiresAt
+  }, { now: () => 10_000 });
   assert.equal(result.ok, true);
   assert.equal(result.authoritativeFreshness.serverDerived, true);
 });
