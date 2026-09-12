@@ -6,6 +6,7 @@ import { classifyTwelveDataFailure, diagnoseTwelveData, TWELVE_DATA_DIAGNOSTIC_V
 import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
 import { composeWsFreshnessRestOhlc } from '../../../data/src/wsRestComposition.js';
 import { attachMarketAuthoritativeFreshness } from '../marketAuthoritativeFreshness.js';
+import { attestMarketSnapshot } from '../marketSnapshotAttestation.js';
 
 const router = Router();
 let marketDataEngine;
@@ -82,6 +83,16 @@ export function getMarketDataEngine() {
   return marketDataEngine;
 }
 
+function withServerAttestation(snapshot) {
+  const attestation = attestMarketSnapshot(snapshot);
+  return Object.freeze({
+    ...snapshot,
+    snapshotAttestationId: attestation.id,
+    snapshotAttestationVersion: attestation.version,
+    snapshotAttestationExpiresAt: attestation.expiresAt
+  });
+}
+
 router.get('/market', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
   const timeframe = String(req.query.timeframe || '1min');
@@ -89,7 +100,7 @@ router.get('/market', async (req, res) => {
   const telemetry = createProviderEfficiencyTelemetry('api-market-request');
   try {
     const rawSnapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize, { telemetry });
-    const snapshot = attachMarketAuthoritativeFreshness(rawSnapshot);
+    const snapshot = withServerAttestation(attachMarketAuthoritativeFreshness(rawSnapshot));
     return res.json({ ok: snapshot.valid, snapshot, providerEfficiency: providerEfficiencySnapshot(telemetry) });
   } catch (error) {
     console.error('Market provider error:', error.message);
@@ -109,8 +120,6 @@ router.get('/market/status', (req, res) => {
   });
 });
 
-// Diagnostic only: it shares the existing cache/rate limiter and cannot start
-// collection, create a decision, or reach any broker execution surface.
 router.get('/market/diagnostic', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
   const timeframe = String(req.query.timeframe || '1min');
@@ -151,7 +160,7 @@ router.get('/market/multi', async (req, res) => {
     const snapshots = [];
     for (const timeframe of timeframes) {
       const rawSnapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize);
-      snapshots.push(attachMarketAuthoritativeFreshness(rawSnapshot));
+      snapshots.push(withServerAttestation(attachMarketAuthoritativeFreshness(rawSnapshot)));
     }
     const context = buildMultiTimeframeContext(snapshots);
     return res.json({ ok: snapshots.every((snapshot) => snapshot.valid), snapshots, context });
