@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { attachMarketAuthoritativeFreshness, buildMarketAuthoritativeFreshness } from '../backend/src/marketAuthoritativeFreshness.js';
 
-test('unverified provider timestamp stays blocked server-side', () => {
+test('missing Twelve timestamp provenance stays unverified and blocked server-side', () => {
   const result = buildMarketAuthoritativeFreshness({ source: 'twelvedata', freshnessBasis: 'REST_QUOTE_TIMESTAMP', ageMs: 5_000 });
   assert.equal(result.serverDerived, true);
+  assert.equal(result.timestampAuthorityEvidence.semanticClassification, 'DATA_INVALID');
+  assert.equal(result.timestampAuthority, 'UNRESOLVED');
   assert.equal(result.authorityGate, 'FAIL');
   assert.equal(result.freshnessGate, 'UNVERIFIED');
-  assert.equal(result.blocker, 'TIMESTAMP_AUTHORITY_DATA_INVALID');
+  assert.equal(result.blocker, 'TIMESTAMP_AUTHORITY_UNVERIFIED');
   assert.equal(result.freshnessContractMs, 30_000);
 });
 
@@ -30,7 +32,8 @@ test('Twelve last_update_at provenance remains unresolved automatically', () => 
     timestampOrigins: { quoteTimestampField: 'last_update_at' }
   });
   assert.equal(result.timestampAuthorityEvidence.semanticClassification, 'RECENT_QUOTE_TIME_SEMANTICS_UNRESOLVED');
-  assert.equal(result.timestampAuthority, 'TIMESTAMP_AUTHORITY_UNVERIFIED');
+  assert.equal(result.timestampAuthority, 'UNRESOLVED');
+  assert.deepEqual(result.authorityReasonCodes, ['TIMESTAMP_AUTHORITY_UNRESOLVED']);
   assert.equal(result.authorityGate, 'FAIL');
   assert.equal(result.freshnessGate, 'UNVERIFIED');
 });
@@ -41,7 +44,8 @@ test('Twelve last_quote_at provenance remains unresolved automatically', () => {
     timestampOrigins: { quoteTimestampField: 'last_quote_at' }
   });
   assert.equal(result.timestampAuthorityEvidence.semanticClassification, 'LAST_QUOTE_AT_SEMANTICS_UNRESOLVED');
-  assert.equal(result.timestampAuthority, 'TIMESTAMP_AUTHORITY_UNVERIFIED');
+  assert.equal(result.timestampAuthority, 'UNRESOLVED');
+  assert.deepEqual(result.authorityReasonCodes, ['TIMESTAMP_AUTHORITY_UNRESOLVED']);
   assert.equal(result.authorityGate, 'FAIL');
   assert.equal(result.freshnessGate, 'UNVERIFIED');
 });
