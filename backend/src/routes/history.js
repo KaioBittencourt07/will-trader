@@ -16,9 +16,11 @@ function storeFor(req) {
 function isValidEvidenceRecord(record = {}) {
   const quality = record.metadata?.dataQuality ?? {};
   const blockReasons = Array.isArray(record.metadata?.blockReasons) ? record.metadata.blockReasons : [];
-  const technicalBlock = blockReasons.some((reason) => /^(DATA_QUALITY_|Dados atrasados\.)/.test(String(reason)));
+  const technicalBlock = blockReasons.some((reason) => /^(DATA_QUALITY_|Dados atrasados\.|AUTHORITATIVE_FRESHNESS_REQUIRED|AUTHORITATIVE_FRESHNESS_MISSING|TIMESTAMP_AUTHORITY_NOT_APPROVED|AUTHORITATIVE_FRESHNESS_NOT_APPROVED|TIMESTAMP_AUTHORITY_UNVERIFIED|TIMESTAMP_AUTHORITY_DATA_INVALID|EVENT_OLDER_THAN_FROZEN_CONTRACT|MARKET_AGE_UNAVAILABLE)$/.test(String(reason)));
   const invalidStatus = new Set(['STALE', 'MARKET_CLOSED', 'DATA_INVALID', 'INVALID']).has(String(quality.status ?? '').toUpperCase());
-  return quality.valid !== false && !technicalBlock && !invalidStatus;
+  const admission = record.metadata?.context?.marketAdmission ?? record.metadata?.marketAdmission ?? null;
+  const admissionRejected = admission?.state === 'REJECTED';
+  return quality.valid !== false && !technicalBlock && !invalidStatus && !admissionRejected;
 }
 
 function evidenceRecords(store) {
