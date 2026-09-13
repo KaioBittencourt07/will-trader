@@ -12,8 +12,20 @@ function storeFor(req) {
   return store;
 }
 
+function isValidEvidenceRecord(record = {}) {
+  const quality = record.metadata?.dataQuality ?? {};
+  const blockReasons = Array.isArray(record.metadata?.blockReasons) ? record.metadata.blockReasons : [];
+  const technicalBlock = blockReasons.some((reason) => /^(DATA_QUALITY_|Dados atrasados\.)/.test(String(reason)));
+  const invalidStatus = new Set(['STALE', 'MARKET_CLOSED', 'DATA_INVALID', 'INVALID']).has(String(quality.status ?? '').toUpperCase());
+  return quality.valid !== false && !technicalBlock && !invalidStatus;
+}
+
+function evidenceRecords(store) {
+  return store.list().filter(isValidEvidenceRecord);
+}
+
 function learningSnapshot(store) {
-  const records = store.list();
+  const records = evidenceRecords(store);
   const minimumSamples = Number(process.env.WILL_CALIBRATION_MINIMUM_SAMPLES || 30);
   return {
     metrics: summarize(records),
@@ -25,7 +37,7 @@ function learningSnapshot(store) {
 router.get('/history', (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit || 100), 1), 1_000);
-    const records = storeFor(req).list();
+    const records = evidenceRecords(storeFor(req));
     return res.json({ ok: true, total: records.length, records: records.slice(-limit).reverse() });
   } catch (error) {
     return res.status(503).json({ ok: false, error: error.message });
@@ -37,6 +49,7 @@ router.post('/history/:id/outcome', (req, res) => {
     const { outcome, exitPrice = null, ...metadata } = req.body ?? {};
     const current = storeFor(req).list().find((item) => item.id === req.params.id);
     if (!current) throw new Error('Sinal não encontrado.');
+    if (!isValidEvidenceRecord(current)) throw new Error('Registro técnico/inválido não pode receber resultado operacional.');
     if (current.execution?.status !== 'CONFIRMED') {
       throw new Error('Confirme a entrada realmente executada antes de registrar WIN ou LOSS.');
     }
@@ -53,6 +66,9 @@ router.post('/history/:id/outcome', (req, res) => {
 
 router.post('/history/:id/executed', (req, res) => {
   try {
+    const current = storeFor(req).list().find((item) => item.id === req.params.id);
+    if (!current) throw new Error('Sinal não encontrado.');
+    if (!isValidEvidenceRecord(current)) throw new Error('Registro técnico/inválido não pode ser confirmado como execução.');
     const record = storeFor(req).confirmExecution(req.params.id, req.body ?? {});
     return res.json({ ok: true, record });
   } catch (error) {
@@ -63,7 +79,7 @@ router.post('/history/:id/executed', (req, res) => {
 router.post('/history/resolve', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.body?.limit || 1), 1), 3);
-    const open = storeFor(req).list().filter((record) => record.status === 'OPEN').slice(0, limit);
+    const open = evidenceRecords(storeFor(req)).filter((record) => record.status === 'OPEN').slice(0, limit);
     const resolved = [];
     const pending = [];
     for (const record of open) {
@@ -91,7 +107,7 @@ router.post('/history/resolve', async (req, res) => {
 
 router.get('/metrics', (req, res) => {
   try {
-    const records = storeFor(req).list();
+    const records = evidenceRecords(storeFor(req));
     const withHour = records.map((record) => ({
       ...record,
       hour: record.signalTimestamp ? new Date(record.signalTimestamp).getUTCHours() : 'UNKNOWN'
@@ -113,4 +129,3 @@ router.get('/metrics', (req, res) => {
 });
 
 export default router;
-
