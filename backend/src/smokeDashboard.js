@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import { config } from './config.js';
 
-const baseUrl = `http://127.0.0.1:${config.port}`;
+const configuredBaseUrl = process.env.WILL_BASE_URL || process.argv[2];
+const baseUrl = (configuredBaseUrl || `http://127.0.0.1:${config.port}`).replace(/\/$/, '');
 
 async function read(pathname) {
   const response = await fetch(`${baseUrl}${pathname}`, { cache: 'no-store' });
@@ -59,7 +60,7 @@ main().catch((error) => {
     ok: false,
     baseUrl,
     error: error.message,
-    hint: 'Mantenha npm.cmd start rodando em outro PowerShell e confirme que PORT é o mesmo usado pelo backend.'
+    hint: 'Mantenha npm.cmd start rodando e passe a URL exata: npm.cmd run smoke:dashboard -- http://127.0.0.1:PORT'
   }, null, 2));
   process.exitCode = 1;
 });
