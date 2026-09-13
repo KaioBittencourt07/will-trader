@@ -25,7 +25,7 @@ async function waitForHealth(url, child) {
   throw new Error('Backend não iniciou no tempo esperado.');
 }
 
-test('POST /api/analyze persists WAIT durably and deduplicates a stable decisionId', async () => {
+test('POST /api/analyze persists invalid WAIT durably, deduplicates it, and keeps it out of valid evidence history', async () => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), 'will-analyze-history-')
   );
@@ -81,21 +81,24 @@ test('POST /api/analyze persists WAIT durably and deduplicates a stable decision
     assert.equal(second.history.id, first.history.id);
     assert.equal(second.history.idempotent, true);
 
+    // /api/history is the evidence-facing history and intentionally excludes
+    // invalid/stale/data-quality records. The technical record still remains
+    // durably persisted below for auditability and idempotency.
     const history = await fetch(
       `${url}/api/history?limit=10`
     ).then((response) => response.json());
 
-    assert.equal(history.total, 1);
-    assert.equal(history.records[0].direction, 'WAIT');
+    assert.equal(history.total, 0);
+    assert.equal(history.records.length, 0);
+
+    const persisted = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0].direction, 'WAIT');
     assert.equal(
-      history.records[0].decisionId,
+      persisted[0].decisionId,
       'analyze-history-contract:1'
     );
-
-    assert.equal(
-      JSON.parse(fs.readFileSync(historyFile, 'utf8')).length,
-      1
-    );
+    assert.equal(persisted[0].metadata?.dataQuality?.valid, false);
   } finally {
     if (child.exitCode === null && !child.killed) {
       child.kill('SIGTERM');
