@@ -19,6 +19,7 @@ test('builds a valid market snapshot from quote and candles', async () => {
   assert.equal(result.valid, true);
   assert.equal(result.source, 'twelvedata');
   assert.equal(result.candleCount, 20);
+  assert.equal(result.featureVersion, 'candle-price-action-v2');
   assert.equal(typeof result.trend, 'number');
   assert.equal(typeof result.momentum, 'number');
   assert.equal(typeof result.structure, 'number');
