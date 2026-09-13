@@ -1,0 +1,47 @@
+import { Router } from 'express';
+import { analyzeWithOpenAI } from '../ai/openaiEngine.js';
+import { normalizeMarketSnapshot } from '../../../data/src/marketAdapter.js';
+import { runWillPipeline } from '../../../engine/src/pipeline.js';
+import { createAuditEntry } from '../../../engine/src/auditLog.js';
+import { resolveConsensus } from '../consensus.js';
+
+const router = Router();
+
+function aiFallbackEnabled() {
+  return false;
+}
+
+router.post('/analyze', async (req, res) => {
+  try {
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object') return res.status(400).json({ ok: false, error: 'Payload inválido.' });
+    const rawMarket = payload.market ?? payload;
+    const context = payload.context ?? {};
+    const normalized = normalizeMarketSnapshot(rawMarket, { maxAgeMs: Number(process.env.MARKET_MAX_AGE_MS || 30_000) });
+    if (!normalized.valid) {
+      const decision = { direction: 'WAIT', score: 0, confidence: 0, executable: false, blocked: true, clickTime: null, timing: null, reason: `Data Guard: ${normalized.reason}`, blockReasons: [normalized.reason] };
+      return res.json({ ok: true, source: 'data-guard', decision, data: normalized, audit: createAuditEntry({ signal: rawMarket, decision, context }) });
+    }
+
+    const deterministic = runWillPipeline(normalized, context);
+    if (!deterministic.executable) {
+      const decision = { ...deterministic, direction: 'WAIT', clickTime: null };
+      return res.json({ ok: true, source: 'will-deterministic', decision, data: normalized, audit: createAuditEntry({ signal: normalized, decision, context }) });
+    }
+
+    try {
+      const ai = await analyzeWithOpenAI({ market: normalized, context, deterministic });
+      const result = resolveConsensus(deterministic, ai, { minimumAiConfidence: context.minimumAiConfidence ?? 70 });
+      return res.json({ ok: true, source: result.approved ? 'will-ai-consensus' : 'will-ai-veto', decision: result.decision, data: normalized, audit: createAuditEntry({ signal: normalized, decision: result.decision, context }) });
+    } catch (aiError) {
+      if (!aiFallbackEnabled()) throw aiError;
+      const fallbackDecision = { ...deterministic, ai: { available: false }, reason: `${deterministic.reason || 'WILL determinístico'} | IA indisponível; fallback determinístico ativo.` };
+      return res.json({ ok: true, source: 'will-deterministic-fallback', decision: fallbackDecision, data: normalized, audit: createAuditEntry({ signal: normalized, decision: fallbackDecision, context }) });
+    }
+  } catch (error) {
+    console.error('Analysis error:', error.message);
+    return res.status(500).json({ ok: false, error: 'Falha na análise.' });
+  }
+});
+
+export default router;

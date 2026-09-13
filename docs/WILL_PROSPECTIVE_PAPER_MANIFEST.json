@@ -1,0 +1,32 @@
+{
+  "manifestVersion": "prospective-paper-manifest-v1",
+  "experimentId": "prospective-paper-champion-v1",
+  "mode": "PAPER",
+  "executionMode": "MANUAL",
+  "status": "RUNNING_PAPER",
+  "startTime": "2026-09-03T02:15:00.000Z",
+  "champion": {
+    "strategyVersion": "will-core-v1",
+    "modelVersion": "deterministic-v1",
+    "featureVersion": "candle-price-action-v2",
+    "regimeVersion": "market-regime-v2",
+    "timingVersion": "entry-timing-v2",
+    "thresholds": { "minimumScore": 70, "minimumConfidence": 70 },
+    "rankingContract": "opportunity-ranking-contract-v1",
+    "scannerContract": "scanner-discovery-contract-v1",
+    "outcomeDefinition": "prospective-expiry-reference-price-v1",
+    "dataQualityContract": "data-quality-fail-closed-v1"
+  },
+  "targetEvidencePolicy": {
+    "kind": "NO_PREDECLARED_EDGE_N",
+    "statement": "No sample count alone proves edge. Interpretation requires temporal and out-of-sample review."
+  },
+  "primaryMetrics": ["decisionN", "coverage", "waitRate", "WIN_LOSS_TIE_DATA_INVALID", "wilsonInterval95"],
+  "secondaryMetrics": ["asset", "setup", "regime", "timeframe", "sessionHour", "dataQualityProvider", "timing", "familiarity", "disagreement", "robustness", "drift"],
+  "outcomeRules": ["RESOLVE_ONLY_ON_OR_AFTER_EXPIRY", "REFERENCE_TIMESTAMP_MUST_NOT_PRECEDE_EXPIRY", "DATA_INVALID_IS_NOT_WIN_OR_LOSS"],
+  "exclusions": ["INVALID_OR_STALE_RESOLUTION_DATA", "UNVERIFIED_PROVIDER_OR_CLOCK_FAILURE"],
+  "stopSafetyCriteria": ["PROVIDER_DEGRADED", "STORAGE_FAILURE", "CLOCK_FAILURE", "DATA_INVALID"],
+  "payoutAndCosts": { "status": "NOT_AVAILABLE", "rule": "No EV or expectancy without valid recorded payout and costs." },
+  "forbiddenMidBatchChanges": ["THRESHOLD_CHANGE", "RANKING_CHANGE", "CHAMPION_CHANGE", "AUTO_TUNING", "AUTO_PROMOTION", "META_MODEL_TRAINING", "PROBABILITY_CALIBRATION", "RETROSPECTIVE_CHERRY_PICKING"]
+}
+

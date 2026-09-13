@@ -1,0 +1,25 @@
+{
+  "name": "will-trader-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "smoke:dashboard": "node src/smokeDashboard.js",
+    "commission:ws": "node src/commissionTwelveWebSocket.js",
+    "commission:oanda-readonly": "node src/commissionOandaReadOnly.js",
+    "commission:cross-provider-readiness": "node src/commissionCrossProviderReadiness.js",
+    "commission:cross-provider-readonly": "node src/commissionCrossProviderReadOnly.js",
+    "preflight:twelve-transport": "node src/preflightTwelveTransport.js",
+    "observe:twelve-r8i": "node src/runTwelveR8i.js",
+    "observe:twelve-r8j": "node src/runTwelveR8j.js",
+    "observe:twelve-r8k": "node src/runTwelveR8k.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "openai": "^5.19.1"
+  }
+}

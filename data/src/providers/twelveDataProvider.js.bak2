@@ -1,0 +1,400 @@
+import { normalizeMarketSnapshot } from '../marketAdapter.js';
+
+const BASE_URL = 'https://api.twelvedata.com';
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function num(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function deriveTechnical(values) {
+  const closes = values
+    .map(v => num(v.close))
+    .filter(v => v !== null)
+    .reverse();
+
+  if (closes.length < 12) {
+    throw new Error('Histórico insuficiente para análise técnica.');
+  }
+
+  const last = closes.at(-1);
+
+  const sma5 =
+    closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+
+  const sma12 =
+    closes.slice(-12).reduce((a, b) => a + b, 0) / 12;
+
+  const trendRaw = (last - sma12) / sma12;
+  const momentumRaw = (last - closes.at(-6)) / closes.at(-6);
+
+  const recent = closes.slice(-10);
+  const recentHigh = Math.max(...recent);
+  const recentLow = Math.min(...recent);
+  const range = recentHigh - recentLow;
+
+  const structureRaw =
+    range > 0
+      ? ((last - recentLow) / range) * 2 - 1
+      : 0;
+
+  const returns = closes
+    .slice(1)
+    .map((v, i) => (v - closes[i]) / closes[i])
+    .filter(Number.isFinite);
+
+  const mean =
+    returns.reduce((a, b) => a + b, 0) / returns.length;
+
+  const variance =
+    returns.reduce((a, b) => a + (b - mean) ** 2, 0) /
+    returns.length;
+
+  const volatilityRaw = Math.sqrt(variance) * 100;
+
+  const trend = clamp(trendRaw * 100, -1, 1);
+  const momentum = clamp(momentumRaw * 100, -1, 1);
+  const structure = clamp(structureRaw, -1, 1);
+  const volatility = clamp(volatilityRaw, 0, 1);
+
+  const signs = [trend, momentum, structure]
+    .filter(v => Math.abs(v) >= 0.15)
+    .map(v => Math.sign(v));
+
+  const dominant = signs.length
+    ? Math.sign(signs.reduce((a, b) => a + b, 0))
+    : 0;
+
+  const confirmations =
+    signs.filter(v => v === dominant).length +
+    (last > sma5 === last > sma12 ? 1 : 0);
+
+  return {
+    trend,
+    momentum,
+    structure,
+    volatility,
+    confirmations,
+    candleCount: closes.length
+  };
+}
+
+export function createTwelveDataProvider({
+  apiKey = process.env.TWELVEDATA_API_KEY,
+  fetchImpl = fetch,
+  maxAgeMs = Number(process.env.MARKET_MAX_AGE_MS || 30_000),
+  baseUrl = BASE_URL
+} = {}) {
+  if (!apiKey) {
+    throw new Error('TWELVEDATA_API_KEY não configurada.');
+  }
+
+  return {
+    async getSnapshot(asset, timeframe = '1min', outputsize = 50) {
+      const symbol = encodeURIComponent(asset);
+      const interval = encodeURIComponent(timeframe);
+
+      const headers = {
+        Authorization: `apikey ${apiKey}`
+      };
+
+      const [quoteResponse, seriesResponse] = await Promise.all([
+        fetchImpl(
+          `${baseUrl}/quote?symbol=${symbol}`,
+          {
+            headers,
+            cache: 'no-store'
+          }
+        ),
+
+        fetchImpl(
+          `${baseUrl}/time_series?symbol=${symbol}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`,
+          {
+            headers,
+            cache: 'no-store'
+          }
+        )
+      ]);
+
+      if (!quoteResponse.ok) {
+        throw new Error(
+          `Twelve Data quote HTTP ${quoteResponse.status}`
+        );
+      }
+
+      if (!seriesResponse.ok) {
+        throw new Error(
+          `Twelve Data time_series HTTP ${seriesResponse.status}`
+        );
+      }
+
+      const quote = await quoteResponse.json();
+      const series = await seriesResponse.json();
+
+      if (quote.status === 'error') {
+        throw new Error(
+          `Twelve Data quote: ${quote.message || 'erro'}`
+        );
+      }
+
+      if (series.status === 'error') {
+        throw new Error(
+          `Twelve Data time_series: ${series.message || 'erro'}`
+        );
+      }
+
+      const price = num(quote.close ?? quote.price);
+
+      if (
+        !price ||
+        !Array.isArray(series.values) ||
+        series.values.length === 0
+      ) {
+        throw new Error(
+          'Twelve Data retornou snapshot incompleto.'
+        );
+      }
+
+      const latestCandle = series.values[0];
+      const latestCandleTime = latestCandle?.datetime;
+
+      const candleTimestamp = latestCandleTime
+        ? new Date(
+            `${latestCandleTime.replace(' ', 'T')}Z`
+          ).toISOString()
+        : null;
+
+      if (!candleTimestamp) {
+        throw new Error(
+          'Twelve Data não retornou timestamp válido do candle.'
+        );
+      }
+
+      /*
+       * O candle é usado para análise técnica.
+       * Para frescor do preço usamos last_quote_at.
+       */
+      const quoteTimestamp = quote.last_quote_at
+        ? new Date(
+            Number(quote.last_quote_at) * 1000
+          ).toISOString()
+        : null;
+
+      if (!quoteTimestamp) {
+        throw new Error(
+          'Twelve Data não retornou last_quote_at válido.'
+        );
+      }
+
+      function deriveTechnical(values) {
+  const candles = values
+    .map(v => ({
+      open: num(v.open),
+      high: num(v.high),
+      low: num(v.low),
+      close: num(v.close)
+    }))
+    .filter(v =>
+      Number.isFinite(v.open) &&
+      Number.isFinite(v.high) &&
+      Number.isFinite(v.low) &&
+      Number.isFinite(v.close)
+    )
+    .reverse();
+
+  if (candles.length < 20) {
+    throw new Error('Histórico insuficiente para análise técnica.');
+  }
+
+  const closes = candles.map(v => v.close);
+  const last = closes.at(-1);
+
+  const sma5 =
+    closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+
+  const sma12 =
+    closes.slice(-12).reduce((a, b) => a + b, 0) / 12;
+
+  const sma20 =
+    closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+
+  /*
+   * Retornos recentes.
+   * Usamos a dispersão dos retornos para normalizar
+   * tendência e momentum de forma independente do preço
+   * nominal do ativo.
+   */
+  const returns = closes
+    .slice(1)
+    .map((value, i) => (value - closes[i]) / closes[i])
+    .filter(Number.isFinite);
+
+  const mean =
+    returns.reduce((a, b) => a + b, 0) / returns.length;
+
+  const variance =
+    returns.reduce((a, b) => a + (b - mean) ** 2, 0) /
+    Math.max(1, returns.length);
+
+  const stdDev = Math.sqrt(variance);
+
+  /*
+   * Evita divisão por zero em mercados extremamente parados.
+   */
+  const safeVolatility = Math.max(stdDev, 0.000001);
+
+  /*
+   * Distância da média normalizada pela volatilidade.
+   *
+   * Resultado:
+   *  -1 .. +1
+   */
+  const trendRaw =
+    ((last - sma12) / sma12) / safeVolatility;
+
+  const momentumRaw =
+    ((last - closes.at(-6)) / closes.at(-6)) / safeVolatility;
+
+  /*
+   * Estrutura:
+   * posição do preço dentro do range recente.
+   *
+   * -1 = fundo do range
+   *  0 = centro
+   * +1 = topo
+   */
+  const recent = closes.slice(-10);
+  const recentHigh = Math.max(...recent);
+  const recentLow = Math.min(...recent);
+  const range = recentHigh - recentLow;
+
+  const structureRaw =
+    range > 0
+      ? ((last - recentLow) / range) * 2 - 1
+      : 0;
+
+  /*
+   * Normalização suave.
+   *
+   * tanh evita que um movimento isolado destrua
+   * a escala do indicador.
+   */
+  const trend = Math.tanh(trendRaw / 3);
+  const momentum = Math.tanh(momentumRaw / 3);
+  const structure = clamp(structureRaw, -1, 1);
+
+  /*
+   * Volatilidade em escala relativa.
+   *
+   * Mantemos aproximadamente:
+   * 0   = mercado muito calmo
+   * 1   = mercado extremamente volátil
+   */
+  const volatility = clamp(stdDev * 100, 0, 1);
+
+  /*
+   * Confluências independentes.
+   *
+   * Cada confirmação precisa ter significado.
+   */
+  let confirmations = 0;
+
+  const trendDirection =
+    Math.sign(sma5 - sma20);
+
+  const priceVsSma5 =
+    Math.sign(last - sma5);
+
+  const priceVsSma12 =
+    Math.sign(last - sma12);
+
+  const momentumDirection =
+    Math.sign(momentum);
+
+  const structureDirection =
+    Math.sign(structure);
+
+  /*
+   * 1 — tendência curta/média.
+   */
+  if (
+    trendDirection !== 0 &&
+    priceVsSma5 === trendDirection
+  ) {
+    confirmations++;
+  }
+
+  /*
+   * 2 — preço em relação à SMA12.
+   */
+  if (
+    priceVsSma12 !== 0 &&
+    trendDirection !== 0 &&
+    priceVsSma12 === trendDirection
+  ) {
+    confirmations++;
+  }
+
+  /*
+   * 3 — momentum alinhado com tendência.
+   */
+  if (
+    momentumDirection !== 0 &&
+    trendDirection !== 0 &&
+    momentumDirection === trendDirection
+  ) {
+    confirmations++;
+  }
+
+  /*
+   * 4 — estrutura alinhada com tendência.
+   *
+   * Estrutura muito próxima de zero não confirma direção.
+   */
+  if (
+    Math.abs(structure) >= 0.35 &&
+    structureDirection !== 0 &&
+    trendDirection !== 0 &&
+    structureDirection === trendDirection
+  ) {
+    confirmations++;
+  }
+
+  /*
+   * 5 — preço acima/abaixo das médias 5 e 12.
+   */
+  if (
+    priceVsSma5 !== 0 &&
+    priceVsSma12 !== 0 &&
+    priceVsSma5 === priceVsSma12
+  ) {
+    confirmations++;
+  }
+
+  /*
+   * 6 — momentum suficientemente forte.
+   */
+  if (Math.abs(momentum) >= 0.35) {
+    confirmations++;
+  }
+
+  /*
+   * 7 — tendência suficientemente forte.
+   */
+  if (Math.abs(trend) >= 0.35) {
+    confirmations++;
+  }
+
+  return {
+    trend,
+    momentum,
+    structure,
+    volatility,
+    confirmations,
+    candleCount: candles.length
+  };
+}

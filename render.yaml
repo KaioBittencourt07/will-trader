@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: will-trader-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
+      - key: TWELVEDATA_API_KEY
+        sync: false
+      - key: DASHBOARD_ORIGIN
+        sync: false
+      - key: MARKET_MAX_AGE_MS
+        value: 10000
+      - key: EXECUTION_DELAY_MS
+        value: 0
+      - key: EXECUTION_WINDOW_BEFORE_MS
+        value: 2000
+      - key: EXECUTION_WINDOW_AFTER_MS
+        value: 3000
+      - key: EXPIRY_SECONDS
+        value: 60
