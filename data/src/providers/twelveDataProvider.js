@@ -136,6 +136,7 @@ export function deriveTechnical(values) {
     confirmations: dominant ? directionalVotes.filter((v) => v === dominant).length : 0,
     candleCount: closes.length,
     technicalModel: 'relative-noise-v1',
+    featureVersion: 'candle-price-action-v2',
     realizedVolatility,
     ...priceActionFlags(values, { sma12, noise })
   };
