@@ -67,7 +67,7 @@ function segmentCandidates(records, {
       const trainStats = observed(train);
       const holdoutStats = observed(holdout);
       if (!trainStats.n || !holdoutStats.n) continue;
-      const stableDirection = trainStats.winRate >= 0.5 === holdoutStats.winRate >= 0.5;
+      const stableDirection = (trainStats.winRate >= 0.5) === (holdoutStats.winRate >= 0.5);
       candidates.push({
         dimension,
         value,
