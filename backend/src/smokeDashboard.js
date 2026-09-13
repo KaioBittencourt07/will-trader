@@ -32,7 +32,7 @@ async function main() {
     throw new Error(`Dashboard falhou: HTTP ${dashboard.response.status}`);
   }
 
-  const requiredMarkers = ['WILL TRADER', 'INICIAR AUTO SCAN', 'Estudos válidos', 'Dados bloqueados'];
+  const requiredMarkers = ['WILL TRADER', 'INICIAR AUTO SCAN', 'Estudos válidos', 'WAIT mercado'];
   const missing = requiredMarkers.filter((marker) => !dashboard.text.includes(marker));
   if (missing.length) {
     throw new Error(`Dashboard respondeu, mas faltam marcadores esperados: ${missing.join(', ')}`);
