@@ -5,15 +5,14 @@ import { selectBestOpportunity } from '../../../engine/src/opportunityEngine.js'
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
 import { dataQualityWait } from '../../../engine/src/dataGuard.js';
 import { MARKET_UNIVERSES, createMarketUniverseScheduler } from '../../../data/src/marketUniverse.js';
-import { createAvalonCatalog } from '../../../data/src/brokerCatalog.js';
 import { assessScannerCandidate, adaptiveScanPriority, scannerTelemetry } from '../../../engine/src/scannerDiscovery.js';
 import { createOpportunityLatency } from '../opportunityLatency.js';
 import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
 
 const router = Router();
-const avalonCatalog = createAvalonCatalog();
-// PAPER research studies a canonical provider universe. Avalon is deliberately
-// not its source of truth: mapping evidence belongs to broker execution only.
+// WILL research is broker-agnostic. Broker mapping/execution is deliberately
+// outside the scanner: this route rotates canonical market assets, ranks the
+// evidence and returns analysis only. It never creates broker orders.
 const scheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
 const relayScheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
 let localRelayRequired = false;
@@ -35,13 +34,13 @@ export function canonicalResearchAssets(assets = []) {
   return normalized;
 }
 
-function brokerMapping() {
+function scannerExecutionBoundary() {
   return {
-    broker: avalonCatalog.broker,
-    status: avalonCatalog.isConfirmed() ? 'AVALON_MAPPING_VERIFIED' : 'AVALON_CATALOG_UNVERIFIED',
-    catalogSource: avalonCatalog.source,
-    catalogVerifiedAt: avalonCatalog.verifiedAt,
-    executionAvailable: false
+    mode: 'BROKER_AGNOSTIC_ANALYSIS',
+    broker: null,
+    executionAvailable: false,
+    executionResponsibility: 'OPERATOR_EXTERNAL_BROKER',
+    automatedBrokerExecution: false
   };
 }
 
@@ -55,7 +54,7 @@ router.get('/opportunities', async (req, res) => {
   try {
     explicitAssets = requestedAssets ? canonicalResearchAssets(requestedAssets) : null;
   } catch (error) {
-    return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
+    return res.status(400).json({ ok: false, error: error.message, execution: scannerExecutionBoundary() });
   }
   let selection;
   try {
@@ -63,7 +62,7 @@ router.get('/opportunities', async (req, res) => {
       ? { assetClass: 'CUSTOM', assets: explicitAssets.slice(0, scanLimit()), totalAssets: explicitAssets.length, nextAsset: null, completesCycle: false }
       : scheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: Math.min(Number(req.query.limit || scanLimit()), scanLimit()) }));
   } catch (error) {
-    return res.status(400).json({ ok: false, error: error.message, broker: avalonCatalog.broker });
+    return res.status(400).json({ ok: false, error: error.message, execution: scannerExecutionBoundary() });
   }
   const timeframe = String(req.query.timeframe || '1min');
   const monitorCycleId = req.query.monitorCycleId ? String(req.query.monitorCycleId).slice(0, 180) : null;
@@ -104,6 +103,8 @@ router.get('/opportunities', async (req, res) => {
           scanned: 0,
           unavailable: [{ asset, error: relayError.message }],
           coverage: activeSelection,
+          researchUniverse: 'canonical-market-v1',
+          execution: scannerExecutionBoundary(),
           relayMode: true,
           providerEfficiency: providerEfficiencySnapshot(providerTelemetry),
           recommendation: null,
@@ -143,8 +144,6 @@ router.get('/opportunities', async (req, res) => {
       const audit = latency.stage('persistenceMs', () => createAuditEntry({ signal: snapshot, decision, context: decisionContext }));
       const history = latency.stage('persistenceMs', () => req.app.locals.historyStore.recordDecision({ decision, data: snapshot, audit, context: decisionContext }));
       const candidate = latency.stage('scannerMs', () => assessScannerCandidate({ asset, snapshot, decision, context: decisionContext }));
-      // The scheduler priority changes only future scan coverage. It cannot
-      // make this decision executable or alter any entry threshold.
       (relayMode ? relayScheduler : scheduler).setPriority?.(asset, adaptiveScanPriority(snapshot, candidate.readiness));
       candidates.push(candidate);
       analyses.push({ asset, snapshot, decision, historyId: history.id, marketContext });
@@ -162,8 +161,7 @@ router.get('/opportunities', async (req, res) => {
       unavailable,
       coverage: activeSelection,
       researchUniverse: 'canonical-market-v1',
-      broker: avalonCatalog.broker,
-      brokerMapping: brokerMapping(),
+      execution: scannerExecutionBoundary(),
       relayMode,
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
       candidates,
@@ -177,9 +175,8 @@ router.get('/opportunities', async (req, res) => {
     return res.json(response);
   } catch (error) {
     console.error('Opportunity scan error:', error.message);
-    return res.status(503).json({ ok: false, error: error.message, providerEfficiency: providerEfficiencySnapshot(providerTelemetry) });
+    return res.status(503).json({ ok: false, error: error.message, execution: scannerExecutionBoundary(), providerEfficiency: providerEfficiencySnapshot(providerTelemetry) });
   }
 });
 
 export default router;
-
