@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { summarize } from '../../../learning/src/statistics.js';
 import { buildConfidenceCalibration, buildLearningReadiness } from '../../../learning/src/calibration.js';
+import { buildLearningLab } from '../../../learning/src/learningEngine.js';
 import { prospectiveOutcomeDue, resolveProspectiveOutcome } from '../../../learning/src/outcomeResolver.js';
 import { getLocalRelaySnapshot, getLocalRelayStatus, getMarketDataEngine } from './market.js';
 
@@ -30,7 +31,8 @@ function learningSnapshot(store) {
   return {
     metrics: summarize(records),
     calibration: buildConfidenceCalibration(records, { minimumSamples }),
-    readiness: buildLearningReadiness(records, { minimumSamples })
+    readiness: buildLearningReadiness(records, { minimumSamples }),
+    lab: buildLearningLab(records, { minimumOutcomes: minimumSamples })
   };
 }
 
@@ -121,7 +123,8 @@ router.get('/metrics', (req, res) => {
         relay: getLocalRelayStatus()
       },
       calibration: buildConfidenceCalibration(records, { minimumSamples }),
-      learning: buildLearningReadiness(records, { minimumSamples })
+      learning: buildLearningReadiness(records, { minimumSamples }),
+      lab: buildLearningLab(records, { minimumOutcomes: minimumSamples })
     });
   } catch (error) {
     return res.status(503).json({ ok: false, error: error.message });
