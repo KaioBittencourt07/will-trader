@@ -3,7 +3,6 @@ import { getMarketDataEngine, getLocalRelaySnapshot } from './market.js';
 import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { selectBestOpportunity } from '../../../engine/src/opportunityEngine.js';
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
-import { dataQualityWait } from '../../../engine/src/dataGuard.js';
 import { MARKET_UNIVERSES, createMarketUniverseScheduler } from '../../../data/src/marketUniverse.js';
 import { assessScannerCandidate, adaptiveScanPriority, scannerTelemetry } from '../../../engine/src/scannerDiscovery.js';
 import { createOpportunityLatency } from '../opportunityLatency.js';
@@ -42,6 +41,13 @@ function scannerExecutionBoundary() {
     executionResponsibility: 'OPERATOR_EXTERNAL_BROKER',
     automatedBrokerExecution: false
   };
+}
+
+function dataRejectionReason(snapshot = {}) {
+  if (snapshot.marketOpen === false) return 'MARKET_CLOSED';
+  if (snapshot.status === 'STALE') return 'STALE_MARKET_DATA';
+  if (snapshot.valid === false) return snapshot.reason || snapshot.status || 'INVALID_MARKET_DATA';
+  return null;
 }
 
 router.get('/opportunities', async (req, res) => {
@@ -120,16 +126,21 @@ router.get('/opportunities', async (req, res) => {
         unavailable.push({ asset, error: error || 'Sem snapshot.' });
         continue;
       }
-      if (snapshot.status === 'STALE' || snapshot.marketOpen === false) {
+
+      const rejection = dataRejectionReason(snapshot);
+      if (rejection) {
         (relayMode ? relayScheduler : scheduler).defer(asset);
+        unavailable.push({ asset, error: rejection });
+        continue;
       }
+
       const startedAt = Date.now();
       const marketContext = await latency.stage('marketContextMs', () => req.app.locals.marketContextProvider.getContext(asset));
-      const decision = latency.stage('decisionPipelineMs', () => snapshot.valid === false || snapshot.marketOpen === false
-        ? dataQualityWait(snapshot.marketOpen === false
-          ? { ...snapshot, status: 'MARKET_CLOSED', reason: 'MARKET_CLOSED' }
-          : snapshot)
-        : runWillPipeline(snapshot, { ...context, macroBlocked: marketContext.macro.blocked, newsBlocked: marketContext.news.blocked }));
+      const decision = latency.stage('decisionPipelineMs', () => runWillPipeline(snapshot, {
+        ...context,
+        macroBlocked: marketContext.macro.blocked,
+        newsBlocked: marketContext.news.blocked
+      }));
       const decisionContext = {
         ...context,
         macroBlocked: marketContext.macro.blocked,
@@ -168,8 +179,8 @@ router.get('/opportunities', async (req, res) => {
       ...result,
       providerEfficiency: providerEfficiencySnapshot(providerTelemetry),
       reason: relayMode
-        ? `${result.reason} Relay local ativo: ${activeSelection.assets[0]} estudado nesta janela; próxima leitura: ${activeSelection.nextAsset || 'fim da lista'}.`
-        : result.reason || (unavailable.length ? 'Parte da fila não recebeu dados válidos; nenhum sinal foi liberado.' : undefined)
+        ? `${result.reason || 'Nenhum estudo válido nesta janela.'} Relay local ativo: ${activeSelection.assets[0]} observado; próxima leitura: ${activeSelection.nextAsset || 'fim da lista'}.`
+        : result.reason || (unavailable.length ? 'Parte da fila não recebeu dados válidos; nenhum estudo foi gravado.' : undefined)
     }));
     response.latency = latency.snapshot();
     return res.json(response);
