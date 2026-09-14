@@ -1,6 +1,6 @@
 import { qualifyTemporalAuthorityObservation } from './temporalAuthorityProvider.js';
 
-export const COINBASE_TEMPORAL_AUTHORITY_VERSION = 'coinbase-exchange-ticker-temporal-v2';
+export const COINBASE_TEMPORAL_AUTHORITY_VERSION = 'coinbase-exchange-ticker-temporal-v3';
 export const COINBASE_TEMPORAL_MAX_SKEW_MS = 5_000;
 export const COINBASE_TEMPORAL_MIN_OBSERVATIONS = 4;
 
@@ -50,6 +50,16 @@ function comparePreciseTime(left, right) {
     return left.eventTimeSecondTimestamp - right.eventTimeSecondTimestamp;
   }
   return left.eventTimeFractionNanoseconds - right.eventTimeFractionNanoseconds;
+}
+
+function identityProgress(previous, current) {
+  const sequenceComparable = finite(previous.sequence) && finite(current.sequence);
+  const tradeComparable = finite(previous.tradeId) && finite(current.tradeId);
+  const sequenceDelta = sequenceComparable ? Number(current.sequence) - Number(previous.sequence) : null;
+  const tradeDelta = tradeComparable ? Number(current.tradeId) - Number(previous.tradeId) : null;
+  const regressed = (sequenceDelta !== null && sequenceDelta < 0) || (tradeDelta !== null && tradeDelta < 0);
+  const advanced = (sequenceDelta !== null && sequenceDelta > 0) || (tradeDelta !== null && tradeDelta > 0);
+  return { sequenceDelta, tradeDelta, regressed, advanced };
 }
 
 export function observationFromCoinbaseTicker({ payload, receivedAt, canonicalSymbol = 'BTC/USD' } = {}) {
@@ -106,7 +116,9 @@ export function qualifyCoinbaseTickerSeries({
 
   let timestampRegressions = 0;
   let sequenceRegressions = 0;
-  let repeatedTimestampPriceChanges = 0;
+  let tradeIdRegressions = 0;
+  let exactTimestampIdentityConflicts = 0;
+  let exactTimestampDistinctEvents = 0;
   let progressions = 0;
   let subMillisecondProgressions = 0;
   let maxAbsEventReceiveSkewMs = 0;
@@ -121,24 +133,30 @@ export function qualifyCoinbaseTickerSeries({
     if (i === 0) continue;
     const previous = valid[i - 1];
     const preciseOrder = comparePreciseTime(current, previous);
+    const identity = identityProgress(previous, current);
     if (preciseOrder < 0) timestampRegressions += 1;
+    if (finite(current.sequence) && finite(previous.sequence) && Number(current.sequence) < Number(previous.sequence)) sequenceRegressions += 1;
+    if (finite(current.tradeId) && finite(previous.tradeId) && Number(current.tradeId) < Number(previous.tradeId)) tradeIdRegressions += 1;
     if (preciseOrder > 0) {
       progressions += 1;
       if (current.eventTimestamp === previous.eventTimestamp) subMillisecondProgressions += 1;
     }
-    if (preciseOrder === 0 && current.price !== previous.price) repeatedTimestampPriceChanges += 1;
-    if (finite(current.sequence) && finite(previous.sequence) && Number(current.sequence) < Number(previous.sequence)) sequenceRegressions += 1;
+    if (preciseOrder === 0 && current.price !== previous.price) {
+      if (!identity.regressed && identity.advanced) exactTimestampDistinctEvents += 1;
+      else exactTimestampIdentityConflicts += 1;
+    }
   }
 
   const enoughObservations = valid.length >= Math.max(2, Number(minimumObservations) || COINBASE_TEMPORAL_MIN_OBSERVATIONS);
   const timestampProgresses = progressions > 0 && distinctPrecise.size >= 2;
   const receiveClockCoherent = valid.length > 0 && maxAbsEventReceiveSkewMs <= maxSkewMs;
-  const coarseTimestampObserved = repeatedTimestampPriceChanges > 0;
+  const coarseTimestampObserved = exactTimestampIdentityConflicts > 0;
   const perEventSemanticsVerified = enoughObservations
     && timestampProgresses
     && timestampRegressions === 0
     && sequenceRegressions === 0
-    && repeatedTimestampPriceChanges === 0
+    && tradeIdRegressions === 0
+    && exactTimestampIdentityConflicts === 0
     && receiveClockCoherent;
 
   const latest = valid.at(-1) ?? null;
@@ -156,11 +174,13 @@ export function qualifyCoinbaseTickerSeries({
   const semanticReasonCodes = [
     'OFFICIAL_DOCS_TICKER_REALTIME_ON_MATCH_WITH_SUBSECOND_TIME_FIELD',
     ...(subMillisecondProgressions ? ['COINBASE_SUB_MILLISECOND_EVENT_TIME_OBSERVED'] : []),
+    ...(exactTimestampDistinctEvents ? ['COINBASE_EXACT_TIMESTAMP_DISTINCT_EVENTS_DISAMBIGUATED_BY_EVENT_IDENTITY'] : []),
     ...(enoughObservations ? [] : ['COINBASE_TICKER_OBSERVATIONS_INSUFFICIENT']),
     ...(timestampProgresses ? [] : ['COINBASE_TICKER_TIMESTAMP_DID_NOT_PROGRESS']),
     ...(timestampRegressions ? ['COINBASE_TICKER_TIMESTAMP_REGRESSION'] : []),
     ...(sequenceRegressions ? ['COINBASE_TICKER_SEQUENCE_REGRESSION'] : []),
-    ...(repeatedTimestampPriceChanges ? ['COINBASE_TICKER_PRICE_CHANGES_SHARE_EXACT_TIMESTAMP'] : []),
+    ...(tradeIdRegressions ? ['COINBASE_TICKER_TRADE_ID_REGRESSION'] : []),
+    ...(exactTimestampIdentityConflicts ? ['COINBASE_TICKER_EXACT_TIMESTAMP_IDENTITY_CONFLICT'] : []),
     ...(receiveClockCoherent ? [] : ['COINBASE_TICKER_EVENT_RECEIVE_SKEW_TOO_LARGE'])
   ];
 
@@ -171,11 +191,12 @@ export function qualifyCoinbaseTickerSeries({
     symbol: latest?.symbol ?? null,
     providerProduct: latest?.providerProduct ?? null,
     timestampField: 'time',
-    timestampPrecisionPolicy: 'PRESERVE_PROVIDER_SUBSECOND_PRECISION_FOR_ORDERING;EPOCH_MS_ONLY_FOR_FRESHNESS',
+    eventIdentityFields: Object.freeze(['sequence', 'trade_id']),
+    timestampPrecisionPolicy: 'PRESERVE_PROVIDER_SUBSECOND_PRECISION_FOR_ORDERING;ALLOW_EQUAL_EVENT_TIME_ONLY_WHEN_EVENT_IDENTITY_ADVANCES;EPOCH_MS_ONLY_FOR_FRESHNESS',
     semanticClassification: perEventSemanticsVerified
       ? 'PROVIDER_PER_MATCH_EVENT_TIME_OBSERVED'
       : coarseTimestampObserved
-        ? 'PROVIDER_EXACT_EVENT_TIME_COLLISION_OBSERVED'
+        ? 'PROVIDER_EVENT_TIME_IDENTITY_CONFLICT_OBSERVED'
         : 'PROVIDER_EVENT_TIME_SEMANTICS_UNVERIFIED',
     semanticReasonCodes: Object.freeze(semanticReasonCodes),
     fieldProvenanceVerified: true,
@@ -189,9 +210,12 @@ export function qualifyCoinbaseTickerSeries({
       distinctMillisecondTimestamps: distinctMilliseconds.size,
       timestampProgressions: progressions,
       subMillisecondProgressions,
-      repeatedTimestampPriceChanges,
+      exactTimestampDistinctEvents,
+      repeatedTimestampPriceChanges: exactTimestampIdentityConflicts,
+      exactTimestampIdentityConflicts,
       timestampRegressions,
       sequenceRegressions,
+      tradeIdRegressions,
       maxAbsEventReceiveSkewMs,
       maximumAllowedEventReceiveSkewMs: maxSkewMs,
       enoughObservations,
