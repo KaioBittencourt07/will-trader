@@ -42,7 +42,8 @@ router.post('/analyze', async (req, res) => {
 
     let rawMarket = payload.market ?? payload;
     const context = payload.context ?? {};
-    const respond = (body) => res.json(persistAnalyzeDecision(req, body, context));
+    let persistenceContext = context;
+    const respond = (body) => res.json(persistAnalyzeDecision(req, body, persistenceContext));
 
     const normalized = normalizeMarketSnapshot(rawMarket, {
       maxAgeMs: Number(process.env.MARKET_MAX_AGE_MS || 30_000)
@@ -65,14 +66,6 @@ router.post('/analyze', async (req, res) => {
       });
     }
 
-    /*
-     * SERVER SNAPSHOT ATTESTATION GUARD
-     *
-     * In strict mode the client cannot assert its own freshness or mutate a
-     * snapshot after /api/market. The server verifies the short-lived id and
-     * full snapshot fingerprint, then restores authoritativeFreshness from the
-     * server-side registry. Legacy callers remain compatibility-only.
-     */
     if (context.requireAuthoritativeFreshness === true) {
       const attestation = resolveMarketSnapshotAttestation(rawMarket);
       if (!attestation.ok) {
@@ -114,6 +107,22 @@ router.post('/analyze', async (req, res) => {
       });
     }
 
+    if (temporalAdmission.required === true) {
+      persistenceContext = {
+        ...context,
+        marketAdmission: {
+          version: temporalAdmission.version,
+          state: 'ADMITTED',
+          stage: 'DATA_ADMITTED',
+          checks: {
+            authoritativeFreshnessRequired: true,
+            authorityGate: temporalAdmission.authorityGate,
+            freshnessGate: temporalAdmission.freshnessGate
+          }
+        }
+      };
+    }
+
     const deterministic = runWillPipeline(normalized, context);
 
     if (!deterministic.executable) {
@@ -123,7 +132,7 @@ router.post('/analyze', async (req, res) => {
         source: 'will-deterministic',
         decision,
         data: normalized,
-        audit: createAuditEntry({ signal: normalized, decision, context })
+        audit: createAuditEntry({ signal: normalized, decision, context: persistenceContext })
       });
     }
 
@@ -139,7 +148,7 @@ router.post('/analyze', async (req, res) => {
         source: result.approved ? 'will-advisor-consensus' : 'will-advisor-veto',
         decision: result.decision,
         data: normalized,
-        audit: createAuditEntry({ signal: normalized, decision: result.decision, context })
+        audit: createAuditEntry({ signal: normalized, decision: result.decision, context: persistenceContext })
       });
     } catch (aiError) {
       if (!aiFallbackEnabled()) throw aiError;
@@ -155,7 +164,7 @@ router.post('/analyze', async (req, res) => {
         source: 'will-deterministic-fallback',
         decision: fallbackDecision,
         data: normalized,
-        audit: createAuditEntry({ signal: normalized, decision: fallbackDecision, context })
+        audit: createAuditEntry({ signal: normalized, decision: fallbackDecision, context: persistenceContext })
       });
     }
   } catch (error) {
