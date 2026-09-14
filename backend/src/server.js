@@ -18,6 +18,7 @@ import { createMarketContextProvider } from '../../context/src/marketContext.js'
 import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonitorTimeout.js';
 import { runPaperMonitorCycle } from './paperMonitorCycle.js';
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
+import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +35,10 @@ app.locals.twelveWebSocketFeed = createTwelveWebSocketFeed({
   apiKey: process.env.TWELVEDATA_API_KEY,
   symbols: process.env.WILL_TWELVE_WS_SYMBOLS || process.env.DEFAULT_ASSET || 'EUR/USD'
 });
+app.locals.coinbaseTemporalFeed = createCoinbaseTemporalFeed({
+  enabled: process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true',
+  symbol: 'BTC/USD'
+});
 // Evidence-only batch metadata. It cannot place an order or alter a decision.
 app.locals.prospectiveManifest = createProspectiveManifest({
   startTime: process.env.WILL_PROSPECTIVE_START_TIME || '2026-09-03T02:15:00.000Z'
@@ -42,8 +47,9 @@ app.locals.historyStore = createHistoryStore({
   filePath: process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json')
 });
 app.locals.paperMonitor = createAutonomousPaperMonitor({
-  // This is an observation scheduler only. Set false to stop it explicitly.
-  enabled: process.env.WILL_PAPER_MONITOR_ENABLED !== 'false',
+  // Opt-in only. This prevents background scans from consuming provider budget
+  // unless the operator explicitly enables the paper observation scheduler.
+  enabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
   intervalMs: paperMonitorIntervalMs,
   filePath: process.env.WILL_PAPER_MONITOR_STATE_FILE || path.join(process.cwd(), 'data', 'will-paper-monitor-state.json'),
   logger: (event) => {
@@ -84,7 +90,9 @@ app.get('/health', (_req, res) => {
     service: 'will-trader-backend',
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
     marketProvider: 'twelvedata',
-    marketConfigured: Boolean(process.env.TWELVEDATA_API_KEY)
+    marketConfigured: Boolean(process.env.TWELVEDATA_API_KEY),
+    coinbaseTemporalEnabled: process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true',
+    paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true'
   });
 });
 
@@ -104,10 +112,13 @@ app.use('/api', researchRouter);
 app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
   app.locals.twelveWebSocketFeed.start();
+  app.locals.coinbaseTemporalFeed.start();
   app.locals.paperMonitor.start();
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, () => app.locals.twelveWebSocketFeed.stop());
+  process.once(signal, () => {
+    app.locals.twelveWebSocketFeed.stop();
+    app.locals.coinbaseTemporalFeed.stop();
+  });
 }
-
