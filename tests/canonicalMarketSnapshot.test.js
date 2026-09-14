@@ -36,6 +36,36 @@ test('builds a ready canonical snapshot only with explicit admission, temporal a
   assert.equal(value.freshnessContractMs, 30_000); assert.equal(value.admissionProof.state, 'ADMITTED');
 });
 
+test('accepts Biquote event-time candle closure only with the qualified Biquote timestamp authority', () => {
+  const temporal = {
+    authorityGate: 'PASS',
+    freshnessGate: 'PASS',
+    timestampAuthority: 'BIQUOTE_API_LATEST_TICK_TIMESTAMP',
+    freshnessContractMs: 30_000,
+    eventTimestamp: NOW - 5_000
+  };
+  const accepted = buildCanonicalMarketSnapshot({
+    snapshot: readySnapshot({
+      candleCompleteness: 'VERIFIED_CLOSED_BY_BIQUOTE_EVENT_TIME',
+      authoritativeFreshness: temporal
+    }),
+    admission,
+    now: NOW,
+    requiredBars: 50
+  });
+  assert.equal(accepted.valid, true);
+  assert.equal(accepted.state, 'READY');
+
+  const wrongAuthority = buildCanonicalMarketSnapshot({
+    snapshot: readySnapshot({ candleCompleteness: 'VERIFIED_CLOSED_BY_BIQUOTE_EVENT_TIME' }),
+    admission,
+    now: NOW,
+    requiredBars: 50
+  });
+  assert.equal(wrongAuthority.valid, false);
+  assert.ok(wrongAuthority.reasons.includes('CANONICAL_CLOSED_CANDLE_PROOF_MISSING'));
+});
+
 test('fails closed without admission proof or approved temporal authority', () => {
   const noAdmission = buildCanonicalMarketSnapshot({ snapshot: readySnapshot(), now: NOW });
   assert.ok(noAdmission.reasons.includes('CANONICAL_ADMISSION_NOT_PROVEN'));
