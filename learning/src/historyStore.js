@@ -9,6 +9,7 @@ import { runFeatureAblation } from './featureAblation.js';
 import { createProspectiveEvidenceRecord } from './prospectiveEvidence.js';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
+const PAPER_ENTRY_MAX_LAG_MS = 30_000;
 
 function version(value, fallback) {
   const normalized = String(value ?? fallback).trim();
@@ -209,5 +210,51 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     persist();
     return structuredClone(records[index]);
   }
-  return { recordDecision, settle, confirmExecution, list: () => records.map((record) => structuredClone(record)) };
+  function confirmPaperExecution(idValue, { referenceTimestamp, referencePrice, source = null } = {}) {
+    const index = records.findIndex((record) => record.id === idValue);
+    if (index < 0) throw new Error('Sinal não encontrado.');
+    if (records[index].status !== 'OPEN') throw new Error('Somente sinais PAPER abertos podem confirmar entrada PAPER.');
+    if (records[index].execution?.status === 'CONFIRMED') throw new Error('Execução do operador não pode ser sobrescrita por PAPER.');
+    if (records[index].execution?.status === 'PAPER_CONFIRMED') return { ...structuredClone(records[index]), idempotent: true };
+
+    const plannedMs = Date.parse(records[index].execution?.plannedClickTime ?? records[index].clickTime ?? '');
+    const referenceMs = Date.parse(referenceTimestamp ?? '');
+    const price = Number(referencePrice);
+    if (!Number.isFinite(plannedMs)) throw new Error('Sinal PAPER sem horário planejado válido.');
+    if (!Number.isFinite(referenceMs)) throw new Error('Referência temporal PAPER inválida.');
+    if (!Number.isFinite(price) || price <= 0) throw new Error('Preço de entrada PAPER inválido.');
+    const lagMs = referenceMs - plannedMs;
+    if (lagMs < 0 || lagMs > PAPER_ENTRY_MAX_LAG_MS) throw new Error('Referência PAPER fora da janela congelada de entrada.');
+
+    records[index] = {
+      ...records[index],
+      execution: {
+        ...(records[index].execution ?? { plannedClickTime: records[index].clickTime ?? null }),
+        status: 'PAPER_CONFIRMED',
+        actualClickTime: new Date(referenceMs).toISOString(),
+        actualEntryPrice: price,
+        confirmedAt: now(),
+        paperOnly: true,
+        source: typeof source === 'string' ? source.slice(0, 120) : null,
+        referenceLagMs: lagMs
+      },
+      metadata: {
+        ...records[index].metadata,
+        prospective: {
+          ...records[index].metadata?.prospective,
+          executionQuality: {
+            ...(records[index].metadata?.prospective?.executionQuality ?? {}),
+            mode: 'PAPER_AUTOMATIC_ENTRY',
+            actualClickTime: new Date(referenceMs).toISOString(),
+            actualEntryPrice: price,
+            executionDelayMs: lagMs,
+            source: typeof source === 'string' ? source.slice(0, 120) : null
+          }
+        }
+      }
+    };
+    persist();
+    return structuredClone(records[index]);
+  }
+  return { recordDecision, settle, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
 }
