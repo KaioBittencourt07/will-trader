@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { observationFromCoinbaseTicker, qualifyCoinbaseTickerSeries } from '../backend/src/coinbaseTemporalAuthority.js';
+import { observationFromCoinbaseTicker, parseCoinbasePreciseTime, qualifyCoinbaseTickerSeries } from '../backend/src/coinbaseTemporalAuthority.js';
 
 const BASE = Date.parse('2026-09-14T12:00:20.000Z');
 const ticker = (offsetMs, price, sequence) => ({
@@ -28,6 +28,15 @@ test('extracts Coinbase ticker match time with explicit provenance but no self-a
   assert.equal(value.perEventSemanticsVerified, false);
 });
 
+test('preserves provider microsecond precision that Date.parse would truncate', () => {
+  const a = parseCoinbasePreciseTime('2026-09-14T12:00:20.061123Z');
+  const b = parseCoinbasePreciseTime('2026-09-14T12:00:20.061769Z');
+  assert.equal(a.eventTimestamp, b.eventTimestamp);
+  assert.notEqual(a.precisionKey, b.precisionKey);
+  assert.ok(b.fractionNanoseconds > a.fractionNanoseconds);
+  assert.equal(a.precisionDigits, 6);
+});
+
 test('approves coherent per-match progression after enough observations', () => {
   const observations = [
     obs(-4_000, 76000, 100),
@@ -43,6 +52,27 @@ test('approves coherent per-match progression after enough observations', () => 
   assert.equal(result.observation.sequenceRegressions, 0);
   assert.equal(result.temporalAuthority.authorityGate, 'PASS');
   assert.equal(result.temporalAuthority.freshnessGate, 'PASS');
+});
+
+test('sub-millisecond match progression is valid when provider precision and sequence both progress', () => {
+  const times = [
+    '2026-09-14T12:00:20.061123Z',
+    '2026-09-14T12:00:20.061321Z',
+    '2026-09-14T12:00:20.061554Z',
+    '2026-09-14T12:00:20.061769Z'
+  ];
+  const observations = times.map((time, index) => observationFromCoinbaseTicker({
+    payload: { type: 'ticker', product_id: 'BTC-USD', price: String(76000 + index), sequence: 200 + index, trade_id: 300 + index, time },
+    receivedAt: '2026-09-14T12:00:20.200Z',
+    canonicalSymbol: 'BTC/USD'
+  }));
+  const result = qualifyCoinbaseTickerSeries({ observations, now: BASE + 200 });
+  assert.equal(result.canEvaluateFrozenFreshness, true);
+  assert.equal(result.observation.distinctMillisecondTimestamps, 1);
+  assert.equal(result.observation.distinctEventTimestamps, 4);
+  assert.equal(result.observation.subMillisecondProgressions, 3);
+  assert.equal(result.observation.coarseTimestampObserved, false);
+  assert.ok(result.semanticReasonCodes.includes('COINBASE_SUB_MILLISECOND_EVENT_TIME_OBSERVED'));
 });
 
 test('fails closed on timestamp or sequence regression', () => {
@@ -65,7 +95,7 @@ test('fails closed on timestamp or sequence regression', () => {
   assert.ok(result.semanticReasonCodes.includes('COINBASE_TICKER_SEQUENCE_REGRESSION'));
 });
 
-test('fails closed when price changes share one timestamp or event/receive skew is excessive', () => {
+test('fails closed when price changes share one exact timestamp or event/receive skew is excessive', () => {
   const sameTime = [
     obs(-1_000, 76000, 100),
     obs(-1_000, 76001, 101),
