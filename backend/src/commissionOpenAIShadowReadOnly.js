@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { pathToFileURL } from 'node:url';
 import { analyzeWithOpenAI } from './ai/openaiEngine.js';
 
 export const OPENAI_SHADOW_COMMISSION_VERSION = 'openai-shadow-commission-v1';
@@ -124,7 +125,7 @@ export async function runOpenAIShadowCommissioning({
   }
 }
 
-const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1].replace(/\\/g, '/')}`).href;
+const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const result = await runOpenAIShadowCommissioning();
   console.log(JSON.stringify(result, null, 2));
