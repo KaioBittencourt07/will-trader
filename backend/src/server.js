@@ -24,6 +24,7 @@ import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonit
 import { runPaperMonitorCycle } from './paperMonitorCycle.js';
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
 import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
+import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
 import { prepareHistoryContinuity } from './historyContinuity.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +42,9 @@ const historyFilePath = process.env.WILL_HISTORY_FILE || path.join(process.cwd()
 const historyContinuity = prepareHistoryContinuity({ filePath: historyFilePath });
 const coinbaseTemporalEnabled = process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true';
 const coinbaseTemporalSymbols = Object.freeze(['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD']);
+const biquoteForexEnabled = process.env.WILL_BIQUOTE_FOREX_ENABLED === 'true';
+const biquotePollIntervalMs = Number(process.env.WILL_BIQUOTE_POLL_INTERVAL_MS || 10_000);
+const biquoteRequestTimeoutMs = Number(process.env.WILL_BIQUOTE_REQUEST_TIMEOUT_MS || 8_000);
 
 const app = express();
 app.locals.twelveWebSocketFeed = createTwelveWebSocketFeed({
@@ -57,6 +61,12 @@ app.locals.coinbaseTemporalFeeds = new Map(
 );
 // Backward-compatible BTC alias for existing diagnostics/tests.
 app.locals.coinbaseTemporalFeed = app.locals.coinbaseTemporalFeeds.get('BTC/USD');
+
+app.locals.biquoteForexFeed = createBiquoteForexRuntimeFeed({
+  enabled: biquoteForexEnabled,
+  pollIntervalMs: biquotePollIntervalMs,
+  requestTimeoutMs: biquoteRequestTimeoutMs
+});
 
 // Evidence-only batch metadata. It cannot place an order or alter a decision.
 app.locals.prospectiveManifest = createProspectiveManifest({
@@ -140,6 +150,8 @@ app.get('/health', (_req, res) => {
     coinbaseTemporalEnabled,
     coinbaseTemporalSymbols,
     coinbaseTemporal,
+    biquoteForexEnabled,
+    biquoteForex: app.locals.biquoteForexFeed.health(),
     historyPersistence: {
       version: historyContinuity.version,
       loadedRecords: app.locals.historyStore.list().length,
@@ -172,6 +184,7 @@ const server = app.listen(config.port, () => {
   console.log(`WILL history loaded: ${app.locals.historyStore.list().length} record(s); backup=${historyContinuity.backupCreated}`);
   app.locals.twelveWebSocketFeed.start();
   for (const feed of app.locals.coinbaseTemporalFeeds.values()) feed.start();
+  app.locals.biquoteForexFeed.start();
   app.locals.paperMonitor.start();
 });
 
@@ -184,6 +197,7 @@ function shutdown(signal) {
   for (const feed of app.locals.coinbaseTemporalFeeds.values()) {
     try { feed.stop(); } catch {}
   }
+  try { app.locals.biquoteForexFeed.stop(); } catch {}
   try { app.locals.paperMonitor.stop(); } catch {}
 
   const forceExit = setTimeout(() => process.exit(0), 3_000);
