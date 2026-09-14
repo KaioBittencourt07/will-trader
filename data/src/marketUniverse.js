@@ -13,10 +13,15 @@ export const MARKET_UNIVERSES = Object.freeze({
   ])
 });
 
+export const WILL_PHASE1_FX_CRYPTO = Object.freeze([
+  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'NZD/USD', 'USD/CAD', 'GBP/JPY',
+  'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'
+]);
+
 function className(value = 'ALL') {
   const normalized = String(value).trim().toUpperCase();
-  if (normalized !== 'ALL' && !MARKET_UNIVERSES[normalized]) {
-    throw new Error('Classe de ativo inválida. Use ALL, FOREX, CRYPTO ou STOCKS.');
+  if (normalized !== 'ALL' && normalized !== 'FX_CRYPTO' && !MARKET_UNIVERSES[normalized]) {
+    throw new Error('Classe de ativo inválida. Use ALL, FX_CRYPTO, FOREX, CRYPTO ou STOCKS.');
   }
   return normalized;
 }
@@ -37,7 +42,11 @@ export function createMarketUniverseScheduler({ universes = MARKET_UNIVERSES, no
   }
   function take({ assetClass = 'ALL', limit = 4 } = {}) {
     const selectedClass = className(assetClass);
-    const universe = selectedClass === 'ALL' ? Object.values(universes).flat() : universes[selectedClass];
+    const universe = selectedClass === 'ALL'
+      ? Object.values(universes).flat()
+      : selectedClass === 'FX_CRYPTO'
+        ? WILL_PHASE1_FX_CRYPTO
+        : universes[selectedClass];
     if (!universe.length) return { assetClass: selectedClass, assets: [], totalAssets: 0, nextAsset: null, completesCycle: true, deferredAssets: 0 };
     const requested = Math.max(1, Math.min(Number(limit) || 1, universe.length));
     const start = cursors.get(selectedClass) ?? 0;
