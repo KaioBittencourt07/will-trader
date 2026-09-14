@@ -111,10 +111,35 @@ WIN/LOSS statistics can then be segmented by context regime. Promotion of any co
 AI is an audit/explanation layer, not the signal source. The architecture supports:
 
 - existing OpenAI adapter when configured;
-- a future local-model adapter (for example a local inference runtime) as an optional zero-API-cost assistant;
+- additional advisor adapters (for example Grok/Claude) only when explicitly configured;
+- a future local-model adapter as an optional zero-API-cost assistant;
 - deterministic fallback when no LLM is configured.
 
-All providers receive the exact same structured chat packet. No model gets authority to bypass Market Admission, timing, No-Trade or manual execution boundaries.
+All providers receive the same bounded structured decision/context payload. No model gets authority to bypass Market Admission, timing, No-Trade or manual execution boundaries.
+
+### OpenAI activation contract
+
+OpenAI activation is part of the WILL 4.0 plan and must happen as a guarded commissioning sequence:
+
+1. Keep the deterministic WILL Core as the sole directional authority.
+2. OpenAI may only CONFIRM, VETO or ABSTAIN on a deterministic BUY/SELL/WAIT result.
+3. OpenAI must consume only the structured WILL payload and shared market-intelligence/chat packet; it must not fetch or invent its own market facts.
+4. Secrets remain local/runtime only. No API key is committed, logged, returned by health endpoints or pasted into project documentation.
+5. The first external OpenAI request must be a bounded, explicitly authorized commissioning run.
+6. Commissioning must validate schema compliance, timeout/error behavior, disagreement handling, confidence thresholds, fallback behavior and zero-order execution.
+7. If OpenAI is unavailable, malformed, slow or disagrees below policy confidence, WILL remains deterministic/fail-closed according to the existing fallback/veto policy.
+8. OpenAI output is persisted as advisor evidence, separate from canonical market truth and separate from audited WIN/LOSS outcomes.
+9. OpenAI never promotes a strategy, changes thresholds, modifies the frozen freshness contract or enables broker execution.
+10. Any future use of OpenAI in Market Chat/Daily Brief must remain explanation-only unless a separately versioned and validated advisor policy explicitly grants a bounded veto role.
+
+### OpenAI runtime milestones
+
+- `AI-0` — offline tests only, no external request.
+- `AI-1` — local secret configured and health reports advisor configured without exposing the key.
+- `AI-2` — one bounded read-only/simulation commissioning request against a non-executable test payload.
+- `AI-3` — advisor enabled on admitted manual-analysis opportunities only; deterministic fallback remains active.
+- `AI-4` — advisor evidence stored in history/learning segmentation.
+- `AI-5` — same OpenAI adapter receives `will-chat-market-packet-v1` for operator explanations/daily brief, still without independent directional authority.
 
 ## Implementation phases
 
@@ -131,7 +156,7 @@ Commission read-only adapters one endpoint at a time, with bounded tests and sou
 
 ### V4.0-C — news discovery
 
-Add GDELT as a read-only discovery adapter with deduplication, relevance mapping, timestamp/freshness checks and strict non-directional impact semantics.
+Add resilient read-only discovery/primary-source adapters with deduplication, relevance mapping, timestamp/freshness checks and strict non-directional impact semantics. GDELT remains discovery-only and must not be a single point of failure.
 
 ### V4.0-D — daily brief + chat
 
@@ -140,6 +165,16 @@ Persist a bounded daily context snapshot and expose it to the operator chat/dash
 ### V4.0-E — learning
 
 Persist context fingerprints with admitted studies and segment outcomes by context regime. Keep changes evidence-only until minimum prospective sample requirements are met.
+
+### V4.0-F — OpenAI advisor activation
+
+- verify local secret/config without exposing it;
+- add a bounded commissioning script/test harness;
+- run exactly one explicitly authorized external commissioning call;
+- validate schema, confirm/veto semantics, timeouts and deterministic fallback;
+- enable OpenAI only after commissioning passes;
+- persist advisor evidence separately from market truth/outcomes;
+- connect the same advisor to Market Chat/Daily Brief after the decision-review path is stable.
 
 ## Safety/engineering invariants
 
@@ -151,4 +186,4 @@ Persist context fingerprints with admitted studies and segment outcomes by conte
 - no automatic broker execution;
 - no threshold is relaxed just to create a candidate;
 - raw secrets are never logged or returned;
-- every context decision must be versioned and replayable.
+- every context/AI decision must be versioned and replayable.
