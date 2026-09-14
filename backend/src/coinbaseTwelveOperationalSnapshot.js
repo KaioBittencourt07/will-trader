@@ -1,7 +1,8 @@
 import { normalizeMarketSnapshot } from '../../data/src/marketAdapter.js';
 import { deriveTechnical } from '../../data/src/providers/twelveDataProvider.js';
+import { COINBASE_TEMPORAL_PRODUCTS } from './coinbaseTemporalAuthority.js';
 
-export const COINBASE_TWELVE_OPERATIONAL_SNAPSHOT_VERSION = 'coinbase-twelve-btc-operational-snapshot-v1';
+export const COINBASE_TWELVE_OPERATIONAL_SNAPSHOT_VERSION = 'coinbase-twelve-operational-snapshot-v2';
 export const TWELVE_BAR_OPEN_DOCUMENTATION = 'TWELVE_TIME_SERIES_DATETIME_REFERS_TO_BAR_OPEN';
 
 const finite = (value) => value !== null && value !== '' && Number.isFinite(Number(value));
@@ -52,8 +53,10 @@ export function composeCoinbaseTwelveOperationalSnapshot({
   const authority = coinbaseHealth?.temporalAuthority ?? null;
   const latestTick = coinbaseHealth?.latestTick ?? null;
   const timeframe = String(twelveSnapshot?.timeframe || '').trim();
+  const asset = String(twelveSnapshot?.asset || '').trim().toUpperCase();
 
-  if (String(twelveSnapshot?.asset || '').trim().toUpperCase() !== 'BTC/USD') reasons.push('COMPOSITE_ASSET_NOT_BTC_USD');
+  if (!COINBASE_TEMPORAL_PRODUCTS[asset]) reasons.push('COMPOSITE_ASSET_NOT_QUALIFIED_CRYPTO');
+  if (latestTick?.symbol && String(latestTick.symbol).trim().toUpperCase() !== asset) reasons.push('COINBASE_TICK_SYMBOL_MISMATCH');
   if (timeframe !== '1min') reasons.push('COMPOSITE_TIMEFRAME_UNSUPPORTED');
   if (coinbaseHealth?.ready !== true) reasons.push('COINBASE_TEMPORAL_RUNTIME_NOT_READY');
   if (authority?.authorityGate !== 'PASS' || authority?.freshnessGate !== 'PASS') reasons.push('COINBASE_TEMPORAL_AUTHORITY_NOT_APPROVED');
@@ -73,7 +76,7 @@ export function composeCoinbaseTwelveOperationalSnapshot({
       status: 'INVALID',
       reason: reasons[0],
       reasons: Object.freeze([...new Set(reasons)]),
-      asset: 'BTC/USD',
+      asset: asset || null,
       timeframe: timeframe || null,
       authoritativeFreshness: authority,
       ordersExecuted: 0
@@ -85,7 +88,7 @@ export function composeCoinbaseTwelveOperationalSnapshot({
   const latestClosed = retained[0];
   const timestamp = new Date(eventTimestamp).toISOString();
   const normalized = normalizeMarketSnapshot({
-    asset: 'BTC/USD',
+    asset,
     timeframe,
     price: Number(latestTick.price),
     timestamp,
