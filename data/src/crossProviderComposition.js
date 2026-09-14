@@ -1,5 +1,5 @@
-export const CROSS_PROVIDER_COMPOSITION_VERSION = 'saxo-closed-ohlc-independent-quote-v1';
-export const BID_ASK_COMPOSITION_VERSION = 'saxo-closed-bid-ask-ohlc-independent-quote-v1';
+export const CROSS_PROVIDER_COMPOSITION_VERSION = 'saxo-closed-ohlc-independent-quote-v2';
+export const BID_ASK_COMPOSITION_VERSION = 'saxo-closed-bid-ask-ohlc-independent-quote-v2';
 
 const validTime = (value) => Number.isFinite(Date.parse(value ?? ''));
 const canonical = (value) => String(value || '').trim().toUpperCase();
@@ -13,8 +13,28 @@ function invalid(reasonCodes, evidence = {}) {
   });
 }
 
-export function composeSaxoBidAskIndependentQuote({ saxoSnapshot, quoteHealth, canonicalSymbol = 'EUR/USD',
-  timeframe = '1min', now = Date.now(), maxAgeMs = 30_000 } = {}) {
+function temporalAuthorityChecks({ authority, symbol, eventTimestamp, now, maxAgeMs }) {
+  const reasons = [];
+  if (!authority || typeof authority !== 'object') reasons.push('QUOTE_TEMPORAL_AUTHORITY_MISSING');
+  else {
+    if (authority.authorityGate !== 'PASS' || authority.freshnessGate !== 'PASS') reasons.push('QUOTE_TEMPORAL_AUTHORITY_NOT_APPROVED');
+    if (!authority.timestampAuthority || authority.timestampAuthority === 'UNRESOLVED') reasons.push('QUOTE_TIMESTAMP_AUTHORITY_UNRESOLVED');
+    if (authority.symbol && canonical(authority.symbol) !== canonical(symbol)) reasons.push('QUOTE_TEMPORAL_AUTHORITY_SYMBOL_MISMATCH');
+    if (Number(authority.freshnessContractMs ?? maxAgeMs) !== 30_000) reasons.push('FRESHNESS_GATE_FROZEN');
+    if (!finite(authority.eventTimestamp)) reasons.push('QUOTE_TEMPORAL_AUTHORITY_EVENT_TIME_MISSING');
+    if (finite(authority.eventTimestamp) && eventTimestamp !== null && Number(authority.eventTimestamp) !== eventTimestamp) {
+      reasons.push('QUOTE_TEMPORAL_AUTHORITY_EVENT_MISMATCH');
+    }
+    if (finite(authority.eventTimestamp)) {
+      const age = Number(now) - Number(authority.eventTimestamp);
+      if (age < -1_000 || age > maxAgeMs) reasons.push('QUOTE_TEMPORAL_AUTHORITY_STALE');
+    }
+  }
+  return reasons;
+}
+
+export function composeSaxoBidAskIndependentQuote({ saxoSnapshot, quoteHealth, quoteTemporalAuthority = null,
+  canonicalSymbol = 'EUR/USD', timeframe = '1min', now = Date.now(), maxAgeMs = 30_000 } = {}) {
   const reasons = [];
   const symbol = canonical(canonicalSymbol);
   if (maxAgeMs !== 30_000) reasons.push('FRESHNESS_GATE_FROZEN');
@@ -30,13 +50,15 @@ export function composeSaxoBidAskIndependentQuote({ saxoSnapshot, quoteHealth, c
   if (quoteHealth?.connected !== true || Number(quoteHealth?.subscriptionsAccepted || 0) !== 1) reasons.push('QUOTE_SOURCE_NOT_READY');
   if (Number(quoteHealth?.subscriptionsRejected || 0) !== 0 || canonical(quote?.symbol) !== symbol) reasons.push('QUOTE_SUBSCRIPTION_INVALID');
   if (!validTime(quote?.receivedAt)) reasons.push('QUOTE_RECEIVE_TIMESTAMP_INVALID');
-  if (!finite(quote?.price) || eventTimestamp === null || quoteAgeMs < -1_000 || quoteAgeMs > 30_000) reasons.push('QUOTE_FRESHNESS_INVALID');
+  if (!finite(quote?.price) || eventTimestamp === null) reasons.push('QUOTE_EVENT_INVALID');
+  reasons.push(...temporalAuthorityChecks({ authority: quoteTemporalAuthority, symbol, eventTimestamp, now, maxAgeMs }));
   const evidence = { compositionVersion: BID_ASK_COMPOSITION_VERSION, providerEvidenceValid: reasons.length === 0,
-    marketDataRepresentation: 'BID_ASK_OHLC_PLUS_INDEPENDENT_QUOTE', championCompatible: false,
+    marketDataRepresentation: 'BID_ASK_OHLC_PLUS_INDEPENDENT_QUOTE_AND_TEMPORAL_AUTHORITY', championCompatible: false,
     valid: false, decisionImpact: 'NONE', prospectivePaperAuthorized: false, ordersExecuted: 0,
     quoteTimestamp: eventTimestamp === null ? null : new Date(eventTimestamp).toISOString(), quoteAgeMs,
     latestClosedCandleTimestamp: saxoSnapshot?.latestClosedCandleTimestamp ?? null,
     bidAskCandles: saxoSnapshot?.candles ?? [], midpoint: null, selectedSide: null,
+    temporalAuthority: quoteTemporalAuthority,
     separation: { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false,
       representationConversion: false, midpointCreated: false, selectedSide: false, championBypass: false },
     reasonCodes: [...new Set(reasons)] };
@@ -45,7 +67,7 @@ export function composeSaxoBidAskIndependentQuote({ saxoSnapshot, quoteHealth, c
 }
 
 export function composeSaxoClosedOhlcIndependentQuote({
-  saxoSnapshot, quoteHealth, canonicalSymbol = 'EUR/USD', timeframe = '1min', now = Date.now(), maxAgeMs = 30_000
+  saxoSnapshot, quoteHealth, quoteTemporalAuthority = null, canonicalSymbol = 'EUR/USD', timeframe = '1min', now = Date.now(), maxAgeMs = 30_000
 } = {}) {
   if (maxAgeMs !== 30_000) return invalid(['FRESHNESS_GATE_FROZEN']);
   const reasons = [];
@@ -82,13 +104,13 @@ export function composeSaxoClosedOhlcIndependentQuote({
     if (quote && canonical(quote.symbol) !== symbol) reasons.push('QUOTE_SYMBOL_MISMATCH');
     if (!finite(quote?.price) || Number(quote.price) <= 0) reasons.push('QUOTE_PRICE_INVALID');
     if (eventTimestamp === null || !validTime(receivedAt)) reasons.push('QUOTE_TIMESTAMP_INVALID');
-    if (quoteAgeMs !== null && quoteAgeMs < -1_000) reasons.push('QUOTE_TIMESTAMP_FUTURE');
-    if (quoteAgeMs !== null && quoteAgeMs > 30_000) reasons.push('QUOTE_STALE');
   }
+
+  reasons.push(...temporalAuthorityChecks({ authority: quoteTemporalAuthority, symbol, eventTimestamp, now, maxAgeMs }));
 
   const evidence = {
     providerEvidenceValid: reasons.length === 0,
-    marketDataRepresentation: 'DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE',
+    marketDataRepresentation: 'DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE_AND_TEMPORAL_AUTHORITY',
     championCompatible: true,
     canonicalSymbol: symbol,
     timeframe,
@@ -99,14 +121,17 @@ export function composeSaxoClosedOhlcIndependentQuote({
     price: finite(quote?.price) ? Number(quote.price) : null,
     candles: Array.isArray(saxoSnapshot?.candles) ? saxoSnapshot.candles : [],
     providers: {
-      quote: { id: 'twelvedata-websocket', role: 'QUOTE_FRESHNESS_ONLY', eventTimestamp: quoteTimestamp, receivedAt },
+      quote: { id: 'independent-quote-source', role: 'QUOTE_PRICE_ONLY', eventTimestamp: quoteTimestamp, receivedAt },
+      temporalAuthority: { id: quoteTemporalAuthority?.source ?? null, role: 'TEMPORAL_AUTHORITY_ONLY', timestampAuthority: quoteTemporalAuthority?.timestampAuthority ?? null },
       ohlc: { id: 'saxo-openapi-charts', role: 'OHLC_CLOSED_ONLY', providerSymbol: saxoSnapshot?.providerSymbol ?? null }
     },
     timestampOrigins: {
-      quoteTimestamp: 'twelvedata.websocket.price.timestamp',
-      quoteReceivedAt: 'will.local_clock_when_ws_event_received_non_authoritative',
+      quoteTimestamp: 'quote.payload.eventTimestamp_subject_to_temporal_authority_match',
+      quoteReceivedAt: 'will.local_clock_when_quote_received_non_authoritative',
+      authoritativeEventTimestamp: quoteTemporalAuthority?.timestampAuthority ?? null,
       latestClosedCandleTimestamp: saxoSnapshot?.timestampOrigins?.candleTimestamp ?? null
     },
+    temporalAuthority: quoteTemporalAuthority,
     separation: { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false,
       mixedOhlc: false, timestampSubstitution: false, championBypass: false },
     offlineOnly: true,
