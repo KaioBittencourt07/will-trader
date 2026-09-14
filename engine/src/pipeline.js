@@ -14,12 +14,12 @@ function seconds(value, fallback, minimum, maximum) {
 export function runWillPipeline(data, context = {}) {
   if (!data) throw new Error('Market snapshot ausente.');
   const result = willCore(data, context);
-  const executable = result.direction !== 'WAIT' && !result.blocked;
+  const directional = result.direction !== 'WAIT' && !result.blocked;
   const signalTime = new Date().toISOString();
   const entryStartSeconds = seconds(context.entryWindowStartSeconds, process.env.ENTRY_WINDOW_START_SECONDS ?? 60, 60, 300);
   const entryEndSeconds = seconds(context.entryWindowEndSeconds, process.env.ENTRY_WINDOW_END_SECONDS ?? 300, entryStartSeconds, 300);
   const suggestedEntrySeconds = seconds(context.entryDelaySeconds, process.env.ENTRY_DELAY_SECONDS ?? 120, entryStartSeconds, entryEndSeconds);
-  const timing = executable ? buildExecutionTiming({
+  const timing = directional ? buildExecutionTiming({
     marketTime: data.timestamp,
     signalTime,
     executionDelayMs: suggestedEntrySeconds * 1_000,
@@ -31,14 +31,22 @@ export function runWillPipeline(data, context = {}) {
   }) : null;
   const timingValid = Boolean(timing?.valid);
   const entryTiming = assessEntryTiming({ snapshot: data, signalTime, validFrom: timing?.validFrom ?? null, validUntil: timing?.validUntil ?? null });
-  const timingBlocked = entryTiming.timingStatus !== 'READY';
+  const onlyTooEarly = entryTiming.timingStatus === 'WAIT_TIMING'
+    && Array.isArray(entryTiming.timingReasons)
+    && entryTiming.timingReasons.length === 1
+    && entryTiming.timingReasons[0] === 'TOO_EARLY';
+  const timingHardBlocked = directional && (!timingValid || (entryTiming.timingStatus !== 'READY' && !onlyTooEarly));
+  const releaseEligible = directional && timingValid && !timingHardBlocked;
+  const canClickNow = releaseEligible && entryTiming.timingStatus === 'READY';
   return {
     ...result,
-    executable: executable && timingValid && !timingBlocked,
-    clickTime: executable && timingValid && !timingBlocked ? timing.clickTime : null,
+    releaseEligible,
+    executable: canClickNow,
+    canClickNow,
+    clickTime: releaseEligible ? timing.clickTime : null,
     timing,
     ...entryTiming,
-    blockReasons: timingBlocked ? [...(result.blockReasons ?? []), ...entryTiming.timingReasons] : result.blockReasons,
+    blockReasons: timingHardBlocked ? [...(result.blockReasons ?? []), ...entryTiming.timingReasons] : result.blockReasons,
     generatedAt: signalTime
   };
 }
