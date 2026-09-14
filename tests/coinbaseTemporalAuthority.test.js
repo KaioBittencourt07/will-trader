@@ -18,6 +18,14 @@ const obs = (offsetMs, price, sequence, receiveExtra = 250) => observationFromCo
   canonicalSymbol: 'BTC/USD'
 });
 
+function preciseObs({ time, price, sequence, tradeId = sequence, receivedAt = '2026-09-14T12:00:20.300Z' }) {
+  return observationFromCoinbaseTicker({
+    payload: { type: 'ticker', product_id: 'BTC-USD', price: String(price), sequence, trade_id: tradeId, time },
+    receivedAt,
+    canonicalSymbol: 'BTC/USD'
+  });
+}
+
 test('extracts Coinbase ticker match time with explicit provenance but no self-approval', () => {
   const value = obs(-3_000, 76000, 100);
   assert.equal(value.provider, 'coinbase-exchange-ticker');
@@ -61,10 +69,12 @@ test('sub-millisecond match progression is valid when provider precision and seq
     '2026-09-14T12:00:20.061554Z',
     '2026-09-14T12:00:20.061769Z'
   ];
-  const observations = times.map((time, index) => observationFromCoinbaseTicker({
-    payload: { type: 'ticker', product_id: 'BTC-USD', price: String(76000 + index), sequence: 200 + index, trade_id: 300 + index, time },
-    receivedAt: '2026-09-14T12:00:20.200Z',
-    canonicalSymbol: 'BTC/USD'
+  const observations = times.map((time, index) => preciseObs({
+    time,
+    price: 76000 + index,
+    sequence: 200 + index,
+    tradeId: 300 + index,
+    receivedAt: '2026-09-14T12:00:20.200Z'
   }));
   const result = qualifyCoinbaseTickerSeries({ observations, now: BASE + 200 });
   assert.equal(result.canEvaluateFrozenFreshness, true);
@@ -75,7 +85,23 @@ test('sub-millisecond match progression is valid when provider precision and seq
   assert.ok(result.semanticReasonCodes.includes('COINBASE_SUB_MILLISECOND_EVENT_TIME_OBSERVED'));
 });
 
-test('fails closed on timestamp or sequence regression', () => {
+test('allows equal exact event time when Coinbase event identity advances', () => {
+  const observations = [
+    preciseObs({ time: '2026-09-14T12:00:16.100000Z', price: 76000, sequence: 400, tradeId: 500, receivedAt: '2026-09-14T12:00:16.300Z' }),
+    preciseObs({ time: '2026-09-14T12:00:17.200000Z', price: 76001, sequence: 401, tradeId: 501, receivedAt: '2026-09-14T12:00:17.300Z' }),
+    preciseObs({ time: '2026-09-14T12:00:17.200000Z', price: 76002, sequence: 402, tradeId: 502, receivedAt: '2026-09-14T12:00:17.350Z' }),
+    preciseObs({ time: '2026-09-14T12:00:19.300000Z', price: 76003, sequence: 403, tradeId: 503, receivedAt: '2026-09-14T12:00:19.400Z' })
+  ];
+  const result = qualifyCoinbaseTickerSeries({ observations, now: BASE });
+  assert.equal(result.canEvaluateFrozenFreshness, true);
+  assert.equal(result.observation.exactTimestampDistinctEvents, 1);
+  assert.equal(result.observation.exactTimestampIdentityConflicts, 0);
+  assert.equal(result.observation.coarseTimestampObserved, false);
+  assert.ok(result.semanticReasonCodes.includes('COINBASE_EXACT_TIMESTAMP_DISTINCT_EVENTS_DISAMBIGUATED_BY_EVENT_IDENTITY'));
+  assert.equal(result.temporalAuthority.authorityGate, 'PASS');
+});
+
+test('fails closed on timestamp, sequence, or trade-id regression', () => {
   const timestampRegression = [
     obs(-4_000, 76000, 100),
     obs(-3_000, 76001, 101),
@@ -90,22 +116,36 @@ test('fails closed on timestamp or sequence regression', () => {
     obs(-2_000, 76002, 99),
     obs(-1_000, 76003, 103)
   ];
-  const result = qualifyCoinbaseTickerSeries({ observations: sequenceRegression, now: BASE });
-  assert.equal(result.canEvaluateFrozenFreshness, false);
-  assert.ok(result.semanticReasonCodes.includes('COINBASE_TICKER_SEQUENCE_REGRESSION'));
+  const sequenceResult = qualifyCoinbaseTickerSeries({ observations: sequenceRegression, now: BASE });
+  assert.equal(sequenceResult.canEvaluateFrozenFreshness, false);
+  assert.ok(sequenceResult.semanticReasonCodes.includes('COINBASE_TICKER_SEQUENCE_REGRESSION'));
+
+  const tradeRegression = [
+    preciseObs({ time: '2026-09-14T12:00:16.100000Z', price: 76000, sequence: 100, tradeId: 200, receivedAt: '2026-09-14T12:00:16.200Z' }),
+    preciseObs({ time: '2026-09-14T12:00:17.100000Z', price: 76001, sequence: 101, tradeId: 201, receivedAt: '2026-09-14T12:00:17.200Z' }),
+    preciseObs({ time: '2026-09-14T12:00:18.100000Z', price: 76002, sequence: 102, tradeId: 199, receivedAt: '2026-09-14T12:00:18.200Z' }),
+    preciseObs({ time: '2026-09-14T12:00:19.100000Z', price: 76003, sequence: 103, tradeId: 202, receivedAt: '2026-09-14T12:00:19.200Z' })
+  ];
+  const tradeResult = qualifyCoinbaseTickerSeries({ observations: tradeRegression, now: BASE });
+  assert.equal(tradeResult.canEvaluateFrozenFreshness, false);
+  assert.ok(tradeResult.semanticReasonCodes.includes('COINBASE_TICKER_TRADE_ID_REGRESSION'));
 });
 
-test('fails closed when price changes share one exact timestamp or event/receive skew is excessive', () => {
-  const sameTime = [
-    obs(-1_000, 76000, 100),
-    obs(-1_000, 76001, 101),
-    obs(-1_000, 76002, 102),
-    obs(-1_000, 76003, 103)
+test('fails closed when equal exact time changes price without advancing event identity', () => {
+  const observations = [
+    preciseObs({ time: '2026-09-14T12:00:16.100000Z', price: 76000, sequence: 400, tradeId: 500, receivedAt: '2026-09-14T12:00:16.300Z' }),
+    preciseObs({ time: '2026-09-14T12:00:17.200000Z', price: 76001, sequence: 401, tradeId: 501, receivedAt: '2026-09-14T12:00:17.300Z' }),
+    preciseObs({ time: '2026-09-14T12:00:17.200000Z', price: 76002, sequence: 401, tradeId: 501, receivedAt: '2026-09-14T12:00:17.350Z' }),
+    preciseObs({ time: '2026-09-14T12:00:19.300000Z', price: 76003, sequence: 402, tradeId: 502, receivedAt: '2026-09-14T12:00:19.400Z' })
   ];
-  const coarse = qualifyCoinbaseTickerSeries({ observations: sameTime, now: BASE });
-  assert.equal(coarse.canEvaluateFrozenFreshness, false);
-  assert.equal(coarse.observation.coarseTimestampObserved, true);
+  const result = qualifyCoinbaseTickerSeries({ observations, now: BASE });
+  assert.equal(result.canEvaluateFrozenFreshness, false);
+  assert.equal(result.observation.exactTimestampIdentityConflicts, 1);
+  assert.equal(result.observation.coarseTimestampObserved, true);
+  assert.ok(result.semanticReasonCodes.includes('COINBASE_TICKER_EXACT_TIMESTAMP_IDENTITY_CONFLICT'));
+});
 
+test('fails closed when event/receive skew is excessive', () => {
   const skewed = [
     obs(-20_000, 76000, 100, 20_000),
     obs(-19_000, 76001, 101, 20_000),
