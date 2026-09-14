@@ -28,6 +28,23 @@ test('records WAIT without inventing an outcome or click time', () => {
   assert.throws(() => store.settle('wait-1', 'WIN'), /Somente sinais abertos/);
 });
 
+test('stores a released future manual plan as OPEN and preserves market admission proof', () => {
+  const store = createHistoryStore({ id: () => 'released-1' });
+  const record = store.recordDecision({
+    decision: { direction: 'BUY', releaseEligible: true, executable: false, canClickNow: false, blocked: false, clickTime: '2026-09-14T12:02:00.000Z' },
+    data: { asset: 'BTC/USD', timeframe: '1min', price: 77000, valid: true, status: 'OK' },
+    context: {
+      marketAdmission: { version: 'market-admission-gate-v1', state: 'ADMITTED', stage: 'DATA_ADMITTED', checks: { authorityGate: 'PASS', freshnessGate: 'PASS' } },
+      canonicalStudy: { version: 'canonical-market-snapshot-v1', state: 'READY' }
+    }
+  });
+  assert.equal(record.status, 'OPEN');
+  assert.equal(record.execution.status, 'PENDING_CONFIRMATION');
+  assert.equal(record.metadata.context.marketAdmission.state, 'ADMITTED');
+  assert.equal(record.metadata.marketAdmission.state, 'ADMITTED');
+  assert.equal(record.metadata.context.canonicalStudy.state, 'READY');
+});
+
 test('stores the operator actual click and price separately from the planned signal', () => {
   const store = createHistoryStore({ now: () => '2026-09-01T12:02:00.000Z', id: () => 'executed-1' });
   const record = store.recordDecision({ decision: { direction: 'SELL', executable: true, clickTime: '2026-09-01T12:01:00.000Z' }, data: { asset: 'AUD/USD', timeframe: '1min', price: 0.65 } });
