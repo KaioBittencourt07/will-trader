@@ -15,10 +15,21 @@ export const BIQUOTE_FOREX_PRODUCTS = Object.freeze({
 
 const BASE_URL = 'https://biquote.io';
 const FROZEN_FRESHNESS_MS = 30_000;
+const OUTCOME_REFERENCE_MAX_LAG_MS = 30_000;
+const MAX_REFERENCE_OBSERVATIONS = 64;
+const CANONICAL_BY_PROVIDER = Object.freeze(Object.fromEntries(
+  Object.entries(BIQUOTE_FOREX_PRODUCTS).map(([canonical, provider]) => [provider, canonical])
+));
 
 function clamp(value, min, max, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+}
+
+function asTimestamp(value) {
+  if (Number.isFinite(Number(value))) return Number(value);
+  const parsed = Date.parse(value ?? '');
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function buildUrl() {
@@ -43,6 +54,7 @@ export function createBiquoteForexRuntimeFeed({
   const intervalMs = clamp(pollIntervalMs, 5_000, 30_000, 10_000);
   const timeoutMs = clamp(requestTimeoutMs, 2_000, 15_000, 8_000);
   const url = buildUrl();
+  const referenceBuffers = new Map(Object.keys(BIQUOTE_FOREX_PRODUCTS).map((asset) => [asset, []]));
   let running = false;
   let timer = null;
   let inFlight = false;
@@ -55,6 +67,42 @@ export function createBiquoteForexRuntimeFeed({
   let skippedOverlaps = 0;
   let lastError = null;
   let lastHttpStatus = null;
+
+  function retainApprovedReferences(assessment) {
+    for (const item of assessment?.assets ?? []) {
+      if (item?.approved !== true) continue;
+      const asset = CANONICAL_BY_PROVIDER[String(item.symbol || '').toUpperCase()];
+      const eventTimestamp = asTimestamp(item.timestamp);
+      const price = Number(item.price);
+      if (!asset || !Number.isFinite(eventTimestamp) || !Number.isFinite(price) || price <= 0) continue;
+      const bucket = referenceBuffers.get(asset);
+      const duplicate = bucket.some((entry) => entry.eventTimestamp === eventTimestamp && entry.price === price);
+      if (duplicate) continue;
+      bucket.push(Object.freeze({
+        provider: 'biquote-forex',
+        symbol: asset,
+        price,
+        timestamp: new Date(eventTimestamp).toISOString(),
+        eventTimestamp,
+        receivedAt: new Date(now()).toISOString(),
+        source: item.source ?? null,
+        valid: true,
+        status: 'OK'
+      }));
+      bucket.sort((left, right) => left.eventTimestamp - right.eventTimestamp);
+      while (bucket.length > MAX_REFERENCE_OBSERVATIONS) bucket.shift();
+    }
+  }
+
+  function referenceAtOrAfter(asset, targetTimestamp, maxLagMs = OUTCOME_REFERENCE_MAX_LAG_MS) {
+    const canonical = String(asset || '').trim().toUpperCase();
+    const target = asTimestamp(targetTimestamp);
+    if (!BIQUOTE_FOREX_PRODUCTS[canonical] || !Number.isFinite(target) || Number(maxLagMs) !== OUTCOME_REFERENCE_MAX_LAG_MS) return null;
+    const upperBound = target + OUTCOME_REFERENCE_MAX_LAG_MS;
+    const match = (referenceBuffers.get(canonical) ?? []).find((entry) => entry.eventTimestamp >= target && entry.eventTimestamp <= upperBound) ?? null;
+    if (!match) return null;
+    return Object.freeze({ ...match, lagMs: match.eventTimestamp - target });
+  }
 
   function schedule() {
     if (!running || timer) return;
@@ -88,6 +136,7 @@ export function createBiquoteForexRuntimeFeed({
       if (!response.ok) throw new Error(`BIQUOTE_HTTP_${response.status}`);
       const nextPayload = await response.json();
       const assessment = assessBiquoteForexCommission(nextPayload, { now: now() });
+      retainApprovedReferences(assessment);
       payload = nextPayload;
       receivedAt = new Date(now()).toISOString();
       successfulPolls += 1;
@@ -193,6 +242,7 @@ export function createBiquoteForexRuntimeFeed({
         marketState: item?.latestTick?.marketState ?? null,
         stale: item?.latestTick?.stale ?? null,
         quoteAgeSeconds: item?.latestTick?.quoteAgeSeconds ?? null,
+        retainedOutcomeReferences: referenceBuffers.get(asset)?.length ?? 0,
         reasons: item?.reasons ?? []
       }];
     }));
@@ -235,5 +285,5 @@ export function createBiquoteForexRuntimeFeed({
     state = enabled ? 'STOPPED' : 'DISABLED';
   }
 
-  return Object.freeze({ start, stop, pollOnce, health, getAssetHealth });
+  return Object.freeze({ start, stop, pollOnce, health, getAssetHealth, referenceAtOrAfter });
 }
