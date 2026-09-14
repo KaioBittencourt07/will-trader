@@ -25,11 +25,14 @@ export async function runTwelveExchangeRateTemporalCommissioning({
   wait = sleep,
   symbol = 'EUR/USD',
   observationsTarget = 4,
-  intervalMs = 3_000,
+  intervalMs = 15_000,
   baseUrl = BASE_URL
 } = {}) {
   const target = Math.min(6, Math.max(4, Number(observationsTarget) || 4));
-  const delay = Math.min(10_000, Math.max(1_000, Number(intervalMs) || 3_000));
+  // Deliberately paced: commissioning must not burst against the same provider
+  // already used by the scanner. Tests can inject a no-op wait, but production
+  // commissioning defaults to four observations spread across ~45 seconds.
+  const delay = Math.min(30_000, Math.max(5_000, Number(intervalMs) || 15_000));
   const observations = [];
   const failures = [];
   let requestsMade = 0;
@@ -73,6 +76,7 @@ export async function runTwelveExchangeRateTemporalCommissioning({
     apiKeySource,
     requestBudget: target,
     requestsMade,
+    observationIntervalMs: delay,
     failures: Object.freeze(failures),
     qualification,
     temporalAuthority: authority,
