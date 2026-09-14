@@ -12,6 +12,16 @@ test('no admitted study is never mislabeled as strategic WAIT', () => {
   assert.match(state.reason, /Admission Gate/);
 });
 
+test('duplicate canonical state is not counted as a new study or WAIT', () => {
+  const state = deriveScannerRoundState({
+    analyses: [],
+    unavailable: [{ asset: 'EUR/USD', error: 'DUPLICATE_CANONICAL_STUDY' }]
+  });
+  assert.equal(state.state, 'NO_NEW_CANONICAL_STUDY');
+  assert.equal(state.strategicWait, false);
+  assert.equal(state.duplicateStudies, 1);
+});
+
 test('WAIT is strategic only after at least one admitted study reaches the decision layer', () => {
   const state = deriveScannerRoundState({
     analyses: [{ asset: 'EUR/USD', decision: { direction: 'WAIT' } }],
