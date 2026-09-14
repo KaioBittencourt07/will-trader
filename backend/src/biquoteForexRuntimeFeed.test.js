@@ -35,6 +35,13 @@ test('polls one cached Biquote batch and exposes all eight forex assets as ready
   assert.equal(feed.getAssetHealth('EUR/USD').temporalAuthority.authorityGate, 'PASS');
   assert.equal(feed.getAssetHealth('EUR/USD').temporalAuthority.freshnessGate, 'PASS');
   assert.equal(feed.getAssetHealth('EUR/USD').ordersExecuted, 0);
+
+  const reference = feed.referenceAtOrAfter('EUR/USD', Date.parse('2026-09-14T21:39:50.000Z'));
+  assert.equal(reference.price, 1);
+  assert.equal(reference.timestamp, '2026-09-14T21:39:55.000Z');
+  assert.equal(reference.lagMs, 5_000);
+  assert.equal(health.assets['EUR/USD'].retainedOutcomeReferences, 1);
+  assert.equal(feed.referenceAtOrAfter('EUR/USD', Date.parse('2026-09-14T21:39:50.000Z'), 60_000), null);
 });
 
 test('cached tick fails closed once event age crosses frozen 30s contract', async () => {
