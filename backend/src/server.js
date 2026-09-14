@@ -16,6 +16,9 @@ import { createProspectiveManifest } from '../../learning/src/prospectiveEvidenc
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
+import { createBlsCalendarAdapter } from '../../context/src/adapters/blsCalendarAdapter.js';
+import { createFedCalendarAdapter } from '../../context/src/adapters/fedCalendarAdapter.js';
+import { createCompositeMacroAdapter } from '../../context/src/adapters/compositeMacroAdapter.js';
 import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonitorTimeout.js';
 import { runPaperMonitorCycle } from './paperMonitorCycle.js';
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
@@ -29,6 +32,8 @@ const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
   value: process.env.WILL_PAPER_MONITOR_REQUEST_TIMEOUT_MS,
   intervalMs: paperMonitorIntervalMs
 });
+const macroContextEnabled = process.env.WILL_MACRO_CONTEXT_ENABLED === 'true';
+const macroCacheTtlMs = Number(process.env.WILL_MACRO_CACHE_TTL_MS || 10 * 60_000);
 
 const app = express();
 app.locals.twelveWebSocketFeed = createTwelveWebSocketFeed({
@@ -70,9 +75,20 @@ app.locals.researchMemory = createResearchMemory({
   minimumSamples: Number(process.env.WILL_RESEARCH_MINIMUM_SAMPLES || 30)
 });
 app.locals.executionGateway = createManualExecutionGateway();
-// External macro/news adapters are still opt-in. Until commissioned, context is
-// explicitly UNKNOWN instead of being fabricated as safe.
-app.locals.marketContextProvider = createMarketContextProvider();
+
+// Official macro context is explicit opt-in. Merely starting WILL with the
+// default configuration performs no BLS/Fed request. The composite adapter is
+// fail-closed and cached so a missing required source becomes UNKNOWN, never LOW.
+app.locals.macroContextAdapter = macroContextEnabled
+  ? createCompositeMacroAdapter({
+      adapters: [createBlsCalendarAdapter(), createFedCalendarAdapter()],
+      cacheTtlMs: Number.isFinite(macroCacheTtlMs) && macroCacheTtlMs > 0 ? macroCacheTtlMs : 10 * 60_000
+    })
+  : null;
+app.locals.marketContextProvider = createMarketContextProvider({
+  macroAdapter: app.locals.macroContextAdapter,
+  newsAdapter: null
+});
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', config.dashboardOrigin);
@@ -93,7 +109,10 @@ app.get('/health', (_req, res) => {
     marketProvider: 'twelvedata',
     marketConfigured: Boolean(process.env.TWELVEDATA_API_KEY),
     coinbaseTemporalEnabled: process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true',
-    paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true'
+    paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
+    macroContextEnabled,
+    macroContext: app.locals.macroContextAdapter?.health?.() ?? null,
+    newsContextEnabled: false
   });
 });
 
