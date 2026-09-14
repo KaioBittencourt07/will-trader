@@ -1,6 +1,6 @@
 import { expiryAt, prospectiveOutcomeDue, resolveProspectiveOutcome } from '../../learning/src/outcomeResolver.js';
 
-export const PAPER_OUTCOME_SETTLEMENT_VERSION = 'paper-outcome-settlement-v1';
+export const PAPER_OUTCOME_SETTLEMENT_VERSION = 'paper-outcome-settlement-v2';
 export const PAPER_OUTCOME_REFERENCE_MAX_LAG_MS = 30_000;
 const CAMPAIGN_PREFIX = 'autonomous-paper-monitor-v1:';
 
@@ -12,15 +12,27 @@ function eligibleOpenRecord(record) {
   return isCampaignRecord(record)
     && record?.status === 'OPEN'
     && ['BUY', 'SELL'].includes(record?.direction)
+    && record?.execution?.status !== 'CONFIRMED'
     && !record?.outcome;
 }
 
-function referenceFor(record, dueAt, { coinbaseTemporalFeeds, biquoteForexFeed } = {}) {
+function referenceFor(record, targetTimestamp, { coinbaseTemporalFeeds, biquoteForexFeed } = {}) {
   const asset = String(record?.asset || '').trim().toUpperCase();
   const coinbaseFeed = coinbaseTemporalFeeds instanceof Map ? coinbaseTemporalFeeds.get(asset) : null;
-  const coinbaseReference = coinbaseFeed?.referenceAtOrAfter?.(dueAt, PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) ?? null;
+  const coinbaseReference = coinbaseFeed?.referenceAtOrAfter?.(targetTimestamp, PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) ?? null;
   if (coinbaseReference) return coinbaseReference;
-  return biquoteForexFeed?.referenceAtOrAfter?.(asset, dueAt, PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) ?? null;
+  return biquoteForexFeed?.referenceAtOrAfter?.(asset, targetTimestamp, PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) ?? null;
+}
+
+function invalidSettlement(historyStore, record, reason, metadata = {}) {
+  return historyStore.settle(record.id, 'DATA_INVALID', {
+    settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
+    reason,
+    source: 'PAPER_AUTOMATIC_SETTLEMENT',
+    paperOnly: true,
+    automatedBrokerExecution: false,
+    ...metadata
+  });
 }
 
 export function settleDuePaperCampaignOutcomes({
@@ -30,7 +42,10 @@ export function settleDuePaperCampaignOutcomes({
   now = Date.now(),
   maxReferenceLagMs = PAPER_OUTCOME_REFERENCE_MAX_LAG_MS
 } = {}) {
-  if (!historyStore || typeof historyStore.list !== 'function' || typeof historyStore.settle !== 'function') {
+  if (!historyStore
+    || typeof historyStore.list !== 'function'
+    || typeof historyStore.settle !== 'function'
+    || typeof historyStore.confirmPaperExecution !== 'function') {
     throw new Error('PAPER_OUTCOME_HISTORY_STORE_REQUIRED');
   }
   if (Number(maxReferenceLagMs) !== PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) {
@@ -42,6 +57,7 @@ export function settleDuePaperCampaignOutcomes({
 
   const records = historyStore.list().filter(eligibleOpenRecord);
   const results = [];
+  let entriesCaptured = 0;
   let settled = 0;
   let wins = 0;
   let losses = 0;
@@ -49,16 +65,57 @@ export function settleDuePaperCampaignOutcomes({
   let dataInvalid = 0;
   let pending = 0;
 
-  for (const record of records) {
+  for (const originalRecord of records) {
+    let record = originalRecord;
+
+    // PAPER entry must be observed prospectively at/after the planned click.
+    // The signal-time price is never reused as a future PAPER entry price.
+    if (record.execution?.status !== 'PAPER_CONFIRMED') {
+      const plannedMs = Date.parse(record.execution?.plannedClickTime ?? record.clickTime ?? '');
+      if (!Number.isFinite(plannedMs)) {
+        const value = invalidSettlement(historyStore, record, 'PAPER_ENTRY_TIME_INVALID');
+        settled += 1;
+        dataInvalid += 1;
+        results.push({ id: record.id, asset: record.asset, outcome: value.outcome, reason: 'PAPER_ENTRY_TIME_INVALID' });
+        continue;
+      }
+
+      if (checkedAt < plannedMs) {
+        pending += 1;
+        results.push({ id: record.id, asset: record.asset, outcome: null, reason: 'PAPER_ENTRY_NOT_DUE', entryDueAt: new Date(plannedMs).toISOString() });
+        continue;
+      }
+
+      const entryReference = referenceFor(record, plannedMs, { coinbaseTemporalFeeds, biquoteForexFeed });
+      if (!entryReference) {
+        if (checkedAt <= plannedMs + PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) {
+          pending += 1;
+          results.push({ id: record.id, asset: record.asset, outcome: null, reason: 'WAITING_BOUNDED_ENTRY_REFERENCE', entryDueAt: new Date(plannedMs).toISOString() });
+          continue;
+        }
+
+        const value = invalidSettlement(historyStore, record, 'PAPER_ENTRY_REFERENCE_WINDOW_MISSED', {
+          entryDueAt: new Date(plannedMs).toISOString(),
+          maximumReferenceLagMs: PAPER_OUTCOME_REFERENCE_MAX_LAG_MS
+        });
+        settled += 1;
+        dataInvalid += 1;
+        results.push({ id: record.id, asset: record.asset, outcome: value.outcome, reason: 'PAPER_ENTRY_REFERENCE_WINDOW_MISSED' });
+        continue;
+      }
+
+      record = historyStore.confirmPaperExecution(record.id, {
+        referenceTimestamp: entryReference.timestamp,
+        referencePrice: entryReference.price,
+        source: entryReference.provider ?? 'PAPER_TEMPORAL_ENTRY_REFERENCE'
+      });
+      entriesCaptured += 1;
+    }
+
     const due = prospectiveOutcomeDue(record, checkedAt);
     const dueMs = expiryAt(record);
     if (!Number.isFinite(dueMs)) {
-      const value = historyStore.settle(record.id, 'DATA_INVALID', {
-        settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
-        reason: 'EXPIRY_NOT_RESOLVABLE',
-        source: 'PAPER_AUTOMATIC_SETTLEMENT',
-        automatedBrokerExecution: false
-      });
+      const value = invalidSettlement(historyStore, record, 'EXPIRY_NOT_RESOLVABLE');
       settled += 1;
       dataInvalid += 1;
       results.push({ id: record.id, asset: record.asset, outcome: value.outcome, reason: 'EXPIRY_NOT_RESOLVABLE' });
@@ -71,33 +128,29 @@ export function settleDuePaperCampaignOutcomes({
       continue;
     }
 
-    const reference = referenceFor(record, dueMs, { coinbaseTemporalFeeds, biquoteForexFeed });
-    if (!reference) {
+    const exitReference = referenceFor(record, dueMs, { coinbaseTemporalFeeds, biquoteForexFeed });
+    if (!exitReference) {
       if (checkedAt <= dueMs + PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) {
         pending += 1;
-        results.push({ id: record.id, asset: record.asset, outcome: null, reason: 'WAITING_BOUNDED_REFERENCE', dueAt: due.dueAt });
+        results.push({ id: record.id, asset: record.asset, outcome: null, reason: 'WAITING_BOUNDED_EXIT_REFERENCE', dueAt: due.dueAt });
         continue;
       }
 
-      const value = historyStore.settle(record.id, 'DATA_INVALID', {
-        settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
-        reason: 'OUTCOME_REFERENCE_WINDOW_MISSED',
+      const value = invalidSettlement(historyStore, record, 'PAPER_EXIT_REFERENCE_WINDOW_MISSED', {
         dueAt: due.dueAt,
-        maximumReferenceLagMs: PAPER_OUTCOME_REFERENCE_MAX_LAG_MS,
-        source: 'PAPER_AUTOMATIC_SETTLEMENT',
-        automatedBrokerExecution: false
+        maximumReferenceLagMs: PAPER_OUTCOME_REFERENCE_MAX_LAG_MS
       });
       settled += 1;
       dataInvalid += 1;
-      results.push({ id: record.id, asset: record.asset, outcome: value.outcome, reason: 'OUTCOME_REFERENCE_WINDOW_MISSED', dueAt: due.dueAt });
+      results.push({ id: record.id, asset: record.asset, outcome: value.outcome, reason: 'PAPER_EXIT_REFERENCE_WINDOW_MISSED', dueAt: due.dueAt });
       continue;
     }
 
     const resolution = resolveProspectiveOutcome(record, {
-      price: reference.price,
-      timestamp: reference.timestamp,
-      valid: reference.valid !== false,
-      status: reference.status ?? 'OK'
+      price: exitReference.price,
+      timestamp: exitReference.timestamp,
+      valid: exitReference.valid !== false,
+      status: exitReference.status ?? 'OK'
     }, checkedAt);
 
     if (!resolution.resolved) {
@@ -108,14 +161,15 @@ export function settleDuePaperCampaignOutcomes({
 
     const value = historyStore.settle(record.id, resolution.outcome, {
       settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
-      source: reference.provider ?? 'PAPER_TEMPORAL_REFERENCE',
-      referenceTimestamp: resolution.referenceTimestamp ?? reference.timestamp ?? null,
+      source: 'paper-live-temporal-reference-v1',
+      referenceProvider: exitReference.provider ?? null,
+      referenceTimestamp: resolution.referenceTimestamp ?? exitReference.timestamp ?? null,
       dueAt: resolution.dueAt ?? due.dueAt,
-      entryPrice: resolution.entryPrice ?? record.entryPrice ?? null,
+      entryPrice: resolution.entryPrice ?? record.execution?.actualEntryPrice ?? null,
       exitPrice: resolution.exitPrice ?? null,
-      referenceLagMs: Number.isFinite(Number(reference.lagMs)) ? Number(reference.lagMs) : null,
-      automatedBrokerExecution: false,
-      paperOnly: true
+      referenceLagMs: Number.isFinite(Number(exitReference.lagMs)) ? Number(exitReference.lagMs) : null,
+      paperOnly: true,
+      automatedBrokerExecution: false
     });
 
     settled += 1;
@@ -131,7 +185,7 @@ export function settleDuePaperCampaignOutcomes({
       entryPrice: resolution.entryPrice ?? null,
       exitPrice: resolution.exitPrice ?? null,
       referenceTimestamp: resolution.referenceTimestamp ?? null,
-      referenceLagMs: Number.isFinite(Number(reference.lagMs)) ? Number(reference.lagMs) : null
+      referenceLagMs: Number.isFinite(Number(exitReference.lagMs)) ? Number(exitReference.lagMs) : null
     });
   }
 
@@ -141,6 +195,7 @@ export function settleDuePaperCampaignOutcomes({
     campaignPrefix: CAMPAIGN_PREFIX,
     checkedAt: new Date(checkedAt).toISOString(),
     openCampaignSignalsChecked: records.length,
+    entriesCaptured,
     settled,
     pending,
     wins,
