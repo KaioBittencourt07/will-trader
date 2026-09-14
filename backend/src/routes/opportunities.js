@@ -15,6 +15,7 @@ import {
 } from '../canonicalMarketSnapshot.js';
 import { scannerStudyRegistry } from '../scannerStudyRegistry.js';
 import { deriveScannerRoundState } from '../scannerRoundState.js';
+import { composeCoinbaseTwelveOperationalSnapshot } from '../coinbaseTwelveOperationalSnapshot.js';
 
 const router = Router();
 const scheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
@@ -82,6 +83,18 @@ function canonicalProof(canonical, fingerprint, registryClaim) {
   };
 }
 
+function operationalSnapshotFor(asset, snapshot, app, requiredBars) {
+  if (asset !== 'BTC/USD' || !app.locals.coinbaseTemporalFeed) return snapshot;
+  const health = app.locals.coinbaseTemporalFeed.health();
+  if (health.enabled !== true) return snapshot;
+  return composeCoinbaseTwelveOperationalSnapshot({
+    twelveSnapshot: snapshot,
+    coinbaseHealth: health,
+    now: Date.now(),
+    requiredBars
+  });
+}
+
 router.get('/opportunities', async (req, res) => {
   const latency = createOpportunityLatency();
   const providerTelemetry = createProviderEfficiencyTelemetry(
@@ -139,7 +152,7 @@ router.get('/opportunities', async (req, res) => {
     try {
       if (localRelayRequired) throw new Error('LOCAL_RELAY_REQUIRED');
       snapshots = await latency.stage('marketFetchMs', () =>
-        getMarketDataEngine().getSnapshots(selection.assets, timeframe, 50, { telemetry: providerTelemetry })
+        getMarketDataEngine().getSnapshots(selection.assets, timeframe, 55, { telemetry: providerTelemetry })
       );
     } catch (error) {
       if (!/EACCES|network error|LOCAL_RELAY_REQUIRED/i.test(error.message)) throw error;
@@ -159,7 +172,7 @@ router.get('/opportunities', async (req, res) => {
         snapshots = [{
           asset,
           snapshot: await latency.stage('marketFetchMs', () =>
-            getLocalRelaySnapshot(asset, timeframe, 50, { telemetry: providerTelemetry })
+            getLocalRelaySnapshot(asset, timeframe, 55, { telemetry: providerTelemetry })
           ),
           error: null
         }];
@@ -199,14 +212,19 @@ router.get('/opportunities', async (req, res) => {
         continue;
       }
 
-      const rejection = dataRejectionReason(snapshot);
+      const effectiveSnapshot = operationalSnapshotFor(asset, snapshot, req.app, context.requiredBars);
+      const rejection = dataRejectionReason(effectiveSnapshot);
       if (rejection) {
         (relayMode ? relayScheduler : scheduler).defer(asset);
-        unavailable.push({ asset, error: rejection });
+        unavailable.push({
+          asset,
+          error: rejection,
+          ...(effectiveSnapshot?.reasons ? { reasons: effectiveSnapshot.reasons } : {})
+        });
         continue;
       }
 
-      const admission = evaluateMarketAdmission(snapshot, { requireAuthoritativeFreshness: true });
+      const admission = evaluateMarketAdmission(effectiveSnapshot, { requireAuthoritativeFreshness: true });
       if (!admission.admitted) {
         unavailable.push({
           asset,
@@ -285,7 +303,9 @@ router.get('/opportunities', async (req, res) => {
         newsBlocked: marketContext.news.blocked,
         marketContext,
         decisionLatencyMs: Date.now() - startedAt,
-        providerHealth: relayMode ? 'LOCAL_RELAY' : 'HEALTHY',
+        providerHealth: admittedSnapshot.compositeVersion
+          ? 'COINBASE_TEMPORAL+TWELVE_CLOSED_OHLC'
+          : relayMode ? 'LOCAL_RELAY' : 'HEALTHY',
         marketAdmission: admissionProof(admission),
         canonicalStudy: canonicalProof(canonical, fingerprint, registryClaim),
         prospectiveManifest: req.app.locals.prospectiveManifest,
@@ -355,6 +375,7 @@ router.get('/opportunities', async (req, res) => {
       researchUniverse: 'canonical-market-v1',
       execution: scannerExecutionBoundary(),
       relayMode,
+      coinbaseTemporal: req.app.locals.coinbaseTemporalFeed?.health?.() ?? null,
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
       scannerStudyRegistry: scannerStudyRegistry.snapshot(),
       roundState,
