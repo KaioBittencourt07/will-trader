@@ -5,6 +5,8 @@ function getBaseUrl() {
   return configured.replace(/\/$/, '');
 }
 
+const operationalAsset = String(params.get('asset') || 'BTC/USD').trim().toUpperCase();
+
 export const WILL_API = {
   get baseUrl() { return getBaseUrl(); },
   healthPath: '/health',
@@ -35,7 +37,7 @@ export function getHealth() {
   return request(`${WILL_API.baseUrl}${WILL_API.healthPath}`);
 }
 
-export function getMarketSnapshot(asset = 'EUR/USD', timeframe = '1min') {
+export function getMarketSnapshot(asset = operationalAsset, timeframe = '1min') {
   const query = new URLSearchParams({ asset, timeframe, outputsize: '50' });
   return request(`${WILL_API.baseUrl}${WILL_API.marketPath}?${query}`);
 }
@@ -94,20 +96,20 @@ export function getExecutionStatus() {
   return request(`${WILL_API.baseUrl}${WILL_API.executionStatusPath}`);
 }
 
-export function getMultiTimeframe(asset = 'EUR/USD', timeframes = '1min,5min,15min') {
+export function getMultiTimeframe(asset = operationalAsset, timeframes = '1min,5min,15min') {
   const query = new URLSearchParams({ asset, timeframes, outputsize: '50' });
   return request(`${WILL_API.baseUrl}/api/market/multi?${query}`);
 }
 
-export function scanOpportunities(timeframe = '1min', entryDelaySeconds = 120) {
-  return request(`${WILL_API.baseUrl}${WILL_API.opportunitiesPath}?${new URLSearchParams({ timeframe, entryDelaySeconds })}`);
+export function scanOpportunities(timeframe = '1min', entryDelaySeconds = 120, assets = operationalAsset) {
+  return request(`${WILL_API.baseUrl}${WILL_API.opportunitiesPath}?${new URLSearchParams({ timeframe, entryDelaySeconds, assets })}`);
 }
 
 export async function scanLegacyOpportunities() {
-  const asset = 'EUR/USD';
+  const asset = operationalAsset;
   const market = await getMarketSnapshot(asset, '1min');
   const analysis = await analyzeMarket(market.snapshot, { dataValid: true, expirySeconds: 60 });
   const candidate = { asset, snapshot: market.snapshot, decision: analysis.decision || analysis };
   const executable = candidate.decision?.executable && !candidate.decision.blocked && ['BUY', 'SELL'].includes(candidate.decision.direction);
-  return { ok: true, recommendation: executable ? candidate : null, reason: executable ? 'Sinal executável encontrado no modo compatível.' : 'Modo compatível: EUR/USD não atingiu os critérios. WAIT é correto.' };
+  return { ok: true, recommendation: executable ? candidate : null, reason: executable ? 'Sinal executável encontrado no modo compatível.' : `Modo compatível: ${asset} não atingiu os critérios. WAIT é correto.` };
 }
