@@ -1,10 +1,17 @@
 import { observationFromCoinbaseTicker, qualifyCoinbaseTickerSeries, coinbaseProductFor } from './coinbaseTemporalAuthority.js';
 
 const WS_URL = 'wss://ws-feed.exchange.coinbase.com';
+const OUTCOME_REFERENCE_MAX_LAG_MS = 30_000;
 
 function addListener(socket, event, handler) {
   if (typeof socket.addEventListener === 'function') socket.addEventListener(event, handler);
   else socket[`on${event}`] = handler;
+}
+
+function asTimestamp(value) {
+  if (Number.isFinite(Number(value))) return Number(value);
+  const parsed = Date.parse(value ?? '');
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function createCoinbaseTemporalFeed({
@@ -33,6 +40,32 @@ export function createCoinbaseTemporalFeed({
     observations.push(observation);
     if (observations.length > Math.max(8, Number(maxObservations) || 40)) observations.shift();
     acceptedObservations += 1;
+  }
+
+  function referenceAtOrAfter(targetTimestamp, maxLagMs = OUTCOME_REFERENCE_MAX_LAG_MS) {
+    const target = asTimestamp(targetTimestamp);
+    if (!Number.isFinite(target) || Number(maxLagMs) !== OUTCOME_REFERENCE_MAX_LAG_MS) return null;
+    const upperBound = target + OUTCOME_REFERENCE_MAX_LAG_MS;
+    const match = observations
+      .filter((observation) => Number.isFinite(Number(observation?.eventTimestamp))
+        && Number(observation.eventTimestamp) >= target
+        && Number(observation.eventTimestamp) <= upperBound
+        && Number.isFinite(Number(observation?.price))
+        && Number(observation.price) > 0)
+      .sort((left, right) => Number(left.eventTimestamp) - Number(right.eventTimestamp))[0] ?? null;
+
+    if (!match) return null;
+    const eventTimestamp = Number(match.eventTimestamp);
+    return Object.freeze({
+      provider: 'coinbase-exchange-ticker',
+      symbol,
+      price: Number(match.price),
+      timestamp: new Date(eventTimestamp).toISOString(),
+      eventTimestamp,
+      lagMs: eventTimestamp - target,
+      valid: true,
+      status: 'OK'
+    });
   }
 
   function scheduleReconnect() {
@@ -162,5 +195,5 @@ export function createCoinbaseTemporalFeed({
     });
   }
 
-  return Object.freeze({ start, stop, health });
+  return Object.freeze({ start, stop, health, referenceAtOrAfter });
 }
