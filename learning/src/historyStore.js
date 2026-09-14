@@ -78,7 +78,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     const robustness = assessDecisionRobustness({ snapshot: data, decision });
     const ablation = runFeatureAblation({ snapshot: data, decision });
     const direction = decision.direction ?? 'WAIT';
-    const executable = (direction === 'BUY' || direction === 'SELL') && !decision.blocked && decision.executable !== false;
+    const released = (direction === 'BUY' || direction === 'SELL') && !decision.blocked && (decision.releaseEligible === true || decision.executable === true);
     const recordId = id();
     const prospective = createProspectiveEvidenceRecord({
       decision,
@@ -99,7 +99,7 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       timeframe: data.timeframe ?? decision.timeframe ?? null,
       entryPrice: Number(data.price ?? decision.price) || null,
       direction,
-      status: executable ? 'OPEN' : 'SKIPPED',
+      status: released ? 'OPEN' : 'SKIPPED',
       score: Number(decision.score) || 0,
       confidence: Number(decision.confidence) || 0,
       regime: decision.regime ?? null,
@@ -113,8 +113,8 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
       entryQuality: Number.isFinite(Number(decision.entryQuality)) ? Number(decision.entryQuality) : null,
       timingVersion: decision.timingVersion ?? null,
       confirmations: Number(data.confirmations ?? decision.confirmations) || 0,
-      clickTime: executable ? (decision.clickTime ?? null) : null,
-      execution: executable ? { status: 'PENDING_CONFIRMATION', plannedClickTime: decision.clickTime ?? null, actualClickTime: null, actualEntryPrice: null, confirmedAt: null } : null,
+      clickTime: released ? (decision.clickTime ?? null) : null,
+      execution: released ? { status: 'PENDING_CONFIRMATION', plannedClickTime: decision.clickTime ?? null, actualClickTime: null, actualEntryPrice: null, confirmedAt: null } : null,
       outcome: null,
       metadata: {
         blockReasons: Array.isArray(decision.blockReasons) ? [...decision.blockReasons] : [],
@@ -130,15 +130,19 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
           expirySeconds: context.expirySeconds ?? null,
           requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null,
           decisionLatencyMs: Number.isFinite(Number(context.decisionLatencyMs)) ? Number(context.decisionLatencyMs) : null,
-          monitorCycleId: context.monitorCycleId ?? null
+          monitorCycleId: context.monitorCycleId ?? null,
+          marketAdmission: context.marketAdmission ? structuredClone(context.marketAdmission) : null,
+          canonicalStudy: context.canonicalStudy ? structuredClone(context.canonicalStudy) : null
         },
-        marketContext: context.marketContext ? structuredClone(context.marketContext) : null
-        ,stateFingerprint, familiarityEvidence
-        ,lifecycle
-        ,disagreement
-        ,robustness
-        ,ablation
-        ,prospective
+        marketAdmission: context.marketAdmission ? structuredClone(context.marketAdmission) : null,
+        marketContext: context.marketContext ? structuredClone(context.marketContext) : null,
+        stateFingerprint,
+        familiarityEvidence,
+        lifecycle,
+        disagreement,
+        robustness,
+        ablation,
+        prospective
       }
     };
     records.push(record);
@@ -207,4 +211,3 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
   }
   return { recordDecision, settle, confirmExecution, list: () => records.map((record) => structuredClone(record)) };
 }
-
