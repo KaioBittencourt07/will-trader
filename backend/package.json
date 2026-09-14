@@ -10,6 +10,7 @@
     "commission:ws": "node src/commissionTwelveWebSocket.js",
     "commission:twelve-exchange-rate-temporal": "node src/commissionTwelveExchangeRateTemporal.js",
     "commission:coinbase-temporal": "node src/commissionCoinbaseTemporalReadOnly.js",
+    "commission:market-intelligence": "node src/commissionMarketIntelligenceReadOnly.js",
     "commission:oanda-readonly": "node src/commissionOandaReadOnly.js",
     "commission:oanda-temporal": "node src/commissionOandaTemporalReadOnly.js",
     "commission:cross-provider-readiness": "node src/commissionCrossProviderReadiness.js",
