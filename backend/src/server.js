@@ -37,6 +37,8 @@ const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
   value: process.env.WILL_PAPER_MONITOR_REQUEST_TIMEOUT_MS,
   intervalMs: paperMonitorIntervalMs
 });
+const paperMonitorAssetClass = String(process.env.WILL_PAPER_MONITOR_ASSET_CLASS || 'FX_CRYPTO').trim().toUpperCase();
+const paperMonitorBatchSize = Math.min(4, Math.max(1, Number(process.env.WILL_PAPER_MONITOR_BATCH_SIZE || 4) || 4));
 const macroContextEnabled = process.env.WILL_MACRO_CONTEXT_ENABLED === 'true';
 const macroCacheTtlMs = Number(process.env.WILL_MACRO_CACHE_TTL_MS || 10 * 60_000);
 const historyFilePath = process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json');
@@ -92,7 +94,9 @@ app.locals.paperMonitor = createAutonomousPaperMonitor({
     baseUrl: `http://127.0.0.1:${config.port}`,
     cycleId,
     timeout: paperMonitorTimeout,
-    asset: process.env.DEFAULT_ASSET || 'EUR/USD',
+    multiAsset: true,
+    assetClass: paperMonitorAssetClass,
+    limit: paperMonitorBatchSize,
     timeframe: process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min'
   })
 });
@@ -165,6 +169,13 @@ app.get('/health', (_req, res) => {
       hydration: app.locals.scannerStudyRegistryHydration
     },
     paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
+    paperMonitorConfig: {
+      mode: 'PAPER_MULTI_ASSET',
+      assetClass: paperMonitorAssetClass,
+      batchSize: paperMonitorBatchSize,
+      intervalMs: paperMonitorIntervalMs,
+      automatedBrokerExecution: false
+    },
     macroContextEnabled,
     macroContext: app.locals.macroContextAdapter?.health?.() ?? null,
     newsContextEnabled: false
