@@ -15,31 +15,72 @@ function quote(overrides = {}, tickOverrides = {}) {
   return { mode: 'SHADOW_OBSERVABILITY', connected: true, subscriptionsAccepted: 1, subscriptionsRejected: 0,
     symbols: [{ symbol: 'EUR/USD', price: 1.1706, eventTimestamp: NOW - 5_000, receivedAt: new Date(NOW - 1_000).toISOString(), ...tickOverrides }], ...overrides };
 }
-const compose = (s = saxo(), q = quote(), options = {}) => composeSaxoClosedOhlcIndependentQuote({ saxoSnapshot: s, quoteHealth: q, now: NOW, ...options });
+function authority(overrides = {}) {
+  return {
+    source: 'independent-temporal-provider',
+    symbol: 'EUR/USD',
+    timestampAuthority: 'PROVIDER_EVENT_TIME',
+    authorityGate: 'PASS',
+    freshnessGate: 'PASS',
+    freshnessContractMs: 30_000,
+    eventTimestamp: NOW - 5_000,
+    ...overrides
+  };
+}
+const compose = (s = saxo(), q = quote(), options = {}) => composeSaxoClosedOhlcIndependentQuote({
+  saxoSnapshot: s,
+  quoteHealth: q,
+  quoteTemporalAuthority: authority(),
+  now: NOW,
+  ...options
+});
 
-test('happy path composes offline with independent provider roles only', () => {
+test('happy path composes offline only with independent temporal authority approved', () => {
   const value = compose();
   assert.equal(value.compositionVersion, CROSS_PROVIDER_COMPOSITION_VERSION);
   assert.equal(value.compositionState, 'COMPOSABLE_OFFLINE');
   assert.equal(value.status, 'OFFLINE_QUALIFIED');
   assert.equal(value.valid, false);
-  assert.equal(value.providers.quote.role, 'QUOTE_FRESHNESS_ONLY');
+  assert.equal(value.providers.quote.role, 'QUOTE_PRICE_ONLY');
+  assert.equal(value.providers.temporalAuthority.role, 'TEMPORAL_AUTHORITY_ONLY');
   assert.equal(value.providers.ohlc.role, 'OHLC_CLOSED_ONLY');
   assert.equal(value.prospectivePaperAuthorized, false);
 });
 
-test('stale and missing native quote timestamps fail closed', () => {
-  assert.ok(compose(saxo(), quote({}, { eventTimestamp: NOW - 30_001 })).reasonCodes.includes('QUOTE_STALE'));
-  assert.ok(compose(saxo(), quote({}, { eventTimestamp: null })).reasonCodes.includes('QUOTE_TIMESTAMP_INVALID'));
+test('raw quote timestamp alone can never authorize composition', () => {
+  const value = composeSaxoClosedOhlcIndependentQuote({ saxoSnapshot: saxo(), quoteHealth: quote(), now: NOW });
+  assert.equal(value.compositionState, 'INVALID');
+  assert.ok(value.reasonCodes.includes('QUOTE_TEMPORAL_AUTHORITY_MISSING'));
 });
 
-test('providerReceivedAt cannot rejuvenate a stale quote event', () => {
-  const value = compose(saxo(), quote({}, { eventTimestamp: NOW - 40_000, receivedAt: new Date(NOW).toISOString() }));
-  assert.equal(value.quoteAgeMs, 40_000);
-  assert.ok(value.reasonCodes.includes('QUOTE_STALE'));
+test('stale and unresolved temporal authority fail closed', () => {
+  const unresolved = compose(saxo(), quote(), { quoteTemporalAuthority: authority({ authorityGate: 'FAIL', timestampAuthority: 'UNRESOLVED' }) });
+  assert.ok(unresolved.reasonCodes.includes('QUOTE_TEMPORAL_AUTHORITY_NOT_APPROVED'));
+  assert.ok(unresolved.reasonCodes.includes('QUOTE_TIMESTAMP_AUTHORITY_UNRESOLVED'));
+
+  const staleTimestamp = NOW - 30_001;
+  const stale = compose(saxo(), quote({}, { eventTimestamp: staleTimestamp }), {
+    quoteTemporalAuthority: authority({ eventTimestamp: staleTimestamp })
+  });
+  assert.ok(stale.reasonCodes.includes('QUOTE_TEMPORAL_AUTHORITY_STALE'));
 });
 
-test('ambiguous Saxo sample evidence fails closed even with fresh quote', () => {
+test('authority timestamp must match quote event evidence exactly', () => {
+  const value = compose(saxo(), quote(), { quoteTemporalAuthority: authority({ eventTimestamp: NOW - 4_000 }) });
+  assert.ok(value.reasonCodes.includes('QUOTE_TEMPORAL_AUTHORITY_EVENT_MISMATCH'));
+});
+
+test('providerReceivedAt cannot replace temporal authority', () => {
+  const value = composeSaxoClosedOhlcIndependentQuote({
+    saxoSnapshot: saxo(),
+    quoteHealth: quote({}, { receivedAt: new Date(NOW).toISOString() }),
+    quoteTemporalAuthority: authority({ authorityGate: 'FAIL', freshnessGate: 'UNVERIFIED', timestampAuthority: 'UNRESOLVED' }),
+    now: NOW
+  });
+  assert.ok(value.reasonCodes.includes('QUOTE_TEMPORAL_AUTHORITY_NOT_APPROVED'));
+});
+
+test('ambiguous Saxo sample evidence fails closed even with approved temporal authority', () => {
   const value = compose(saxo({ candleCompleteness: 'UNVERIFIED_BY_PROVIDER_PAYLOAD', completenessRule: null }), quote());
   assert.ok(value.reasonCodes.includes('SAXO_CLOSED_CANDLE_UNVERIFIED'));
 });
@@ -54,7 +95,8 @@ test('provider source separation and provenance are explicit', () => {
   const value = compose();
   assert.equal(value.quoteTimestamp, new Date(NOW - 5_000).toISOString());
   assert.equal(value.latestClosedCandleTimestamp, '2026-09-09T11:59:00.000Z');
-  assert.equal(value.timestampOrigins.quoteTimestamp, 'twelvedata.websocket.price.timestamp');
+  assert.equal(value.timestampOrigins.quoteTimestamp, 'quote.payload.eventTimestamp_subject_to_temporal_authority_match');
+  assert.equal(value.timestampOrigins.authoritativeEventTimestamp, 'PROVIDER_EVENT_TIME');
   assert.equal(value.timestampOrigins.latestClosedCandleTimestamp, 'saxo.chart.v3.response.Data[].Time');
   assert.deepEqual(value.separation, { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false,
     mixedOhlc: false, timestampSubstitution: false, championBypass: false });
@@ -63,13 +105,19 @@ test('provider source separation and provenance are explicit', () => {
 test('freshness gate remains exactly 30 seconds', () => {
   assert.equal(compose().freshnessMaxAgeMs, 30_000);
   assert.ok(compose(saxo(), quote(), { maxAgeMs: 30_001 }).reasonCodes.includes('FRESHNESS_GATE_FROZEN'));
-  assert.equal(compose(saxo(), quote({}, { eventTimestamp: NOW - 30_000 })).compositionState, 'COMPOSABLE_OFFLINE');
+  const boundaryTimestamp = NOW - 30_000;
+  assert.equal(compose(saxo(), quote({}, { eventTimestamp: boundaryTimestamp }), {
+    quoteTemporalAuthority: authority({ eventTimestamp: boundaryTimestamp })
+  }).compositionState, 'COMPOSABLE_OFFLINE');
 });
 
-test('candle or receive timestamps cannot substitute for missing quote timestamp', () => {
-  const value = compose(saxo({ providerReceivedAt: new Date(NOW).toISOString() }), quote({}, { eventTimestamp: null, receivedAt: new Date(NOW).toISOString() }));
+test('candle or receive timestamps cannot substitute for missing quote event timestamp', () => {
+  const value = compose(saxo({ providerReceivedAt: new Date(NOW).toISOString() }), quote({}, { eventTimestamp: null, receivedAt: new Date(NOW).toISOString() }), {
+    quoteTemporalAuthority: authority({ eventTimestamp: null })
+  });
   assert.equal(value.quoteTimestamp, null);
   assert.ok(value.reasonCodes.includes('QUOTE_TIMESTAMP_INVALID'));
+  assert.ok(value.reasonCodes.includes('QUOTE_TEMPORAL_AUTHORITY_EVENT_TIME_MISSING'));
 });
 
 test('OHLC remains exclusively Saxo and quote payload cannot mix bars', () => {
