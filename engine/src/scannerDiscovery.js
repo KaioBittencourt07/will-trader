@@ -23,6 +23,7 @@ export function waitCode(snapshot = {}, decision = {}, context = {}) {
   if (snapshot.marketOpen === false || snapshot.status === 'MARKET_CLOSED') return WAIT_CODES.MARKET;
   if (context.macroBlocked) return WAIT_CODES.MACRO;
   if (context.newsBlocked) return WAIT_CODES.NEWS;
+  if (decision.releaseEligible === true && decision.canClickNow === false) return WAIT_CODES.TIMING;
   if (decision.timing && decision.timing.valid === false) return WAIT_CODES.TIMING;
   const reasons = [...(decision.blockReasons ?? [])].join(' ').toUpperCase();
   if (/CONFLICT|VETO|DISAGREE/.test(reasons)) return WAIT_CODES.CONFLICT;
@@ -36,12 +37,13 @@ export function assessScannerCandidate({ asset, snapshot = {}, decision = {}, co
   const dataValid = snapshot.valid !== false && snapshot.status !== 'STALE';
   const marketEligible = dataValid && snapshot.marketOpen !== false;
   const setupValid = decision.setup && decision.setup !== 'UNKNOWN';
+  const releaseEligible = Boolean(decision.releaseEligible === true && !decision.blocked && ['BUY', 'SELL'].includes(decision.direction));
   const executable = Boolean(decision.executable && !decision.blocked && ['BUY', 'SELL'].includes(decision.direction));
   return {
     asset: asset ?? snapshot.asset ?? null,
-    stages: { observed: true, dataValid, marketEligible, setupForming: readiness.setupForming, setupValid, executable, ranked: false },
+    stages: { observed: true, dataValid, marketEligible, setupForming: readiness.setupForming, setupValid, releaseEligible, executable, ranked: false },
     readiness,
-    waitCode: executable ? null : waitCode(snapshot, decision, context)
+    waitCode: releaseEligible && executable ? null : waitCode(snapshot, decision, context)
   };
 }
 
@@ -53,10 +55,10 @@ export function adaptiveScanPriority(snapshot = {}, readiness = setupReadiness(s
 }
 
 export function scannerTelemetry(candidates = [], { providerRequests = null, scannedAt = new Date().toISOString() } = {}) {
-  const stages = ['observed', 'dataValid', 'marketEligible', 'setupForming', 'setupValid', 'executable', 'ranked'];
+  const stages = ['observed', 'dataValid', 'marketEligible', 'setupForming', 'setupValid', 'releaseEligible', 'executable', 'ranked'];
   const funnel = Object.fromEntries(stages.map((stage) => [stage, candidates.filter((item) => item.stages?.[stage]).length]));
   const waits = {};
   for (const candidate of candidates) if (candidate.waitCode) waits[candidate.waitCode] = (waits[candidate.waitCode] ?? 0) + 1;
   const elapsedHour = new Date(scannedAt).toISOString().slice(0, 13);
-  return { funnel, waits, sampleN: candidates.length, hour: elapsedHour, opportunitiesPerHour: funnel.setupValid, executablePerHour: funnel.executable, providerRequests, requestsPerEligibleOpportunity: funnel.setupValid > 0 && Number.isFinite(providerRequests) ? providerRequests / funnel.setupValid : null };
+  return { funnel, waits, sampleN: candidates.length, hour: elapsedHour, opportunitiesPerHour: funnel.setupValid, releasedPlansPerHour: funnel.releaseEligible, executablePerHour: funnel.executable, providerRequests, requestsPerEligibleOpportunity: funnel.setupValid > 0 && Number.isFinite(providerRequests) ? providerRequests / funnel.setupValid : null };
 }
