@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 const BASE_URL = 'https://biquote.io';
 const SYMBOLS = Object.freeze([
   'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'NZDUSD', 'USDCAD', 'GBPJPY'
@@ -127,7 +130,10 @@ export async function runBiquoteForexCommission({ fetchImpl = fetch, now = Date.
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isMain = Boolean(process.argv[1])
+  && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (isMain) {
   const result = await runBiquoteForexCommission();
   console.log(JSON.stringify(result, null, 2));
 }
