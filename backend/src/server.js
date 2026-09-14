@@ -22,6 +22,7 @@ import { createFedCalendarAdapter } from '../../context/src/adapters/fedCalendar
 import { createCompositeMacroAdapter } from '../../context/src/adapters/compositeMacroAdapter.js';
 import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonitorTimeout.js';
 import { runPaperMonitorCycle } from './paperMonitorCycle.js';
+import { settleDuePaperCampaignOutcomes, PAPER_OUTCOME_SETTLEMENT_VERSION } from './paperOutcomeSettlement.js';
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
 import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
@@ -80,6 +81,18 @@ app.locals.historyStore = createHistoryStore({
 });
 app.locals.historyContinuity = historyContinuity;
 app.locals.scannerStudyRegistryHydration = scannerStudyRegistry.hydrate(app.locals.historyStore.list());
+app.locals.paperOutcomeSettlement = Object.freeze({
+  version: PAPER_OUTCOME_SETTLEMENT_VERSION,
+  mode: 'PAPER_ONLY',
+  state: 'WAITING_FOR_FIRST_CYCLE',
+  settled: 0,
+  pending: 0,
+  wins: 0,
+  losses: 0,
+  ties: 0,
+  dataInvalid: 0,
+  automatedBrokerExecution: false
+});
 app.locals.paperMonitor = createAutonomousPaperMonitor({
   // Opt-in only. This prevents background scans from consuming provider budget
   // unless the operator explicitly enables the paper observation scheduler.
@@ -90,15 +103,38 @@ app.locals.paperMonitor = createAutonomousPaperMonitor({
     // The monitor supplies only the bounded, redacted diagnostic fields.
     console.warn(`[PAPER monitor] ${event.status} ${event.cycleId} ${event.errorCode}: ${event.errorDetail}`);
   },
-  runCycle: ({ cycleId }) => runPaperMonitorCycle({
-    baseUrl: `http://127.0.0.1:${config.port}`,
-    cycleId,
-    timeout: paperMonitorTimeout,
-    multiAsset: true,
-    assetClass: paperMonitorAssetClass,
-    limit: paperMonitorBatchSize,
-    timeframe: process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min'
-  })
+  runCycle: async ({ cycleId }) => {
+    const cycle = await runPaperMonitorCycle({
+      baseUrl: `http://127.0.0.1:${config.port}`,
+      cycleId,
+      timeout: paperMonitorTimeout,
+      multiAsset: true,
+      assetClass: paperMonitorAssetClass,
+      limit: paperMonitorBatchSize,
+      timeframe: process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min'
+    });
+
+    try {
+      const settlement = settleDuePaperCampaignOutcomes({
+        historyStore: app.locals.historyStore,
+        coinbaseTemporalFeeds: app.locals.coinbaseTemporalFeeds,
+        biquoteForexFeed: app.locals.biquoteForexFeed,
+        now: Date.now()
+      });
+      app.locals.paperOutcomeSettlement = settlement;
+      return { ...cycle, outcomeSettlement: settlement };
+    } catch (error) {
+      const settlement = Object.freeze({
+        version: PAPER_OUTCOME_SETTLEMENT_VERSION,
+        mode: 'PAPER_ONLY',
+        state: 'ERROR',
+        error: String(error?.message || 'PAPER_OUTCOME_SETTLEMENT_ERROR').slice(0, 180),
+        automatedBrokerExecution: false
+      });
+      app.locals.paperOutcomeSettlement = settlement;
+      return { ...cycle, ok: false, status: 'PAPER_OUTCOME_SETTLEMENT_ERROR', outcomeSettlement: settlement };
+    }
+  }
 });
 app.locals.researchMemory = createResearchMemory({
   filePath: process.env.WILL_RESEARCH_FILE || path.join(process.cwd(), 'data', 'will-research.json'),
@@ -176,6 +212,7 @@ app.get('/health', (_req, res) => {
       intervalMs: paperMonitorIntervalMs,
       automatedBrokerExecution: false
     },
+    paperOutcomeSettlement: app.locals.paperOutcomeSettlement,
     macroContextEnabled,
     macroContext: app.locals.macroContextAdapter?.health?.() ?? null,
     newsContextEnabled: false
@@ -183,7 +220,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/api/paper-monitor', (_req, res) => {
-  res.json({ ok: true, monitor: app.locals.paperMonitor.health() });
+  res.json({ ok: true, monitor: app.locals.paperMonitor.health(), outcomeSettlement: app.locals.paperOutcomeSettlement });
 });
 
 app.use('/api', analyzeRouter);
