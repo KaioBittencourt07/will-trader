@@ -37,6 +37,8 @@ export function parseGdeltArticleList(payload = {}) {
       currencies: currenciesFor(headline),
       impact: 'UNKNOWN',
       verified: true,
+      discoveryOnly: true,
+      hardBlockEligible: false,
       url,
       discoverySource: GDELT_NEWS_SOURCE
     });
@@ -44,18 +46,18 @@ export function parseGdeltArticleList(payload = {}) {
   return items.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
 }
 
-export function buildGdeltUrl({ query = '(bitcoin OR BTC OR cryptocurrency OR "Federal Reserve" OR FOMC OR inflation)', timespan = '60min', maxrecords = 50 } = {}) {
+export function buildGdeltUrl({ query = '(bitcoin OR BTC OR cryptocurrency)', timespan = '60min', maxrecords = 20 } = {}) {
   const url = new URL(GDELT_DOC_ENDPOINT);
   url.searchParams.set('query', query);
   url.searchParams.set('mode', 'ArtList');
-  url.searchParams.set('maxrecords', String(Math.min(Math.max(Number(maxrecords) || 50, 1), 250)));
+  url.searchParams.set('maxrecords', String(Math.min(Math.max(Number(maxrecords) || 20, 1), 100)));
   url.searchParams.set('format', 'json');
-  url.searchParams.set('sort', 'HybridRel');
+  url.searchParams.set('sort', 'DateDesc');
   url.searchParams.set('timespan', timespan);
   return url.toString();
 }
 
-export function createGdeltNewsAdapter({ fetchImpl = globalThis.fetch, now = () => Date.now(), timeoutMs = 8_000, query, timespan = '60min', maxrecords = 50 } = {}) {
+export function createGdeltNewsAdapter({ fetchImpl = globalThis.fetch, now = () => Date.now(), timeoutMs = 15_000, query, timespan = '60min', maxrecords = 20 } = {}) {
   return Object.freeze({
     source: GDELT_NEWS_SOURCE,
     async getSnapshot() {
@@ -68,7 +70,7 @@ export function createGdeltNewsAdapter({ fetchImpl = globalThis.fetch, now = () 
       if (!response.ok) throw new Error(`GDELT_DOC_HTTP_${response.status}`);
       const payload = await response.json();
       const items = parseGdeltArticleList(payload);
-      return { source: GDELT_NEWS_SOURCE, fetchedAt: new Date(now()).toISOString(), items, url };
+      return { source: GDELT_NEWS_SOURCE, fetchedAt: new Date(now()).toISOString(), items, url, discoveryOnly: true, hardBlockEligible: false };
     }
   });
 }
