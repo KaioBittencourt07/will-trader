@@ -11,6 +11,7 @@ import researchRouter from './routes/research.js';
 import intelligenceRouter from './routes/intelligence.js';
 import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
+import { hydrateRuntimeSecrets } from './runtimeSecrets.js';
 import { createHistoryStore } from '../../learning/src/historyStore.js';
 import { createProspectiveManifest } from '../../learning/src/prospectiveEvidence.js';
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
@@ -26,6 +27,7 @@ import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const runtimeSecrets = await hydrateRuntimeSecrets();
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 const paperMonitorIntervalMs = Number(process.env.WILL_PAPER_MONITOR_INTERVAL_MS || 60_000);
 const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
@@ -107,7 +109,8 @@ app.get('/health', (_req, res) => {
     service: 'will-trader-backend',
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
     marketProvider: 'twelvedata',
-    marketConfigured: Boolean(process.env.TWELVEDATA_API_KEY),
+    marketConfigured: runtimeSecrets.twelveData.configured,
+    marketCredentialSource: runtimeSecrets.twelveData.source,
     coinbaseTemporalEnabled: process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true',
     paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
     macroContextEnabled,
