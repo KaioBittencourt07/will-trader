@@ -10,6 +10,7 @@
     "commission:ws": "node src/commissionTwelveWebSocket.js",
     "commission:twelve-exchange-rate-temporal": "node src/commissionTwelveExchangeRateTemporal.js",
     "commission:coinbase-temporal": "node src/commissionCoinbaseTemporalReadOnly.js",
+    "commission:biquote-forex": "node src/commissionBiquoteForexReadOnly.js",
     "commission:market-intelligence": "node src/commissionMarketIntelligenceReadOnly.js",
     "commission:openai-shadow": "node src/commissionOpenAIShadowReadOnly.js",
     "commission:oanda-readonly": "node src/commissionOandaReadOnly.js",
