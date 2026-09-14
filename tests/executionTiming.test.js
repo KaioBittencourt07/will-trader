@@ -20,6 +20,18 @@ test('builds a one-to-five minute manual entry window around a suggested time', 
   assert.equal(timing.validUntil, '2026-08-26T12:05:00.000Z');
 });
 
+test('accepts a provider event clock lead up to the same one-second temporal authority tolerance', () => {
+  const timing = buildExecutionTiming({
+    signalTime: '2026-08-26T12:00:00.000Z',
+    marketTime: '2026-08-26T12:00:00.342Z',
+    executionDelayMs: 120_000,
+    entryWindowStartMs: 60_000,
+    entryWindowEndMs: 300_000
+  });
+  assert.equal(timing.valid, true);
+  assert.equal(timing.marketLeadMs, 342);
+});
+
 test('rejects clicks after the window', () => {
   const timing = buildExecutionTiming({ signalTime, marketTime });
   const state = evaluateClickWindow(timing, Date.parse('2026-08-26T12:00:04.001Z'));
@@ -27,8 +39,8 @@ test('rejects clicks after the window', () => {
   assert.equal(state.status, 'EXPIRED');
 });
 
-test('rejects invalid chronology', () => {
-  const timing = buildExecutionTiming({ signalTime: marketTime, marketTime: signalTime });
+test('rejects chronology beyond the bounded clock-skew tolerance', () => {
+  const timing = buildExecutionTiming({ signalTime: marketTime, marketTime: '2026-08-26T12:00:01.001Z' });
   assert.equal(timing.valid, false);
   assert.equal(timing.status, 'INVALID');
 });
