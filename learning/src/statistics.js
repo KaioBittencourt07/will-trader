@@ -162,7 +162,9 @@ export function summarize(records = []) {
   const invalidOutcomes = normalized.filter((record) => record.outcomeKind === 'DATA_INVALID').length;
   const unresolved = normalized.filter((record) => record.outcomeKind === 'UNRESOLVED').length;
   const operatorRecorded = binaryCompleted.filter((record) => record.execution?.status === 'CONFIRMED' || record.outcomeMetadata?.recordedBy === 'operator');
-  const automaticPaper = binaryCompleted.filter((record) => record.outcomeMetadata?.source === 'market-relay-prospective-paper');
+  const automaticPaper = binaryCompleted.filter((record) => record.outcomeMetadata?.source === 'market-relay-prospective-paper'
+    || record.outcomeMetadata?.paperOnly === true
+    || record.outcomeMetadata?.settlementVersion === 'paper-outcome-settlement-v2');
   const unverifiedCompleted = binaryCompleted.filter((record) => !operatorRecorded.includes(record) && !automaticPaper.includes(record));
   const winRate = ratio(wins, binaryCompleted.length);
 
@@ -219,10 +221,8 @@ export function summarize(records = []) {
       byTimeframe: segment(normalized, 'timeframe'),
       bySession: segment(normalized, 'session'),
       byHour: segment(normalized, 'hour'),
-      byDataQualityStatus: segment(normalized, 'dataQualityStatus'),
-      byDataQualitySource: segment(normalized, 'dataQualitySource'),
-      byProviderState: segment(normalized, 'providerState'),
       byTimingStatus: segment(normalized, 'timingStatus'),
+      byProviderState: segment(normalized, 'providerState'),
       byMtfStatus: segment(normalized, 'mtfStatus'),
       byFamiliarityStatus: segment(normalized, 'familiarityStatus'),
       byLifecycleState: segment(normalized, 'lifecycleState'),
@@ -232,4 +232,3 @@ export function summarize(records = []) {
     }
   };
 }
-
