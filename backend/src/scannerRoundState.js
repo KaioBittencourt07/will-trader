@@ -1,4 +1,4 @@
-export const SCANNER_ROUND_STATE_VERSION = 'scanner-round-state-v1';
+export const SCANNER_ROUND_STATE_VERSION = 'scanner-round-state-v2';
 
 export function deriveScannerRoundState({ analyses = [], unavailable = [], recommendation = null } = {}) {
   const admitted = Array.isArray(analyses) ? analyses : [];
@@ -16,16 +16,34 @@ export function deriveScannerRoundState({ analyses = [], unavailable = [], recom
   }
 
   if (admitted.length === 0) {
+    const duplicates = rejected.filter((item) => item?.error === 'DUPLICATE_CANONICAL_STUDY').length;
     const admissionRejected = rejected.some((item) => item?.error === 'MARKET_ADMISSION_REJECTED');
+    const canonicalRejected = rejected.some((item) => item?.error === 'CANONICAL_SNAPSHOT_REJECTED');
+
+    if (duplicates > 0 && !admissionRejected && !canonicalRejected) {
+      return Object.freeze({
+        version: SCANNER_ROUND_STATE_VERSION,
+        state: 'NO_NEW_CANONICAL_STUDY',
+        strategicWait: false,
+        admittedStudies: 0,
+        rejectedObservations: rejected.length,
+        duplicateStudies: duplicates,
+        reason: 'O estado canônico já foi estudado; nenhuma evidência duplicada foi gravada.'
+      });
+    }
+
     return Object.freeze({
       version: SCANNER_ROUND_STATE_VERSION,
       state: 'NO_ADMITTED_MARKET_STUDY',
       strategicWait: false,
       admittedStudies: 0,
       rejectedObservations: rejected.length,
+      duplicateStudies: duplicates,
       reason: admissionRejected
         ? 'Nenhum estudo foi admitido pelo Market Admission Gate nesta rodada.'
-        : 'Nenhum estudo de mercado válido foi admitido nesta rodada.'
+        : canonicalRejected
+          ? 'Nenhum snapshot admitido cumpriu o contrato canônico nesta rodada.'
+          : 'Nenhum estudo de mercado válido foi admitido nesta rodada.'
     });
   }
 
@@ -36,6 +54,7 @@ export function deriveScannerRoundState({ analyses = [], unavailable = [], recom
     strategicWait: allWait,
     admittedStudies: admitted.length,
     rejectedObservations: rejected.length,
+    duplicateStudies: rejected.filter((item) => item?.error === 'DUPLICATE_CANONICAL_STUDY').length,
     reason: allWait
       ? 'Os estudos admitidos resultaram em WAIT estratégico.'
       : 'Houve estudo admitido, mas nenhum candidato foi liberado.'
