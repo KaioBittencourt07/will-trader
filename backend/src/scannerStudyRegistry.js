@@ -1,8 +1,10 @@
 export const SCANNER_STUDY_REGISTRY_VERSION = 'scanner-study-registry-v1';
+const CANONICAL_FINGERPRINT_VERSION = 'canonical-study-fingerprint-v1';
 
 export function createScannerStudyRegistry({ maxEntries = 5000, now = () => Date.now() } = {}) {
   const seen = new Map();
   const limit = Math.max(100, Number(maxEntries) || 5000);
+  let hydratedEntries = 0;
 
   function compact() {
     while (seen.size > limit) {
@@ -42,7 +44,8 @@ export function createScannerStudyRegistry({ maxEntries = 5000, now = () => Date
       firstSeenAt,
       asset: metadata.asset ?? null,
       timeframe: metadata.timeframe ?? null,
-      latestClosedCandleTimestamp: metadata.latestClosedCandleTimestamp ?? null
+      latestClosedCandleTimestamp: metadata.latestClosedCandleTimestamp ?? null,
+      hydrated: false
     }));
     compact();
 
@@ -56,19 +59,59 @@ export function createScannerStudyRegistry({ maxEntries = 5000, now = () => Date
     });
   }
 
-  function snapshot() {
+  function hydrate(records = []) {
+    let loaded = 0;
+    let ignored = 0;
+    for (const record of Array.isArray(records) ? records : []) {
+      const canonicalStudy = record?.metadata?.context?.canonicalStudy ?? record?.metadata?.canonicalStudy ?? null;
+      const fingerprint = canonicalStudy?.fingerprint ?? null;
+      const hash = typeof fingerprint?.hash === 'string' && fingerprint.hash.trim() ? fingerprint.hash.trim() : null;
+      if (!hash || fingerprint?.version !== CANONICAL_FINGERPRINT_VERSION) {
+        ignored += 1;
+        continue;
+      }
+      if (seen.has(hash)) continue;
+
+      const firstSeenCandidate = canonicalStudy?.dedup?.firstSeenAt ?? record?.createdAt ?? null;
+      const firstSeenAt = Number.isFinite(Date.parse(firstSeenCandidate ?? ''))
+        ? new Date(Date.parse(firstSeenCandidate)).toISOString()
+        : new Date(now()).toISOString();
+
+      seen.set(hash, Object.freeze({
+        firstSeenAt,
+        asset: record?.asset ?? null,
+        timeframe: record?.timeframe ?? null,
+        latestClosedCandleTimestamp: canonicalStudy?.latestClosedCandleTimestamp ?? null,
+        hydrated: true
+      }));
+      loaded += 1;
+    }
+    compact();
+    hydratedEntries += loaded;
     return Object.freeze({
       version: SCANNER_STUDY_REGISTRY_VERSION,
+      loaded,
+      ignored,
       size: seen.size,
       maxEntries: limit
     });
   }
 
-  function clear() {
-    seen.clear();
+  function snapshot() {
+    return Object.freeze({
+      version: SCANNER_STUDY_REGISTRY_VERSION,
+      size: seen.size,
+      maxEntries: limit,
+      hydratedEntries
+    });
   }
 
-  return Object.freeze({ claim, snapshot, clear });
+  function clear() {
+    seen.clear();
+    hydratedEntries = 0;
+  }
+
+  return Object.freeze({ claim, hydrate, snapshot, clear });
 }
 
 export const scannerStudyRegistry = createScannerStudyRegistry();
