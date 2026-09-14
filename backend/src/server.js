@@ -109,16 +109,30 @@ app.use('/api', executionRouter);
 app.use('/api', opportunitiesRouter);
 app.use('/api', researchRouter);
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
   app.locals.twelveWebSocketFeed.start();
   app.locals.coinbaseTemporalFeed.start();
   app.locals.paperMonitor.start();
 });
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, () => {
-    app.locals.twelveWebSocketFeed.stop();
-    app.locals.coinbaseTemporalFeed.stop();
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`WILL TRADER shutting down on ${signal}`);
+  try { app.locals.twelveWebSocketFeed.stop(); } catch {}
+  try { app.locals.coinbaseTemporalFeed.stop(); } catch {}
+  try { app.locals.paperMonitor.stop(); } catch {}
+
+  const forceExit = setTimeout(() => process.exit(0), 3_000);
+  forceExit.unref?.();
+  server.close(() => {
+    clearTimeout(forceExit);
+    process.exit(0);
   });
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => shutdown(signal));
 }
