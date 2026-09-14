@@ -55,6 +55,27 @@ test('stores the operator actual click and price separately from the planned sig
   assert.equal(executed.execution.actualEntryPrice, 0.6498);
 });
 
+test('stores automatic PAPER entry evidence without pretending it was an operator execution', () => {
+  const store = createHistoryStore({ now: () => '2026-09-14T12:00:10.000Z', id: () => 'paper-entry-1' });
+  const record = store.recordDecision({
+    decision: { direction: 'BUY', releaseEligible: true, blocked: false, clickTime: '2026-09-14T12:00:00.000Z' },
+    data: { asset: 'BTC/USD', timeframe: '1min', price: 100 },
+    context: { expirySeconds: 60, monitorCycleId: 'autonomous-paper-monitor-v1:1' }
+  });
+  const paper = store.confirmPaperExecution(record.id, {
+    referenceTimestamp: '2026-09-14T12:00:03.000Z',
+    referencePrice: 101,
+    source: 'coinbase-exchange-ticker'
+  });
+  assert.equal(paper.execution.status, 'PAPER_CONFIRMED');
+  assert.equal(paper.execution.actualEntryPrice, 101);
+  assert.equal(paper.execution.referenceLagMs, 3_000);
+  assert.equal(paper.execution.paperOnly, true);
+  assert.throws(() => store.confirmPaperExecution(record.id, {
+    referenceTimestamp: '2026-09-14T12:00:31.000Z', referencePrice: 102
+  }), /PAPER_CONFIRMED|janela congelada/);
+});
+
 test('metrics expose WAIT volume separately from completed outcomes', () => {
   const metrics = summarize([
     { direction: 'BUY', asset: 'EUR/USD', outcome: 'WIN' },
@@ -79,6 +100,16 @@ test('metrics keep outcome evidence separated by strategy and model version', ()
   assert.deepEqual(metrics.byModelVersion, [
     { key: 'deterministic-v1', total: 2, wins: 1, winRate: 0.5 }
   ]);
+});
+
+test('metrics classify automatic live PAPER outcomes separately from operator outcomes', () => {
+  const metrics = summarize([
+    { direction: 'BUY', asset: 'BTC/USD', status: 'CLOSED', outcome: 'WIN', execution: { status: 'PAPER_CONFIRMED' }, outcomeMetadata: { paperOnly: true, settlementVersion: 'paper-outcome-settlement-v2' } },
+    { direction: 'SELL', asset: 'EUR/USD', status: 'CLOSED', outcome: 'LOSS', execution: { status: 'CONFIRMED' }, outcomeMetadata: { recordedBy: 'operator' } }
+  ]);
+  assert.equal(metrics.provenance.automaticPaperOutcomes, 1);
+  assert.equal(metrics.provenance.operatorRecordedOutcomes, 1);
+  assert.equal(metrics.provenance.unverifiedOutcomes, 0);
 });
 
 test('stores an immutable, versioned feature snapshot for every decision', () => {
