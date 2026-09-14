@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
+import { qualifyTwelveWsEventTimeSemantic } from './twelveWsEventTimeSemanticQualification.js';
+import { evaluateTwelveWsTemporalAuthority } from './twelveWsTemporalAuthority.js';
 
 async function resolveApiKey() {
   const envKey = String(process.env.TWELVEDATA_API_KEY || '').trim();
@@ -38,16 +40,36 @@ if (!apiKey) {
     apiKey,
     symbols: [symbol]
   });
+
   feed.start();
+
   setTimeout(() => {
+    const checkedAt = Date.now();
     const health = feed.health();
+    const semanticQualification = qualifyTwelveWsEventTimeSemantic();
+    const temporalAuthority = evaluateTwelveWsTemporalAuthority({
+      wsHealth: health,
+      symbol,
+      now: checkedAt,
+      provenanceVerified: semanticQualification.provenanceVerified
+    });
+
     feed.stop();
+
+    const transportApproved = health.successfulConnections > 0
+      && health.subscriptionsAccepted > 0
+      && health.ticksAccepted > 0;
+    const temporalApproved = temporalAuthority.authorityGate === 'PASS'
+      && temporalAuthority.freshnessGate === 'PASS';
+
     console.log(JSON.stringify({
-      status: health.successfulConnections > 0 && health.subscriptionsAccepted > 0 && health.ticksAccepted > 0
-        ? 'APPROVED'
-        : 'BLOCKED',
+      status: transportApproved && temporalApproved ? 'APPROVED' : 'BLOCKED',
+      transportApproved,
+      temporalApproved,
       symbol,
       apiKeySource,
+      semanticQualification,
+      temporalAuthority,
       health,
       secretExposed: false
     }, null, 2));
