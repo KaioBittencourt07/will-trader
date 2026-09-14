@@ -101,8 +101,11 @@ export function getMultiTimeframe(asset = operationalAsset, timeframes = '1min,5
   return request(`${WILL_API.baseUrl}/api/market/multi?${query}`);
 }
 
-export function scanOpportunities(timeframe = '1min', entryDelaySeconds = 120, assets = operationalAsset) {
-  return request(`${WILL_API.baseUrl}${WILL_API.opportunitiesPath}?${new URLSearchParams({ timeframe, entryDelaySeconds, assets })}`);
+export function scanOpportunities(timeframe = '1min', entryDelaySeconds = 120, assets = null) {
+  const query = new URLSearchParams({ timeframe, entryDelaySeconds });
+  if (assets) query.set('assets', assets);
+  else query.set('assetClass', 'FX_CRYPTO');
+  return request(`${WILL_API.baseUrl}${WILL_API.opportunitiesPath}?${query}`);
 }
 
 export async function scanLegacyOpportunities() {
