@@ -22,8 +22,18 @@ function newsSummary(snapshot = {}) {
     acceptedItems: items.length,
     verifiedTimestampedItems: items.filter((item) => item.verified && Number.isFinite(Date.parse(item.timestamp))).length,
     earliestItemTimestamp: times.length ? new Date(times[0]).toISOString() : null,
-    latestItemTimestamp: times.length ? new Date(times[times.length - 1]).toISOString() : null
+    latestItemTimestamp: times.length ? new Date(times[times.length - 1]).toISOString() : null,
+    discoveryOnly: snapshot.discoveryOnly === true,
+    hardBlockEligible: snapshot.hardBlockEligible === true
   };
+}
+
+function classifyObservationError(error) {
+  const text = String(error ?? 'UNKNOWN').slice(0, 240);
+  if (text.includes('RATE_LIMIT')) return { error: text, errorClass: 'RATE_LIMITED', retryRecommended: false };
+  if (/timeout|aborted/i.test(text)) return { error: text, errorClass: 'TIMEOUT', retryRecommended: false };
+  if (/HTTP_\d+/.test(text)) return { error: text, errorClass: 'HTTP_ERROR', retryRecommended: false };
+  return { error: text, errorClass: 'UNQUALIFIED_SOURCE_ERROR', retryRecommended: false };
 }
 
 async function observe(label, task) {
@@ -31,7 +41,7 @@ async function observe(label, task) {
     const snapshot = await task();
     return { label, ok: true, snapshot };
   } catch (error) {
-    return { label, ok: false, error: String(error?.message || error).slice(0, 240) };
+    return { label, ok: false, ...classifyObservationError(error?.message || error) };
   }
 }
 
@@ -56,17 +66,29 @@ export async function commissionMarketIntelligenceReadOnly({ fetchImpl = globalT
   const newsApproved = Boolean(gdeltResult?.ok
     && gdeltResult.snapshot.items?.some((item) => item.verified && Number.isFinite(Date.parse(item.timestamp))));
 
+  const status = macroApproved && newsApproved
+    ? 'APPROVED'
+    : macroApproved || newsApproved
+      ? 'PARTIAL'
+      : 'BLOCKED';
+
   return {
-    version: 'will-market-intelligence-commission-v1',
-    status: macroApproved && newsApproved ? 'APPROVED' : 'BLOCKED',
+    version: 'will-market-intelligence-commission-v2',
+    status,
     macroApproved,
     newsApproved,
+    coverage: status === 'APPROVED' ? 'FULL' : status === 'PARTIAL' ? 'PARTIAL' : 'UNKNOWN',
+    sourcePolicy: {
+      macro: 'OFFICIAL_SOURCE_CAN_QUALIFY_HARD_RISK_WINDOWS',
+      news: 'DISCOVERY_ONLY_UNTIL_PRIMARY_SOURCE_OR_EXPLICIT_IMPACT_POLICY',
+      unavailableNewsDoesNotBecomeSafe: true
+    },
     requestBudget: 3,
     requestsMade: 3,
     observations: {
-      bls: blsResult?.ok ? eventSummary(blsResult.snapshot) : { source: 'BLS_OFFICIAL_RELEASE_CALENDAR', error: blsResult?.error ?? 'UNKNOWN' },
-      fed: fedResult?.ok ? eventSummary(fedResult.snapshot) : { source: 'FEDERAL_RESERVE_OFFICIAL_CALENDAR', error: fedResult?.error ?? 'UNKNOWN' },
-      gdelt: gdeltResult?.ok ? newsSummary(gdeltResult.snapshot) : { source: 'GDELT_DOC_2_ARTICLE_LIST', error: gdeltResult?.error ?? 'UNKNOWN' }
+      bls: blsResult?.ok ? eventSummary(blsResult.snapshot) : { source: 'BLS_OFFICIAL_RELEASE_CALENDAR', error: blsResult?.error ?? 'UNKNOWN', errorClass: blsResult?.errorClass ?? 'UNKNOWN', retryRecommended: false },
+      fed: fedResult?.ok ? eventSummary(fedResult.snapshot) : { source: 'FEDERAL_RESERVE_OFFICIAL_CALENDAR', error: fedResult?.error ?? 'UNKNOWN', errorClass: fedResult?.errorClass ?? 'UNKNOWN', retryRecommended: false },
+      gdelt: gdeltResult?.ok ? newsSummary(gdeltResult.snapshot) : { source: 'GDELT_DOC_2_ARTICLE_LIST', error: gdeltResult?.error ?? 'UNKNOWN', errorClass: gdeltResult?.errorClass ?? 'UNKNOWN', retryRecommended: false }
     },
     rawEventsExposed: false,
     rawArticlesExposed: false,
