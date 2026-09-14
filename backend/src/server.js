@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 
 const runtimeSecrets = await hydrateRuntimeSecrets();
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
+const paperMonitorEnabled = process.env.WILL_PAPER_MONITOR_ENABLED === 'true';
 const paperMonitorIntervalMs = Number(process.env.WILL_PAPER_MONITOR_INTERVAL_MS || 60_000);
 const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
   value: process.env.WILL_PAPER_MONITOR_REQUEST_TIMEOUT_MS,
@@ -40,6 +41,7 @@ const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
 });
 const paperMonitorAssetClass = String(process.env.WILL_PAPER_MONITOR_ASSET_CLASS || 'FX_CRYPTO').trim().toUpperCase();
 const paperMonitorBatchSize = Math.min(4, Math.max(1, Number(process.env.WILL_PAPER_MONITOR_BATCH_SIZE || 4) || 4));
+const paperOutcomeSettlementIntervalMs = Math.min(10_000, Math.max(1_000, Number(process.env.WILL_PAPER_OUTCOME_SETTLEMENT_INTERVAL_MS || 5_000) || 5_000));
 const macroContextEnabled = process.env.WILL_MACRO_CONTEXT_ENABLED === 'true';
 const macroCacheTtlMs = Number(process.env.WILL_MACRO_CACHE_TTL_MS || 10 * 60_000);
 const historyFilePath = process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json');
@@ -76,15 +78,14 @@ app.locals.biquoteForexFeed = createBiquoteForexRuntimeFeed({
 app.locals.prospectiveManifest = createProspectiveManifest({
   startTime: process.env.WILL_PROSPECTIVE_START_TIME || '2026-09-03T02:15:00.000Z'
 });
-app.locals.historyStore = createHistoryStore({
-  filePath: historyFilePath
-});
+app.locals.historyStore = createHistoryStore({ filePath: historyFilePath });
 app.locals.historyContinuity = historyContinuity;
 app.locals.scannerStudyRegistryHydration = scannerStudyRegistry.hydrate(app.locals.historyStore.list());
 app.locals.paperOutcomeSettlement = Object.freeze({
   version: PAPER_OUTCOME_SETTLEMENT_VERSION,
   mode: 'PAPER_ONLY',
-  state: 'WAITING_FOR_FIRST_CYCLE',
+  state: 'WAITING_FOR_FIRST_PASS',
+  entriesCaptured: 0,
   settled: 0,
   pending: 0,
   wins: 0,
@@ -93,10 +94,36 @@ app.locals.paperOutcomeSettlement = Object.freeze({
   dataInvalid: 0,
   automatedBrokerExecution: false
 });
+app.locals.paperOutcomeSettlementTimer = null;
+
+function runPaperOutcomeSettlementPass() {
+  if (!paperMonitorEnabled) return app.locals.paperOutcomeSettlement;
+  try {
+    const settlement = settleDuePaperCampaignOutcomes({
+      historyStore: app.locals.historyStore,
+      coinbaseTemporalFeeds: app.locals.coinbaseTemporalFeeds,
+      biquoteForexFeed: app.locals.biquoteForexFeed,
+      now: Date.now()
+    });
+    app.locals.paperOutcomeSettlement = settlement;
+    return settlement;
+  } catch (error) {
+    const settlement = Object.freeze({
+      version: PAPER_OUTCOME_SETTLEMENT_VERSION,
+      mode: 'PAPER_ONLY',
+      state: 'ERROR',
+      error: String(error?.message || 'PAPER_OUTCOME_SETTLEMENT_ERROR').slice(0, 180),
+      automatedBrokerExecution: false
+    });
+    app.locals.paperOutcomeSettlement = settlement;
+    return settlement;
+  }
+}
+
 app.locals.paperMonitor = createAutonomousPaperMonitor({
   // Opt-in only. This prevents background scans from consuming provider budget
   // unless the operator explicitly enables the paper observation scheduler.
-  enabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
+  enabled: paperMonitorEnabled,
   intervalMs: paperMonitorIntervalMs,
   filePath: process.env.WILL_PAPER_MONITOR_STATE_FILE || path.join(process.cwd(), 'data', 'will-paper-monitor-state.json'),
   logger: (event) => {
@@ -113,27 +140,9 @@ app.locals.paperMonitor = createAutonomousPaperMonitor({
       limit: paperMonitorBatchSize,
       timeframe: process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min'
     });
-
-    try {
-      const settlement = settleDuePaperCampaignOutcomes({
-        historyStore: app.locals.historyStore,
-        coinbaseTemporalFeeds: app.locals.coinbaseTemporalFeeds,
-        biquoteForexFeed: app.locals.biquoteForexFeed,
-        now: Date.now()
-      });
-      app.locals.paperOutcomeSettlement = settlement;
-      return { ...cycle, outcomeSettlement: settlement };
-    } catch (error) {
-      const settlement = Object.freeze({
-        version: PAPER_OUTCOME_SETTLEMENT_VERSION,
-        mode: 'PAPER_ONLY',
-        state: 'ERROR',
-        error: String(error?.message || 'PAPER_OUTCOME_SETTLEMENT_ERROR').slice(0, 180),
-        automatedBrokerExecution: false
-      });
-      app.locals.paperOutcomeSettlement = settlement;
-      return { ...cycle, ok: false, status: 'PAPER_OUTCOME_SETTLEMENT_ERROR', outcomeSettlement: settlement };
-    }
+    const settlement = runPaperOutcomeSettlementPass();
+    if (settlement?.state === 'ERROR') return { ...cycle, ok: false, status: 'PAPER_OUTCOME_SETTLEMENT_ERROR', outcomeSettlement: settlement };
+    return { ...cycle, outcomeSettlement: settlement };
   }
 });
 app.locals.researchMemory = createResearchMemory({
@@ -151,10 +160,7 @@ app.locals.macroContextAdapter = macroContextEnabled
       cacheTtlMs: Number.isFinite(macroCacheTtlMs) && macroCacheTtlMs > 0 ? macroCacheTtlMs : 10 * 60_000
     })
   : null;
-app.locals.marketContextProvider = createMarketContextProvider({
-  macroAdapter: app.locals.macroContextAdapter,
-  newsAdapter: null
-});
+app.locals.marketContextProvider = createMarketContextProvider({ macroAdapter: app.locals.macroContextAdapter, newsAdapter: null });
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', config.dashboardOrigin);
@@ -177,7 +183,8 @@ app.get('/health', (_req, res) => {
         state: health.state,
         ready: health.ready,
         lastError: health.lastError,
-        latestTickAt: health.latestTick?.eventTimeRaw ?? null
+        latestTickAt: health.latestTick?.eventTimeRaw ?? null,
+        retainedOutcomeReferences: health.retainedOutcomeReferences ?? 0
       }];
     })
   );
@@ -200,16 +207,14 @@ app.get('/health', (_req, res) => {
       backupCreated: historyContinuity.backupCreated,
       persistent: true
     },
-    scannerStudyRegistry: {
-      ...scannerStudyRegistry.snapshot(),
-      hydration: app.locals.scannerStudyRegistryHydration
-    },
-    paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
+    scannerStudyRegistry: { ...scannerStudyRegistry.snapshot(), hydration: app.locals.scannerStudyRegistryHydration },
+    paperMonitorEnabled,
     paperMonitorConfig: {
       mode: 'PAPER_MULTI_ASSET',
       assetClass: paperMonitorAssetClass,
       batchSize: paperMonitorBatchSize,
       intervalMs: paperMonitorIntervalMs,
+      outcomeSettlementIntervalMs: paperOutcomeSettlementIntervalMs,
       automatedBrokerExecution: false
     },
     paperOutcomeSettlement: app.locals.paperOutcomeSettlement,
@@ -241,6 +246,9 @@ const server = app.listen(config.port, () => {
   for (const feed of app.locals.coinbaseTemporalFeeds.values()) feed.start();
   app.locals.biquoteForexFeed.start();
   app.locals.paperMonitor.start();
+  if (paperMonitorEnabled && !app.locals.paperOutcomeSettlementTimer) {
+    app.locals.paperOutcomeSettlementTimer = setInterval(runPaperOutcomeSettlementPass, paperOutcomeSettlementIntervalMs);
+  }
 });
 
 let shuttingDown = false;
@@ -254,6 +262,10 @@ function shutdown(signal) {
   }
   try { app.locals.biquoteForexFeed.stop(); } catch {}
   try { app.locals.paperMonitor.stop(); } catch {}
+  if (app.locals.paperOutcomeSettlementTimer) {
+    clearInterval(app.locals.paperOutcomeSettlementTimer);
+    app.locals.paperOutcomeSettlementTimer = null;
+  }
 
   const forceExit = setTimeout(() => process.exit(0), 3_000);
   forceExit.unref?.();
@@ -263,6 +275,4 @@ function shutdown(signal) {
   });
 }
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.once(signal, () => shutdown(signal));
-}
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => shutdown(signal));
