@@ -67,6 +67,7 @@ export function createGdeltNewsAdapter({ fetchImpl = globalThis.fetch, now = () 
         headers: { Accept: 'application/json', 'User-Agent': 'WILL-Trader/4.0 read-only market-context' },
         signal: AbortSignal.timeout(timeoutMs)
       });
+      if (response.status === 429) throw new Error('GDELT_DOC_RATE_LIMITED');
       if (!response.ok) throw new Error(`GDELT_DOC_HTTP_${response.status}`);
       const payload = await response.json();
       const items = parseGdeltArticleList(payload);
