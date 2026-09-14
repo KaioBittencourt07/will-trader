@@ -2,6 +2,8 @@ import { observationFromCoinbaseTicker, qualifyCoinbaseTickerSeries, coinbasePro
 
 const WS_URL = 'wss://ws-feed.exchange.coinbase.com';
 const OUTCOME_REFERENCE_MAX_LAG_MS = 30_000;
+const OUTCOME_REFERENCE_RETENTION_MS = 40_000;
+const OUTCOME_REFERENCE_MAX_ENTRIES = 10_000;
 
 function addListener(socket, event, handler) {
   if (typeof socket.addEventListener === 'function') socket.addEventListener(event, handler);
@@ -26,6 +28,7 @@ export function createCoinbaseTemporalFeed({
 } = {}) {
   const providerProduct = coinbaseProductFor(symbol);
   const observations = [];
+  const outcomeReferences = [];
   let socket = null;
   let running = false;
   let reconnectTimer = null;
@@ -39,6 +42,15 @@ export function createCoinbaseTemporalFeed({
   function pushObservation(observation) {
     observations.push(observation);
     if (observations.length > Math.max(8, Number(maxObservations) || 40)) observations.shift();
+
+    if (Number.isFinite(Number(observation?.eventTimestamp)) && Number.isFinite(Number(observation?.price))) {
+      outcomeReferences.push(observation);
+      const cutoff = Number(observation.eventTimestamp) - OUTCOME_REFERENCE_RETENTION_MS;
+      while (outcomeReferences.length && Number(outcomeReferences[0].eventTimestamp) < cutoff) outcomeReferences.shift();
+      if (outcomeReferences.length > OUTCOME_REFERENCE_MAX_ENTRIES) {
+        outcomeReferences.splice(0, outcomeReferences.length - OUTCOME_REFERENCE_MAX_ENTRIES);
+      }
+    }
     acceptedObservations += 1;
   }
 
@@ -46,13 +58,11 @@ export function createCoinbaseTemporalFeed({
     const target = asTimestamp(targetTimestamp);
     if (!Number.isFinite(target) || Number(maxLagMs) !== OUTCOME_REFERENCE_MAX_LAG_MS) return null;
     const upperBound = target + OUTCOME_REFERENCE_MAX_LAG_MS;
-    const match = observations
-      .filter((observation) => Number.isFinite(Number(observation?.eventTimestamp))
-        && Number(observation.eventTimestamp) >= target
-        && Number(observation.eventTimestamp) <= upperBound
-        && Number.isFinite(Number(observation?.price))
-        && Number(observation.price) > 0)
-      .sort((left, right) => Number(left.eventTimestamp) - Number(right.eventTimestamp))[0] ?? null;
+    const match = outcomeReferences.find((observation) => Number.isFinite(Number(observation?.eventTimestamp))
+      && Number(observation.eventTimestamp) >= target
+      && Number(observation.eventTimestamp) <= upperBound
+      && Number.isFinite(Number(observation?.price))
+      && Number(observation.price) > 0) ?? null;
 
     if (!match) return null;
     const eventTimestamp = Number(match.eventTimestamp);
@@ -96,7 +106,7 @@ export function createCoinbaseTemporalFeed({
         messagesReceived += 1;
         let payload;
         try {
-          payload = JSON.parse(typeof event?.data === 'string' ? event.data : String(event?.data ?? ''));
+          payload = JSON.parse(typeof event?.data === 'string' ? event?.data : String(event?.data ?? ''));
         } catch {
           return;
         }
@@ -175,6 +185,8 @@ export function createCoinbaseTemporalFeed({
       messagesReceived,
       acceptedObservations,
       retainedObservations: observations.length,
+      retainedOutcomeReferences: outcomeReferences.length,
+      outcomeReferenceRetentionMs: OUTCOME_REFERENCE_RETENTION_MS,
       subscriptionsAccepted,
       reconnects,
       lastError,
