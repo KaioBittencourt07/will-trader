@@ -2,9 +2,21 @@ import OpenAI from 'openai';
 
 let client;
 
+function boundedTimeoutMs(value) {
+  const parsed = Number(value ?? 15_000);
+  if (!Number.isFinite(parsed)) return 15_000;
+  return Math.min(30_000, Math.max(5_000, parsed));
+}
+
 function getClient() {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY não configurada no backend.');
-  client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  client ??= new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    // WILL prefers one bounded observation over hidden retry amplification.
+    // A new external attempt must remain explicit and auditable.
+    maxRetries: 0,
+    timeout: boundedTimeoutMs(process.env.OPENAI_TIMEOUT_MS)
+  });
   return client;
 }
 
