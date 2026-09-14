@@ -15,12 +15,25 @@ test('scanner preserves data, macro and strategy WAIT reason codes deterministic
   assert.equal(waitCode({}, { direction: 'WAIT', blockReasons: ['UNKNOWN_SETUP'] }), WAIT_CODES.STRATEGY);
 });
 
-test('scanner funnel only ranks already executable candidates and exposes stage telemetry', () => {
-  const candidate = assessScannerCandidate({ asset: 'EUR/USD', snapshot: { valid: true, marketOpen: true, featureStatus: 'OK', breakout: true, trendSlopeAtr: .3, rangeCompression: .8 }, decision: { setup: 'BREAKOUT', direction: 'BUY', executable: true, blocked: false } });
+test('scanner marks a released future plan separately from click-now executable state', () => {
+  const candidate = assessScannerCandidate({
+    asset: 'BTC/USD',
+    snapshot: { valid: true, marketOpen: true, featureStatus: 'OK', breakout: true, trendSlopeAtr: .3, rangeCompression: .8 },
+    decision: { setup: 'BREAKOUT', direction: 'BUY', releaseEligible: true, executable: false, canClickNow: false, blocked: false }
+  });
+  assert.equal(candidate.stages.releaseEligible, true);
+  assert.equal(candidate.stages.executable, false);
+  assert.equal(candidate.waitCode, WAIT_CODES.TIMING);
+});
+
+test('scanner funnel exposes released and executable stages independently', () => {
+  const candidate = assessScannerCandidate({ asset: 'EUR/USD', snapshot: { valid: true, marketOpen: true, featureStatus: 'OK', breakout: true, trendSlopeAtr: .3, rangeCompression: .8 }, decision: { setup: 'BREAKOUT', direction: 'BUY', releaseEligible: true, executable: true, canClickNow: true, blocked: false } });
   candidate.stages.ranked = true;
-  const skipped = assessScannerCandidate({ asset: 'USD/JPY', snapshot: { valid: false }, decision: { setup: 'UNKNOWN', direction: 'WAIT', executable: false, blocked: true } });
+  const skipped = assessScannerCandidate({ asset: 'USD/JPY', snapshot: { valid: false }, decision: { setup: 'UNKNOWN', direction: 'WAIT', releaseEligible: false, executable: false, blocked: true } });
   const telemetry = scannerTelemetry([candidate, skipped], { providerRequests: 2, scannedAt: '2026-09-02T12:00:00.000Z' });
   assert.equal(telemetry.funnel.observed, 2);
+  assert.equal(telemetry.funnel.releaseEligible, 1);
+  assert.equal(telemetry.funnel.executable, 1);
   assert.equal(telemetry.funnel.ranked, 1);
   assert.equal(telemetry.waits.WAIT_DATA, 1);
   assert.equal(telemetry.requestsPerEligibleOpportunity, 2);
