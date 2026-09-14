@@ -71,9 +71,16 @@ test('stores automatic PAPER entry evidence without pretending it was an operato
   assert.equal(paper.execution.actualEntryPrice, 101);
   assert.equal(paper.execution.referenceLagMs, 3_000);
   assert.equal(paper.execution.paperOnly, true);
-  assert.throws(() => store.confirmPaperExecution(record.id, {
+
+  const lateStore = createHistoryStore({ id: () => 'paper-entry-late' });
+  const late = lateStore.recordDecision({
+    decision: { direction: 'BUY', releaseEligible: true, blocked: false, clickTime: '2026-09-14T12:00:00.000Z' },
+    data: { asset: 'BTC/USD', timeframe: '1min', price: 100 },
+    context: { expirySeconds: 60, monitorCycleId: 'autonomous-paper-monitor-v1:2' }
+  });
+  assert.throws(() => lateStore.confirmPaperExecution(late.id, {
     referenceTimestamp: '2026-09-14T12:00:31.000Z', referencePrice: 102
-  }), /PAPER_CONFIRMED|janela congelada/);
+  }), /janela congelada/);
 });
 
 test('metrics expose WAIT volume separately from completed outcomes', () => {
