@@ -15,6 +15,20 @@ function normalizeRows(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.ticks)) return payload.ticks;
   if (Array.isArray(payload?.data)) return payload.data;
+
+  // Biquote /api/latest returns an object keyed by symbol, e.g.
+  // { EURUSD: { ...tick }, GBPUSD: { ...tick } }.
+  // Preserve support for array/envelope shapes while also normalizing the
+  // documented keyed-map response into rows with an explicit symbol field.
+  if (payload && typeof payload === 'object') {
+    return Object.entries(payload)
+      .filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value))
+      .map(([symbol, value]) => ({
+        ...value,
+        symbol: String(value.symbol || symbol).toUpperCase()
+      }));
+  }
+
   return [];
 }
 
@@ -57,7 +71,7 @@ export function assessBiquoteForexCommission(payload, { now = Date.now() } = {})
 
   const approved = assets.every((item) => item.approved);
   return Object.freeze({
-    version: 'biquote-forex-bounded-commission-v1',
+    version: 'biquote-forex-bounded-commission-v2',
     provider: 'BIQUOTE',
     mode: 'READ_ONLY_BOUNDED_QUALIFICATION',
     freshnessContractMs: FROZEN_FRESHNESS_MS,
@@ -89,7 +103,7 @@ export async function runBiquoteForexCommission({ fetchImpl = fetch, now = Date.
     });
     if (!response.ok) {
       return {
-        version: 'biquote-forex-bounded-commission-v1',
+        version: 'biquote-forex-bounded-commission-v2',
         provider: 'BIQUOTE',
         mode: 'READ_ONLY_BOUNDED_QUALIFICATION',
         requestBudget: 1,
@@ -113,7 +127,7 @@ export async function runBiquoteForexCommission({ fetchImpl = fetch, now = Date.
     };
   } catch (error) {
     return {
-      version: 'biquote-forex-bounded-commission-v1',
+      version: 'biquote-forex-bounded-commission-v2',
       provider: 'BIQUOTE',
       mode: 'READ_ONLY_BOUNDED_QUALIFICATION',
       requestBudget: 1,
