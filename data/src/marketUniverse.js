@@ -14,8 +14,8 @@ export const MARKET_UNIVERSES = Object.freeze({
 });
 
 export const WILL_PHASE1_FX_CRYPTO = Object.freeze([
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'NZD/USD', 'USD/CAD', 'GBP/JPY',
-  'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'
+  'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD',
+  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'NZD/USD', 'USD/CAD', 'GBP/JPY'
 ]);
 
 function className(value = 'ALL') {
