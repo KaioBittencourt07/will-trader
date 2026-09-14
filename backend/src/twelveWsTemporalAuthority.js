@@ -30,8 +30,9 @@ export function evaluateTwelveWsTemporalAuthority({
   const receivedAtMs = Number.isFinite(Date.parse(tick?.receivedAt ?? '')) ? Date.parse(tick.receivedAt) : null;
   const eventAgeMs = eventTimestamp === null ? null : now - eventTimestamp;
   const receiveAgeMs = receivedAtMs === null ? null : now - receivedAtMs;
-  const comparableToReceiveClock = eventTimestamp !== null && receivedAtMs !== null;
-  const clockSkewMs = comparableToReceiveClock ? receivedAtMs - eventTimestamp : null;
+  const rawClockComparable = eventTimestamp !== null && receivedAtMs !== null;
+  const comparableToReceiveClock = provenanceVerified === true && rawClockComparable;
+  const clockSkewMs = rawClockComparable ? receivedAtMs - eventTimestamp : null;
 
   if (!wsHealth || typeof wsHealth !== 'object') reasons.push('WS_HEALTH_MISSING');
   if (wsHealth?.mode !== 'SHADOW_OBSERVABILITY') reasons.push('WS_MODE_UNEXPECTED');
@@ -64,6 +65,7 @@ export function evaluateTwelveWsTemporalAuthority({
     symbol: expectedSymbol || null,
     timestampAuthority: admitted ? 'WS_PROVIDER_EVENT_TIME' : 'UNRESOLVED',
     provenanceVerified: provenanceVerified === true,
+    rawClockComparable,
     comparableToReceiveClock,
     authorityGate,
     freshnessGate,
