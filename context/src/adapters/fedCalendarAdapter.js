@@ -22,14 +22,37 @@ function stripHtml(html = '') {
     .replace(/\n{2,}/g, '\n');
 }
 
+function validDay(value) {
+  const day = Number(value);
+  return Number.isInteger(day) && day >= 1 && day <= 31 ? day : null;
+}
+
+/**
+ * The policy statement / press-conference time belongs to the decision day.
+ * For a two-day meeting such as "September 15 - 16", the relevant day is the
+ * second day (16), not the first meeting day (15).
+ */
+function decisionDayFromFomcBlock(block = '') {
+  const twoDay = String(block).match(/Two-day meeting[^\d]{0,80}(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})/i);
+  if (twoDay) return validDay(twoDay[2]);
+
+  const pressConferenceDay = String(block).match(/Press Conference[\s\S]{0,80}?\b(\d{1,2})\b/i);
+  if (pressConferenceDay) return validDay(pressConferenceDay[1]);
+
+  const standaloneDays = [...String(block).matchAll(/(?:^|\n)\s*([1-9]|[12]\d|3[01])\s*(?=\n|$)/g)]
+    .map((match) => validDay(match[1]))
+    .filter(Boolean);
+  return standaloneDays.length ? standaloneDays[standaloneDays.length - 1] : null;
+}
+
 export function parseFedMonthlyCalendar(html = '', { year, month } = {}) {
   const text = stripHtml(html);
   const events = [];
-  const regex = /(\d{1,2}:\d{2}\s*[ap]\.m\.)\s*\n?\s*FOMC Meeting\b[\s\S]{0,240}?\b(\d{1,2})\b/gi;
+  const regex = /(\d{1,2}:\d{2}\s*[ap]\.m\.)\s*\n?\s*FOMC Meeting\b([\s\S]{0,320})/gi;
   for (const match of text.matchAll(regex)) {
     const clock = parseAmPm(match[1]);
-    const day = Number(match[2]);
-    if (!clock || !Number.isFinite(day)) continue;
+    const day = decisionDayFromFomcBlock(match[2]);
+    if (!clock || !day) continue;
     const timestamp = zonedDateTimeToIso({ year: Number(year), month: Number(month), day, hour: clock.hour, minute: clock.minute, timeZone: 'America/New_York' });
     if (!timestamp) continue;
     events.push({
