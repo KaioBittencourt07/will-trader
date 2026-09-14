@@ -4,6 +4,7 @@ import { buildConfidenceCalibration, buildLearningReadiness } from '../../../lea
 import { buildLearningLab } from '../../../learning/src/learningEngine.js';
 import { prospectiveOutcomeDue, resolveProspectiveOutcome } from '../../../learning/src/outcomeResolver.js';
 import { getLocalRelaySnapshot, getLocalRelayStatus, getMarketDataEngine } from './market.js';
+import { isValidEvidenceRecord } from '../evidenceAdmission.js';
 
 const router = Router();
 
@@ -13,18 +14,8 @@ function storeFor(req) {
   return store;
 }
 
-function isValidEvidenceRecord(record = {}) {
-  const quality = record.metadata?.dataQuality ?? {};
-  const blockReasons = Array.isArray(record.metadata?.blockReasons) ? record.metadata.blockReasons : [];
-  const technicalBlock = blockReasons.some((reason) => /^(DATA_QUALITY_|Dados atrasados\.|AUTHORITATIVE_FRESHNESS_REQUIRED|AUTHORITATIVE_FRESHNESS_MISSING|TIMESTAMP_AUTHORITY_NOT_APPROVED|AUTHORITATIVE_FRESHNESS_NOT_APPROVED|TIMESTAMP_AUTHORITY_UNVERIFIED|TIMESTAMP_AUTHORITY_DATA_INVALID|EVENT_OLDER_THAN_FROZEN_CONTRACT|MARKET_AGE_UNAVAILABLE)$/.test(String(reason)));
-  const invalidStatus = new Set(['STALE', 'MARKET_CLOSED', 'DATA_INVALID', 'INVALID']).has(String(quality.status ?? '').toUpperCase());
-  const admission = record.metadata?.context?.marketAdmission ?? record.metadata?.marketAdmission ?? null;
-  const admissionRejected = admission?.state === 'REJECTED';
-  return quality.valid !== false && !technicalBlock && !invalidStatus && !admissionRejected;
-}
-
 function evidenceRecords(store) {
-  return store.list().filter(isValidEvidenceRecord);
+  return store.list().filter((record) => isValidEvidenceRecord(record, { requireMarketAdmission: true }));
 }
 
 function learningSnapshot(store) {
@@ -53,7 +44,7 @@ router.post('/history/:id/outcome', (req, res) => {
     const { outcome, exitPrice = null, ...metadata } = req.body ?? {};
     const current = storeFor(req).list().find((item) => item.id === req.params.id);
     if (!current) throw new Error('Sinal não encontrado.');
-    if (!isValidEvidenceRecord(current)) throw new Error('Registro técnico/inválido não pode receber resultado operacional.');
+    if (!isValidEvidenceRecord(current, { requireMarketAdmission: true })) throw new Error('Registro técnico/inválido não pode receber resultado operacional.');
     if (current.execution?.status !== 'CONFIRMED') {
       throw new Error('Confirme a entrada realmente executada antes de registrar WIN ou LOSS.');
     }
@@ -72,7 +63,7 @@ router.post('/history/:id/executed', (req, res) => {
   try {
     const current = storeFor(req).list().find((item) => item.id === req.params.id);
     if (!current) throw new Error('Sinal não encontrado.');
-    if (!isValidEvidenceRecord(current)) throw new Error('Registro técnico/inválido não pode ser confirmado como execução.');
+    if (!isValidEvidenceRecord(current, { requireMarketAdmission: true })) throw new Error('Registro técnico/inválido não pode ser confirmado como execução.');
     const record = storeFor(req).confirmExecution(req.params.id, req.body ?? {});
     return res.json({ ok: true, record });
   } catch (error) {
