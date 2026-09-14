@@ -40,6 +40,13 @@ test('parses the official Fed monthly FOMC event with explicit published time', 
   assert.equal(events[0].timestamp, '2026-09-16T18:00:00.000Z');
 });
 
+test('uses the second day as FOMC decision day instead of the meeting start day', () => {
+  const html = '<div>2:00 p.m.</div><div>FOMC Meeting</div><div>Two-day meeting, December 8 - 9</div><div>Press Conference</div><div>9</div>';
+  const events = parseFedMonthlyCalendar(html, { year: 2026, month: 12 });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].timestamp, '2026-12-09T19:00:00.000Z');
+});
+
 test('normalizes and deduplicates GDELT article list without inventing impact', () => {
   const items = parseGdeltArticleList({ articles: [
     { title: 'Bitcoin reacts before Federal Reserve meeting', url: 'https://example.com/a', domain: 'example.com', seendate: '20260914T160000Z' },
