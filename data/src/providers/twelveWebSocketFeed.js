@@ -52,6 +52,48 @@ function statusSymbols(value) {
   return normalizeSymbols(value.map((entry) => typeof entry === 'string' ? entry : entry?.symbol));
 }
 
+function emptyEventTimeDiagnostic() {
+  return {
+    acceptedTicks: 0,
+    repeatedTimestampPriceChanges: 0,
+    timestampRegressions: 0,
+    minuteAlignedTicks: 0,
+    firstEventTimestamp: null,
+    lastEventTimestamp: null,
+    minEventReceiveSkewMs: null,
+    maxEventReceiveSkewMs: null,
+    maxAbsEventReceiveSkewMs: null,
+    distinctEventTimestamps: new Set()
+  };
+}
+
+function publicEventTimeDiagnostic(diagnostic) {
+  if (!diagnostic) return {
+    acceptedTicks: 0,
+    distinctEventTimestamps: 0,
+    repeatedTimestampPriceChanges: 0,
+    timestampRegressions: 0,
+    minuteAlignedTicks: 0,
+    firstEventTimestamp: null,
+    lastEventTimestamp: null,
+    minEventReceiveSkewMs: null,
+    maxEventReceiveSkewMs: null,
+    maxAbsEventReceiveSkewMs: null
+  };
+  return {
+    acceptedTicks: diagnostic.acceptedTicks,
+    distinctEventTimestamps: diagnostic.distinctEventTimestamps.size,
+    repeatedTimestampPriceChanges: diagnostic.repeatedTimestampPriceChanges,
+    timestampRegressions: diagnostic.timestampRegressions,
+    minuteAlignedTicks: diagnostic.minuteAlignedTicks,
+    firstEventTimestamp: diagnostic.firstEventTimestamp,
+    lastEventTimestamp: diagnostic.lastEventTimestamp,
+    minEventReceiveSkewMs: diagnostic.minEventReceiveSkewMs,
+    maxEventReceiveSkewMs: diagnostic.maxEventReceiveSkewMs,
+    maxAbsEventReceiveSkewMs: diagnostic.maxAbsEventReceiveSkewMs
+  };
+}
+
 export function createTwelveWebSocketFeed({
   apiKey,
   symbols = [],
@@ -71,6 +113,7 @@ export function createTwelveWebSocketFeed({
 } = {}) {
   const configuredSymbols = normalizeSymbols(symbols);
   const latestTicks = new Map();
+  const eventTimeDiagnostics = new Map(configuredSymbols.map((symbol) => [symbol, emptyEventTimeDiagnostic()]));
   const acceptedSymbols = new Set();
   const rejectedSymbols = new Set();
   const metrics = {
@@ -145,6 +188,30 @@ export function createTwelveWebSocketFeed({
     }, delay);
   }
 
+  function recordEventTimeObservation(symbol, previous, timestamp, price, receivedAt) {
+    const diagnostic = eventTimeDiagnostics.get(symbol) ?? emptyEventTimeDiagnostic();
+    if (previous) {
+      if (timestamp < previous.eventTimestamp) diagnostic.timestampRegressions += 1;
+      if (timestamp === previous.eventTimestamp && price !== previous.price) diagnostic.repeatedTimestampPriceChanges += 1;
+    }
+    const skewMs = receivedAt - timestamp;
+    diagnostic.acceptedTicks += 1;
+    diagnostic.distinctEventTimestamps.add(timestamp);
+    if (timestamp % 60_000 === 0) diagnostic.minuteAlignedTicks += 1;
+    diagnostic.firstEventTimestamp ??= timestamp;
+    diagnostic.lastEventTimestamp = timestamp;
+    diagnostic.minEventReceiveSkewMs = diagnostic.minEventReceiveSkewMs === null
+      ? skewMs
+      : Math.min(diagnostic.minEventReceiveSkewMs, skewMs);
+    diagnostic.maxEventReceiveSkewMs = diagnostic.maxEventReceiveSkewMs === null
+      ? skewMs
+      : Math.max(diagnostic.maxEventReceiveSkewMs, skewMs);
+    diagnostic.maxAbsEventReceiveSkewMs = diagnostic.maxAbsEventReceiveSkewMs === null
+      ? Math.abs(skewMs)
+      : Math.max(diagnostic.maxAbsEventReceiveSkewMs, Math.abs(skewMs));
+    eventTimeDiagnostics.set(symbol, diagnostic);
+  }
+
   function handleMessage(event) {
     metrics.messagesReceived += 1;
     metrics.lastMessageAt = new Date(now()).toISOString();
@@ -185,6 +252,7 @@ export function createTwelveWebSocketFeed({
       return;
     }
     if (previous && timestamp - previous.eventTimestamp > gapAfterMs) metrics.gaps += 1;
+    recordEventTimeObservation(symbol, previous, timestamp, price, receivedAt);
     latestTicks.set(symbol, { symbol, price, eventTimestamp: timestamp, receivedAt, fingerprint });
     metrics.ticksAccepted += 1;
     const receivedAtIso = new Date(receivedAt).toISOString();
@@ -293,7 +361,8 @@ export function createTwelveWebSocketFeed({
         eventTimestamp: tick?.eventTimestamp ?? null,
         receivedAt: tick ? new Date(tick.receivedAt).toISOString() : null,
         ageMs,
-        fresh: Boolean(tick && ageMs <= staleAfterMs)
+        fresh: Boolean(tick && ageMs <= staleAfterMs),
+        eventTimeDiagnostics: publicEventTimeDiagnostic(eventTimeDiagnostics.get(symbol))
       };
     });
     const freshSymbols = ticks.filter((tick) => tick.fresh).length;
