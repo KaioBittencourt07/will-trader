@@ -2,8 +2,9 @@ import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSoc
 import { diagnoseSaxoChartSnapshotStructure, transformSaxoBidAskChartsOffline, transformSaxoChartsOffline, classifySaxoFailure } from '../../data/src/providers/saxoQualification.js';
 import { composeSaxoBidAskIndependentQuote, composeSaxoClosedOhlcIndependentQuote } from '../../data/src/crossProviderComposition.js';
 
-export const CROSS_PROVIDER_COMMISSIONING_VERSION = 'cross-provider-readonly-commissioning-v1';
-const CHAMPION_COMPOSITION_VERSION = 'saxo-closed-ohlc-independent-quote-v1';
+export const CROSS_PROVIDER_COMMISSIONING_VERSION = 'cross-provider-readonly-commissioning-v2';
+const CHAMPION_COMPOSITION_VERSION = 'saxo-closed-ohlc-independent-quote-v2';
+const CHAMPION_MARKET_REPRESENTATION = 'DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE_AND_TEMPORAL_AUTHORITY';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const safeCode = (error) => error?.code || classifySaxoFailure(error);
 
@@ -61,7 +62,8 @@ export function describeWebSocketRuntime(WebSocketCtor = globalThis.WebSocket) {
 
 export async function runCrossProviderCommissioning({ env = process.env, fetchImpl = fetch,
   webSocketFactory = typeof globalThis.WebSocket === 'function' ? (url) => new globalThis.WebSocket(url) : null,
-  wait = sleep, now = () => Date.now(), durationMs = 15_000, saxoSubscribe = subscribeSaxoSim } = {}) {
+  wait = sleep, now = () => Date.now(), durationMs = 15_000, saxoSubscribe = subscribeSaxoSim,
+  quoteTemporalAuthority = null } = {}) {
   const configuration = commissioningConfiguration(env);
   const base = { commissioningVersion: CROSS_PROVIDER_COMMISSIONING_VERSION, configuration, canonicalSymbol: 'EUR/USD', timeframe: '1min',
     gateMs: 30_000, decisionImpact: 'NONE', prospectivePaperAuthorized: false, ordersExecuted: 0, sessions: 0,
@@ -94,19 +96,24 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
   if (twelveHealth.successfulConnections !== 1) reasons.push('TWELVE_CONNECTION_COUNT_INVALID');
   if (twelveHealth.subscriptionsRequested !== 1 || twelveHealth.subscriptionsAccepted !== 1) reasons.push('TWELVE_SUBSCRIPTION_INVALID');
   if (twelveHealth.reconnects > 1) reasons.push('TWELVE_RECONNECT_BUDGET_EXCEEDED');
+  if (!quoteTemporalAuthority) reasons.push('INDEPENDENT_TEMPORAL_AUTHORITY_REQUIRED');
+
   let composition = null;
   if (saxoSnapshot && twelveHealth.symbols?.length) {
+    const compositionArgs = { saxoSnapshot, quoteHealth: twelveHealth, quoteTemporalAuthority, now: now(), maxAgeMs: 30_000 };
     composition = saxoSnapshot.marketDataRepresentation === 'BID_ASK_OHLC'
-      ? composeSaxoBidAskIndependentQuote({ saxoSnapshot, quoteHealth: twelveHealth, now: now(), maxAgeMs: 30_000 })
-      : composeSaxoClosedOhlcIndependentQuote({ saxoSnapshot, quoteHealth: twelveHealth, now: now(), maxAgeMs: 30_000 });
+      ? composeSaxoBidAskIndependentQuote(compositionArgs)
+      : composeSaxoClosedOhlcIndependentQuote(compositionArgs);
     if (composition.compositionState !== 'COMPOSABLE_OFFLINE') reasons.push(...composition.reasonCodes,
       ...(composition.compositionState === 'PROVIDER_EVIDENCE_COMPOSABLE_OFFLINE' ? ['CHAMPION_INCOMPATIBLE_BID_ASK'] : []));
   }
+
   const championCompositionReady = composition?.compositionVersion === CHAMPION_COMPOSITION_VERSION &&
     composition?.compositionState === 'COMPOSABLE_OFFLINE' &&
-    composition?.marketDataRepresentation === 'DIRECT_OHLC_PLUS_INDEPENDENT_QUOTE' &&
+    composition?.marketDataRepresentation === CHAMPION_MARKET_REPRESENTATION &&
     composition?.championCompatible === true && composition?.separation?.championBypass !== true;
   const passed = reasons.length === 0 && championCompositionReady;
+
   return { ...base, result: passed ? 'READONLY_COMMISSIONING_PASSED' : 'BLOCKED_EXTERNAL', sessions: 1,
     reasonCodes: [...new Set(reasons)], saxo: { environment: 'sim', subscriptions: 1, result: saxoSnapshot ? 'OBSERVED' : 'BLOCKED',
       completeness: saxoSnapshot?.candleCompleteness ?? 'UNVERIFIED', latestClosedCandleTimestamp: saxoSnapshot?.latestClosedCandleTimestamp ?? null,
@@ -114,7 +121,14 @@ export async function runCrossProviderCommissioning({ env = process.env, fetchIm
     twelve: { connected: twelveHealth.connected, connections: twelveHealth.successfulConnections, subscriptions: twelveHealth.subscriptionsAccepted,
       reconnects: twelveHealth.reconnects, transportError: twelveHealth.lastError || null,
       transportDiagnostic: twelveHealth.lastTransportDiagnostic,
-      eventTimestamp: composition?.quoteTimestamp ?? null, quoteAgeMs: composition?.quoteAgeMs ?? null },
+      eventTimestamp: composition?.quoteTimestamp ?? null, quoteAgeMs: composition?.quoteAgeMs ?? null,
+      role: 'QUOTE_PRICE_OBSERVATION_ONLY' },
+    temporalAuthority: quoteTemporalAuthority ? {
+      source: quoteTemporalAuthority.source ?? null,
+      timestampAuthority: quoteTemporalAuthority.timestampAuthority ?? null,
+      authorityGate: quoteTemporalAuthority.authorityGate ?? 'UNVERIFIED',
+      freshnessGate: quoteTemporalAuthority.freshnessGate ?? 'UNVERIFIED'
+    } : { source: null, timestampAuthority: 'UNRESOLVED', authorityGate: 'FAIL', freshnessGate: 'UNVERIFIED' },
     composition: composition ? { state: composition.compositionState, providerEvidenceValid: composition.providerEvidenceValid,
       marketDataRepresentation: composition.marketDataRepresentation, championCompatible: composition.championCompatible,
       valid: composition.valid, decisionImpact: composition.decisionImpact, prospectivePaperAuthorized: composition.prospectivePaperAuthorized,
