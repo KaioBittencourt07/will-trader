@@ -83,9 +83,23 @@ function canonicalProof(canonical, fingerprint, registryClaim) {
   };
 }
 
+function coinbaseFeedFor(app, asset) {
+  const feeds = app.locals.coinbaseTemporalFeeds;
+  if (feeds instanceof Map) return feeds.get(asset) ?? null;
+  if (feeds && typeof feeds === 'object') return feeds[asset] ?? null;
+  return asset === 'BTC/USD' ? app.locals.coinbaseTemporalFeed ?? null : null;
+}
+
+function coinbaseTemporalSnapshot(app) {
+  const feeds = app.locals.coinbaseTemporalFeeds;
+  if (!(feeds instanceof Map)) return app.locals.coinbaseTemporalFeed?.health?.() ?? null;
+  return Object.fromEntries([...feeds.entries()].map(([asset, feed]) => [asset, feed.health()]));
+}
+
 function operationalSnapshotFor(asset, snapshot, app, requiredBars) {
-  if (asset !== 'BTC/USD' || !app.locals.coinbaseTemporalFeed) return snapshot;
-  const health = app.locals.coinbaseTemporalFeed.health();
+  const feed = coinbaseFeedFor(app, asset);
+  if (!feed) return snapshot;
+  const health = feed.health();
   if (health.enabled !== true) return snapshot;
   return composeCoinbaseTwelveOperationalSnapshot({
     twelveSnapshot: snapshot,
@@ -123,7 +137,7 @@ router.get('/opportunities', async (req, res) => {
           completesCycle: false
         }
       : scheduler.take({
-          assetClass: req.query.assetClass || 'ALL',
+          assetClass: req.query.assetClass || 'FX_CRYPTO',
           limit: Math.min(Number(req.query.limit || scanLimit()), scanLimit())
         }));
   } catch (error) {
@@ -165,7 +179,7 @@ router.get('/opportunities', async (req, res) => {
             nextAsset: explicitAssets[1] ?? null,
             completesCycle: explicitAssets.length === 1
           }
-        : relayScheduler.take({ assetClass: req.query.assetClass || 'ALL', limit: 1 });
+        : relayScheduler.take({ assetClass: req.query.assetClass || 'FX_CRYPTO', limit: 1 });
       const asset = activeSelection.assets[0];
 
       try {
@@ -372,10 +386,10 @@ router.get('/opportunities', async (req, res) => {
       scanned: analyses.length,
       unavailable,
       coverage: activeSelection,
-      researchUniverse: 'canonical-market-v1',
+      researchUniverse: activeSelection.assetClass === 'FX_CRYPTO' ? 'phase1-fx-crypto-v1' : 'canonical-market-v1',
       execution: scannerExecutionBoundary(),
       relayMode,
-      coinbaseTemporal: req.app.locals.coinbaseTemporalFeed?.health?.() ?? null,
+      coinbaseTemporal: coinbaseTemporalSnapshot(req.app),
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
       scannerStudyRegistry: scannerStudyRegistry.snapshot(),
       roundState,
