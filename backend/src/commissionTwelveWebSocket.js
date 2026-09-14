@@ -46,12 +46,12 @@ if (!apiKey) {
   setTimeout(() => {
     const checkedAt = Date.now();
     const health = feed.health();
-    const semanticQualification = qualifyTwelveWsEventTimeSemantic();
+    const semanticQualification = qualifyTwelveWsEventTimeSemantic({ wsHealth: health, symbol });
     const temporalAuthority = evaluateTwelveWsTemporalAuthority({
       wsHealth: health,
       symbol,
       now: checkedAt,
-      provenanceVerified: semanticQualification.provenanceVerified
+      provenanceVerified: semanticQualification.canEvaluateFrozenFreshness === true
     });
 
     feed.stop();
@@ -59,12 +59,15 @@ if (!apiKey) {
     const transportApproved = health.successfulConnections > 0
       && health.subscriptionsAccepted > 0
       && health.ticksAccepted > 0;
-    const temporalApproved = temporalAuthority.authorityGate === 'PASS'
+    const semanticApproved = semanticQualification.canEvaluateFrozenFreshness === true;
+    const temporalApproved = semanticApproved
+      && temporalAuthority.authorityGate === 'PASS'
       && temporalAuthority.freshnessGate === 'PASS';
 
     console.log(JSON.stringify({
       status: transportApproved && temporalApproved ? 'APPROVED' : 'BLOCKED',
       transportApproved,
+      semanticApproved,
       temporalApproved,
       symbol,
       apiKeySource,
