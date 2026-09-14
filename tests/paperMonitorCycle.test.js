@@ -17,19 +17,54 @@ test('monitor cycle applies the same configured timeout to diagnostic and opport
       requests.push({ url: String(url), timeoutMs: options.signal.timeoutMs });
       return { ok: true, json: async () => String(url).includes('/diagnostic')
         ? { ok: true, diagnostic: { status: 'HEALTHY' }, providerEfficiency: { externalRequests: 2, cacheMisses: 1, externalLatencyMs: 12, creditsEstimated: 2 } }
-        : { ok: true, scanned: 1, recommendation: { asset: 'EUR/USD' }, providerEfficiency: { cacheHits: 1 } } };
+        : { ok: true, scanned: 1, recommendation: { asset: 'EUR/USD' }, roundState: { state: 'CANDIDATE_AVAILABLE' }, coverage: { assets: ['EUR/USD'] }, unavailable: [], providerEfficiency: { cacheHits: 1 } } };
     }
   });
   assert.deepEqual(requests.map((request) => request.timeoutMs), [55_000, 55_000]);
   assert.match(requests[1].url, /monitorCycleId=cycle-1/);
   assert.deepEqual(result, {
-    ok: true, status: null, scanned: 1, recommendation: 'EUR/USD',
+    ok: true, status: null, scanned: 1, recommendation: 'EUR/USD', roundState: 'CANDIDATE_AVAILABLE', coverage: ['EUR/USD'], unavailable: 0,
     providerEfficiency: {
       version: 'provider-efficiency-v1', scope: 'paper-monitor-cycle', externalRequests: 2,
       cacheHits: 1, cacheMisses: 1, deduplicated: 0, blockedByCooldown: 0, rateLimitEvents: 0, limiterWaitMs: 0,
       externalLatencyMs: 12, creditsEstimated: 2, creditsEstimatedIsOfficial: false
     }
   });
+});
+
+test('multiasset PAPER cycle scans one bounded FX_CRYPTO batch without broker execution', async () => {
+  const requests = [];
+  const result = await runPaperMonitorCycle({
+    baseUrl: 'http://127.0.0.1:3102', cycleId: 'cycle-multi-1', timeout: validTimeout,
+    multiAsset: true, assetClass: 'FX_CRYPTO', limit: 4,
+    abortSignalFactory: (timeoutMs) => ({ timeoutMs }),
+    fetchImpl: async (url, options) => {
+      requests.push({ url: String(url), timeoutMs: options.signal.timeoutMs });
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          scanned: 3,
+          recommendation: { asset: 'ETH/USD' },
+          roundState: { state: 'CANDIDATE_AVAILABLE' },
+          coverage: { assets: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD'] },
+          unavailable: [{ asset: 'SOL/USD', error: 'DUPLICATE_CANONICAL_STUDY' }],
+          execution: { automatedBrokerExecution: false },
+          providerEfficiency: { cacheHits: 4 }
+        })
+      };
+    }
+  });
+
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].url, /assetClass=FX_CRYPTO/);
+  assert.match(requests[0].url, /limit=4/);
+  assert.match(requests[0].url, /monitorCycleId=cycle-multi-1/);
+  assert.deepEqual(result.coverage, ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD']);
+  assert.equal(result.scanned, 3);
+  assert.equal(result.unavailable, 1);
+  assert.equal(result.recommendation, 'ETH/USD');
+  assert.equal(result.roundState, 'CANDIDATE_AVAILABLE');
 });
 
 test('invalid timeout config does not issue a request or create a recommendation', async () => {
@@ -70,4 +105,3 @@ test('a timeout remains a fail-closed idempotent monitor failure with no synthet
     assert.equal((await monitor.runOnce()).status, 'IDEMPOTENT');
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
-
