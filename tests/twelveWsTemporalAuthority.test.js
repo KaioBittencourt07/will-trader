@@ -26,6 +26,8 @@ test('fails closed when WS event-time provenance is not verified', () => {
   assert.equal(result.authorityGate, 'FAIL');
   assert.equal(result.freshnessGate, 'UNVERIFIED');
   assert.equal(result.timestampAuthority, 'UNRESOLVED');
+  assert.equal(result.rawClockComparable, true);
+  assert.equal(result.comparableToReceiveClock, false);
   assert.ok(result.reasons.includes('WS_EVENT_TIME_PROVENANCE_NOT_VERIFIED'));
 });
 
@@ -40,6 +42,8 @@ test('approves fresh WS event time only when provenance is explicitly verified',
   assert.equal(result.authorityGate, 'PASS');
   assert.equal(result.freshnessGate, 'PASS');
   assert.equal(result.timestampAuthority, 'WS_PROVIDER_EVENT_TIME');
+  assert.equal(result.rawClockComparable, true);
+  assert.equal(result.comparableToReceiveClock, true);
   assert.equal(result.decisionImpact, 'ALLOW_ANALYSIS_ONLY');
 });
 
