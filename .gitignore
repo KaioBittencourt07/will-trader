@@ -1,3 +1,6 @@
 # WILL runtime / commissioning artifacts
 /backend/data/
 /data/commissioning-*/
+
+# Local secrets - never commit real credentials
+/backend/src/localSecrets.js
