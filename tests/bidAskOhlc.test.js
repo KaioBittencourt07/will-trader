@@ -11,6 +11,10 @@ const input = (overrides = {}) => ({ chartResponse: { ChartInfo: { Horizon: 1, F
   Data: [sample()] }, sampleEvidence: 'SUBSCRIPTION_INITIAL_SNAPSHOT', receivedAt: new Date(NOW).toISOString(), ...overrides });
 const quote = () => ({ mode: 'SHADOW_OBSERVABILITY', connected: true, subscriptionsAccepted: 1, subscriptionsRejected: 0,
   symbols: [{ symbol: 'EUR/USD', price: 1.1105, eventTimestamp: NOW - 5_000, receivedAt: new Date(NOW - 1_000).toISOString() }] });
+const temporalAuthority = () => ({
+  source: 'synthetic-independent-time-source', symbol: 'EUR/USD', timestampAuthority: 'PROVIDER_EVENT_TIME',
+  authorityGate: 'PASS', freshnessGate: 'PASS', freshnessContractMs: 30_000, eventTimestamp: NOW - 5_000
+});
 
 test('documentary BidAsk is valid provider evidence but Champion incompatible', () => {
   const value = transformSaxoBidAskChartsOffline(input());
@@ -41,8 +45,11 @@ test('single-OHLC transformer remains backward compatible and separate', () => {
   assert.throws(() => transformSaxoChartsOffline(input()), /SAXO_OHLC_MALFORMED/);
 });
 
-test('BidAsk plus fresh independent quote remains semantic-only and non-decisional', () => {
-  const result = composeSaxoBidAskIndependentQuote({ saxoSnapshot: transformSaxoBidAskChartsOffline(input()), quoteHealth: quote(), now: NOW });
+test('BidAsk plus qualified independent quote/time remains semantic-only and non-decisional', () => {
+  const result = composeSaxoBidAskIndependentQuote({
+    saxoSnapshot: transformSaxoBidAskChartsOffline(input()),
+    quoteHealth: quote(), quoteTemporalAuthority: temporalAuthority(), now: NOW
+  });
   assert.equal(result.compositionState, 'PROVIDER_EVIDENCE_COMPOSABLE_OFFLINE');
   assert.equal(result.providerEvidenceValid, true); assert.equal(result.championCompatible, false); assert.equal(result.valid, false);
   assert.equal(result.decisionImpact, 'NONE'); assert.equal(result.prospectivePaperAuthorized, false); assert.equal(result.ordersExecuted, 0);
@@ -50,6 +57,12 @@ test('BidAsk plus fresh independent quote remains semantic-only and non-decision
   assert.equal('direction' in result, false); assert.equal('score' in result, false);
   assert.deepEqual(result.separation, { quoteProviderDeclaresCandleClosed: false, ohlcProviderDeclaresQuoteFresh: false,
     representationConversion: false, midpointCreated: false, selectedSide: false, championBypass: false });
+});
+
+test('BidAsk composition fails closed without independent temporal authority', () => {
+  const result = composeSaxoBidAskIndependentQuote({ saxoSnapshot: transformSaxoBidAskChartsOffline(input()), quoteHealth: quote(), now: NOW });
+  assert.equal(result.compositionState, 'INVALID');
+  assert.ok(result.reasonCodes.includes('QUOTE_TEMPORAL_AUTHORITY_MISSING'));
 });
 
 test('valid BidAsk provider evidence cannot enter the current Champion market-data gate', async () => {
