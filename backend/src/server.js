@@ -26,6 +26,7 @@ import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSoc
 import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
 import { prepareHistoryContinuity } from './historyContinuity.js';
+import { scannerStudyRegistry } from './scannerStudyRegistry.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,6 +77,7 @@ app.locals.historyStore = createHistoryStore({
   filePath: historyFilePath
 });
 app.locals.historyContinuity = historyContinuity;
+app.locals.scannerStudyRegistryHydration = scannerStudyRegistry.hydrate(app.locals.historyStore.list());
 app.locals.paperMonitor = createAutonomousPaperMonitor({
   // Opt-in only. This prevents background scans from consuming provider budget
   // unless the operator explicitly enables the paper observation scheduler.
@@ -158,6 +160,10 @@ app.get('/health', (_req, res) => {
       backupCreated: historyContinuity.backupCreated,
       persistent: true
     },
+    scannerStudyRegistry: {
+      ...scannerStudyRegistry.snapshot(),
+      hydration: app.locals.scannerStudyRegistryHydration
+    },
     paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
     macroContextEnabled,
     macroContext: app.locals.macroContextAdapter?.health?.() ?? null,
@@ -182,6 +188,7 @@ app.use('/api', researchRouter);
 const server = app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
   console.log(`WILL history loaded: ${app.locals.historyStore.list().length} record(s); backup=${historyContinuity.backupCreated}`);
+  console.log(`WILL scanner dedup hydrated: ${app.locals.scannerStudyRegistryHydration.loaded} fingerprint(s); registry=${scannerStudyRegistry.snapshot().size}`);
   app.locals.twelveWebSocketFeed.start();
   for (const feed of app.locals.coinbaseTemporalFeeds.values()) feed.start();
   app.locals.biquoteForexFeed.start();
