@@ -16,6 +16,7 @@ import {
 import { scannerStudyRegistry } from '../scannerStudyRegistry.js';
 import { deriveScannerRoundState } from '../scannerRoundState.js';
 import { composeCoinbaseTwelveOperationalSnapshot } from '../coinbaseTwelveOperationalSnapshot.js';
+import { composeBiquoteTwelveOperationalSnapshot } from '../biquoteTwelveOperationalSnapshot.js';
 
 const router = Router();
 const scheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
@@ -97,16 +98,31 @@ function coinbaseTemporalSnapshot(app) {
 }
 
 function operationalSnapshotFor(asset, snapshot, app, requiredBars) {
-  const feed = coinbaseFeedFor(app, asset);
-  if (!feed) return snapshot;
-  const health = feed.health();
-  if (health.enabled !== true) return snapshot;
-  return composeCoinbaseTwelveOperationalSnapshot({
-    twelveSnapshot: snapshot,
-    coinbaseHealth: health,
-    now: Date.now(),
-    requiredBars
-  });
+  const coinbaseFeed = coinbaseFeedFor(app, asset);
+  if (coinbaseFeed) {
+    const health = coinbaseFeed.health();
+    if (health.enabled === true) {
+      return composeCoinbaseTwelveOperationalSnapshot({
+        twelveSnapshot: snapshot,
+        coinbaseHealth: health,
+        now: Date.now(),
+        requiredBars
+      });
+    }
+  }
+
+  const biquoteFeed = app.locals.biquoteForexFeed;
+  const biquoteHealth = biquoteFeed?.getAssetHealth?.(asset) ?? null;
+  if (biquoteHealth?.enabled === true) {
+    return composeBiquoteTwelveOperationalSnapshot({
+      twelveSnapshot: snapshot,
+      biquoteHealth,
+      now: Date.now(),
+      requiredBars
+    });
+  }
+
+  return snapshot;
 }
 
 router.get('/opportunities', async (req, res) => {
@@ -317,9 +333,11 @@ router.get('/opportunities', async (req, res) => {
         newsBlocked: marketContext.news.blocked,
         marketContext,
         decisionLatencyMs: Date.now() - startedAt,
-        providerHealth: admittedSnapshot.compositeVersion
-          ? 'COINBASE_TEMPORAL+TWELVE_CLOSED_OHLC'
-          : relayMode ? 'LOCAL_RELAY' : 'HEALTHY',
+        providerHealth: admittedSnapshot.compositeProvider === 'BIQUOTE'
+          ? 'BIQUOTE_TEMPORAL+TWELVE_CLOSED_OHLC'
+          : admittedSnapshot.compositeVersion
+            ? 'COINBASE_TEMPORAL+TWELVE_CLOSED_OHLC'
+            : relayMode ? 'LOCAL_RELAY' : 'HEALTHY',
         marketAdmission: admissionProof(admission),
         canonicalStudy: canonicalProof(canonical, fingerprint, registryClaim),
         prospectiveManifest: req.app.locals.prospectiveManifest,
@@ -390,6 +408,7 @@ router.get('/opportunities', async (req, res) => {
       execution: scannerExecutionBoundary(),
       relayMode,
       coinbaseTemporal: coinbaseTemporalSnapshot(req.app),
+      biquoteForex: req.app.locals.biquoteForexFeed?.health?.() ?? null,
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
       scannerStudyRegistry: scannerStudyRegistry.snapshot(),
       roundState,
