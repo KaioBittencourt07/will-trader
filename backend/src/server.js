@@ -8,6 +8,7 @@ import historyRouter from './routes/history.js';
 import executionRouter from './routes/execution.js';
 import opportunitiesRouter from './routes/opportunities.js';
 import researchRouter from './routes/research.js';
+import intelligenceRouter from './routes/intelligence.js';
 import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
 import { createHistoryStore } from '../../learning/src/historyStore.js';
@@ -69,8 +70,8 @@ app.locals.researchMemory = createResearchMemory({
   minimumSamples: Number(process.env.WILL_RESEARCH_MINIMUM_SAMPLES || 30)
 });
 app.locals.executionGateway = createManualExecutionGateway();
-// No external adapter is configured by default: the context remains explicitly
-// UNKNOWN rather than being fabricated as low risk.
+// External macro/news adapters are still opt-in. Until commissioned, context is
+// explicitly UNKNOWN instead of being fabricated as safe.
 app.locals.marketContextProvider = createMarketContextProvider();
 
 app.use((req, res, next) => {
@@ -103,6 +104,7 @@ app.get('/api/paper-monitor', (_req, res) => {
 app.use('/api', analyzeRouter);
 app.use('/api', marketRouter);
 app.use('/api', contextRouter);
+app.use('/api', intelligenceRouter);
 app.use('/api', paperRouter);
 app.use('/api', historyRouter);
 app.use('/api', executionRouter);
