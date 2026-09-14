@@ -24,6 +24,7 @@ import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonit
 import { runPaperMonitorCycle } from './paperMonitorCycle.js';
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
 import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
+import { prepareHistoryContinuity } from './historyContinuity.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +37,10 @@ const paperMonitorTimeout = resolvePaperMonitorRequestTimeout({
 });
 const macroContextEnabled = process.env.WILL_MACRO_CONTEXT_ENABLED === 'true';
 const macroCacheTtlMs = Number(process.env.WILL_MACRO_CACHE_TTL_MS || 10 * 60_000);
+const historyFilePath = process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json');
+const historyContinuity = prepareHistoryContinuity({ filePath: historyFilePath });
+const coinbaseTemporalEnabled = process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true';
+const coinbaseTemporalSymbols = Object.freeze(['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD']);
 
 const app = express();
 app.locals.twelveWebSocketFeed = createTwelveWebSocketFeed({
@@ -43,17 +48,24 @@ app.locals.twelveWebSocketFeed = createTwelveWebSocketFeed({
   apiKey: process.env.TWELVEDATA_API_KEY,
   symbols: process.env.WILL_TWELVE_WS_SYMBOLS || process.env.DEFAULT_ASSET || 'EUR/USD'
 });
-app.locals.coinbaseTemporalFeed = createCoinbaseTemporalFeed({
-  enabled: process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true',
-  symbol: 'BTC/USD'
-});
+
+app.locals.coinbaseTemporalFeeds = new Map(
+  coinbaseTemporalSymbols.map((symbol) => [symbol, createCoinbaseTemporalFeed({
+    enabled: coinbaseTemporalEnabled,
+    symbol
+  })])
+);
+// Backward-compatible BTC alias for existing diagnostics/tests.
+app.locals.coinbaseTemporalFeed = app.locals.coinbaseTemporalFeeds.get('BTC/USD');
+
 // Evidence-only batch metadata. It cannot place an order or alter a decision.
 app.locals.prospectiveManifest = createProspectiveManifest({
   startTime: process.env.WILL_PROSPECTIVE_START_TIME || '2026-09-03T02:15:00.000Z'
 });
 app.locals.historyStore = createHistoryStore({
-  filePath: process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json')
+  filePath: historyFilePath
 });
+app.locals.historyContinuity = historyContinuity;
 app.locals.paperMonitor = createAutonomousPaperMonitor({
   // Opt-in only. This prevents background scans from consuming provider budget
   // unless the operator explicitly enables the paper observation scheduler.
@@ -104,6 +116,20 @@ app.use(express.json({ limit: '256kb' }));
 app.use('/dashboard', express.static(path.resolve(backendDirectory, '../../dashboard')));
 
 app.get('/health', (_req, res) => {
+  const coinbaseTemporal = Object.fromEntries(
+    [...app.locals.coinbaseTemporalFeeds.entries()].map(([symbol, feed]) => {
+      const health = feed.health();
+      return [symbol, {
+        enabled: health.enabled,
+        running: health.running,
+        state: health.state,
+        ready: health.ready,
+        lastError: health.lastError,
+        latestTickAt: health.latestTick?.eventTimeRaw ?? null
+      }];
+    })
+  );
+
   res.json({
     ok: true,
     service: 'will-trader-backend',
@@ -111,7 +137,15 @@ app.get('/health', (_req, res) => {
     marketProvider: 'twelvedata',
     marketConfigured: runtimeSecrets.twelveData.configured,
     marketCredentialSource: runtimeSecrets.twelveData.source,
-    coinbaseTemporalEnabled: process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true',
+    coinbaseTemporalEnabled,
+    coinbaseTemporalSymbols,
+    coinbaseTemporal,
+    historyPersistence: {
+      version: historyContinuity.version,
+      loadedRecords: app.locals.historyStore.list().length,
+      backupCreated: historyContinuity.backupCreated,
+      persistent: true
+    },
     paperMonitorEnabled: process.env.WILL_PAPER_MONITOR_ENABLED === 'true',
     macroContextEnabled,
     macroContext: app.locals.macroContextAdapter?.health?.() ?? null,
@@ -135,8 +169,9 @@ app.use('/api', researchRouter);
 
 const server = app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
+  console.log(`WILL history loaded: ${app.locals.historyStore.list().length} record(s); backup=${historyContinuity.backupCreated}`);
   app.locals.twelveWebSocketFeed.start();
-  app.locals.coinbaseTemporalFeed.start();
+  for (const feed of app.locals.coinbaseTemporalFeeds.values()) feed.start();
   app.locals.paperMonitor.start();
 });
 
@@ -146,7 +181,9 @@ function shutdown(signal) {
   shuttingDown = true;
   console.log(`WILL TRADER shutting down on ${signal}`);
   try { app.locals.twelveWebSocketFeed.stop(); } catch {}
-  try { app.locals.coinbaseTemporalFeed.stop(); } catch {}
+  for (const feed of app.locals.coinbaseTemporalFeeds.values()) {
+    try { feed.stop(); } catch {}
+  }
   try { app.locals.paperMonitor.stop(); } catch {}
 
   const forceExit = setTimeout(() => process.exit(0), 3_000);
