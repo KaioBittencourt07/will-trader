@@ -26,6 +26,15 @@ function validOhlc(bar) {
     && bar.high >= bar.low;
 }
 
+function supportedClosedCandleProof(snapshot = {}, temporal = null) {
+  const completeness = snapshot.candleCompleteness ?? null;
+  if (completeness === 'VERIFIED_CLOSED_BY_DOCUMENTED_CHART_CONTEXT') return true;
+  if (completeness === 'VERIFIED_CLOSED_BY_BIQUOTE_EVENT_TIME') {
+    return temporal?.timestampAuthority === 'BIQUOTE_API_LATEST_TICK_TIMESTAMP';
+  }
+  return false;
+}
+
 export function buildCanonicalMarketSnapshot({ snapshot = {}, admission = null, now = Date.now(), requiredBars = 50 } = {}) {
   const reasons = [];
   const asset = canonical(snapshot.asset);
@@ -50,9 +59,8 @@ export function buildCanonicalMarketSnapshot({ snapshot = {}, admission = null, 
     if (age < -1_000 || age > 30_000) reasons.push('CANONICAL_EVENT_TIME_OUTSIDE_FROZEN_WINDOW');
   }
 
-  const completeness = snapshot.candleCompleteness ?? null;
   const latestClosed = snapshot.latestClosedCandleTimestamp ?? null;
-  if (completeness !== 'VERIFIED_CLOSED_BY_DOCUMENTED_CHART_CONTEXT') reasons.push('CANONICAL_CLOSED_CANDLE_PROOF_MISSING');
+  if (!supportedClosedCandleProof(snapshot, temporal)) reasons.push('CANONICAL_CLOSED_CANDLE_PROOF_MISSING');
   if (!validTime(latestClosed)) reasons.push('CANONICAL_LATEST_CLOSED_CANDLE_TIME_INVALID');
 
   const normalizedCandles = (Array.isArray(snapshot.candles) ? snapshot.candles : [])
