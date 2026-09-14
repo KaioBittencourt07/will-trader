@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 export const CANONICAL_MARKET_SNAPSHOT_VERSION = 'canonical-market-snapshot-v1';
 export const CANONICAL_STUDY_FINGERPRINT_VERSION = 'canonical-study-fingerprint-v1';
+export const CANONICAL_STRATEGY_INPUT_VERSION = 'canonical-strategy-input-v1';
 
 const finite = (value) => value !== null && value !== '' && Number.isFinite(Number(value));
 const canonical = (value) => String(value || '').trim().toUpperCase();
@@ -90,6 +91,46 @@ export function buildCanonicalMarketSnapshot({ snapshot = {}, admission = null, 
     }),
     decisionImpact: 'ANALYSIS_INPUT_ONLY',
     ordersExecuted: 0
+  });
+}
+
+export function buildCanonicalStrategyInput({ snapshot = {}, canonicalSnapshot = null } = {}) {
+  const canonicalSnapshotValue = canonicalSnapshot ?? buildCanonicalMarketSnapshot({ snapshot });
+  if (canonicalSnapshotValue?.valid !== true || canonicalSnapshotValue?.state !== 'READY') {
+    return Object.freeze({
+      version: CANONICAL_STRATEGY_INPUT_VERSION,
+      state: 'REJECTED',
+      valid: false,
+      reasons: Object.freeze(['CANONICAL_SNAPSHOT_NOT_READY'])
+    });
+  }
+
+  const authoritativeTimestamp = new Date(canonicalSnapshotValue.eventTimestamp).toISOString();
+  const closedCandles = canonicalSnapshotValue.closedCandles.map((bar) => Object.freeze({
+    timestamp: bar.timestamp,
+    datetime: bar.timestamp,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close
+  }));
+
+  return Object.freeze({
+    ...snapshot,
+    asset: canonicalSnapshotValue.asset,
+    timeframe: canonicalSnapshotValue.timeframe,
+    price: canonicalSnapshotValue.price,
+    timestamp: authoritativeTimestamp,
+    quoteTimestamp: authoritativeTimestamp,
+    candles: Object.freeze(closedCandles),
+    candleCount: closedCandles.length,
+    latestClosedCandleTimestamp: canonicalSnapshotValue.latestClosedCandleTimestamp,
+    candleCompleteness: 'VERIFIED_CLOSED_BY_DOCUMENTED_CHART_CONTEXT',
+    featureVersion: canonicalSnapshotValue.featureVersion,
+    canonicalSnapshotVersion: canonicalSnapshotValue.version,
+    canonicalStrategyInputVersion: CANONICAL_STRATEGY_INPUT_VERSION,
+    canonicalAdmissionProof: canonicalSnapshotValue.admissionProof,
+    canonicalProvenance: canonicalSnapshotValue.provenance
   });
 }
 
