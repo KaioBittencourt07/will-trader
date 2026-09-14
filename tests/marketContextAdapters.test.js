@@ -3,11 +3,17 @@ import test from 'node:test';
 import { parseBlsCalendarIcs } from '../context/src/adapters/blsCalendarAdapter.js';
 import { parseFedMonthlyCalendar } from '../context/src/adapters/fedCalendarAdapter.js';
 import { buildGdeltUrl, parseGdeltArticleList } from '../context/src/adapters/gdeltNewsAdapter.js';
-import { zonedDateTimeToIso } from '../context/src/adapters/marketTime.js';
+import { normalizeTimeZone, zonedDateTimeToIso } from '../context/src/adapters/marketTime.js';
 
 test('converts New York wall clock to UTC across daylight saving time', () => {
   assert.equal(zonedDateTimeToIso({ year: 2026, month: 9, day: 16, hour: 14, minute: 0, timeZone: 'America/New_York' }), '2026-09-16T18:00:00.000Z');
   assert.equal(zonedDateTimeToIso({ year: 2026, month: 12, day: 9, hour: 14, minute: 0, timeZone: 'America/New_York' }), '2026-12-09T19:00:00.000Z');
+});
+
+test('normalizes legacy BLS US-Eastern timezone aliases to America/New_York', () => {
+  assert.equal(normalizeTimeZone('US-Eastern'), 'America/New_York');
+  assert.equal(normalizeTimeZone('US/Eastern'), 'America/New_York');
+  assert.equal(normalizeTimeZone('EST5EDT'), 'America/New_York');
 });
 
 test('parses BLS official ICS events and marks CPI/NFP/PPI high impact', () => {
@@ -29,6 +35,21 @@ test('parses BLS official ICS events and marks CPI/NFP/PPI high impact', () => {
   assert.equal(events[0].impact, 'HIGH');
   assert.equal(events[1].name, 'CPI');
   assert.equal(events[1].timestamp, '2026-10-14T12:30:00.000Z');
+});
+
+test('parses BLS legacy US-Eastern TZID using the canonical zone', () => {
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'BEGIN:VEVENT',
+    'DTSTART;TZID=US-Eastern:20261014T083000',
+    'SUMMARY:Consumer Price Index',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+  const events = parseBlsCalendarIcs(ics);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].name, 'CPI');
+  assert.equal(events[0].timestamp, '2026-10-14T12:30:00.000Z');
 });
 
 test('parses the official Fed monthly FOMC event with explicit published time', () => {
@@ -56,12 +77,16 @@ test('normalizes and deduplicates GDELT article list without inventing impact', 
   assert.equal(items[0].impact, 'UNKNOWN');
   assert.deepEqual(items[0].currencies.sort(), ['BTC', 'USD']);
   assert.equal(items[0].timestamp, '2026-09-14T16:00:00.000Z');
+  assert.equal(items[0].discoveryOnly, true);
+  assert.equal(items[0].hardBlockEligible, false);
 });
 
-test('builds bounded GDELT read-only query URL', () => {
+test('builds bounded lightweight GDELT read-only query URL', () => {
   const url = new URL(buildGdeltUrl({ timespan: '60min', maxrecords: 20 }));
   assert.equal(url.hostname, 'api.gdeltproject.org');
   assert.equal(url.searchParams.get('mode'), 'ArtList');
   assert.equal(url.searchParams.get('format'), 'json');
   assert.equal(url.searchParams.get('maxrecords'), '20');
+  assert.equal(url.searchParams.get('sort'), 'DateDesc');
+  assert.match(url.searchParams.get('query'), /bitcoin/i);
 });
