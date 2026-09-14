@@ -1,6 +1,6 @@
 import { composeSaxoClosedOhlcIndependentQuote } from './crossProviderComposition.js';
 
-export const CROSS_PROVIDER_READINESS_VERSION = 'cross-provider-live-commissioning-readiness-prep-v1';
+export const CROSS_PROVIDER_READINESS_VERSION = 'cross-provider-live-commissioning-readiness-prep-v2';
 export const CROSS_PROVIDER_BUDGET = Object.freeze({
   sessions: 1, canonicalSymbol: 'EUR/USD', timeframe: '1min', saxoUic: 21, saxoAssetType: 'FxSpot', saxoHorizon: 1,
   twelveSubscriptions: 1, saxoSubscriptions: 1, maxReconnects: 1, retries: 0, freshnessMaxAgeMs: 30_000
@@ -31,7 +31,10 @@ export function readCrossProviderReadinessConfig(env = {}) {
 
 function boundedCount(value) { return Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0; }
 
-export function buildCrossProviderReadinessReport({ env = {}, saxoSnapshot = null, twelveHealth = null, counters = {}, now = Date.now(), maxAgeMs = 30_000 } = {}) {
+export function buildCrossProviderReadinessReport({
+  env = {}, saxoSnapshot = null, twelveHealth = null, quoteTemporalAuthority = null,
+  counters = {}, now = Date.now(), maxAgeMs = 30_000
+} = {}) {
   const config = readCrossProviderReadinessConfig(env);
   const reasonCodes = [...config.reasonCodes];
   if (maxAgeMs !== 30_000) reasonCodes.push('FRESHNESS_GATE_FROZEN');
@@ -46,8 +49,14 @@ export function buildCrossProviderReadinessReport({ env = {}, saxoSnapshot = nul
   if (saxoRequests > 0 || twelveSubscriptions > 0) reasonCodes.push('PREP_PHASE_EXTERNAL_CONSUMPTION_FORBIDDEN');
 
   let composition = null;
-  if (saxoSnapshot || twelveHealth) {
-    composition = composeSaxoClosedOhlcIndependentQuote({ saxoSnapshot, quoteHealth: twelveHealth, now, maxAgeMs });
+  if (saxoSnapshot || twelveHealth || quoteTemporalAuthority) {
+    composition = composeSaxoClosedOhlcIndependentQuote({
+      saxoSnapshot,
+      quoteHealth: twelveHealth,
+      quoteTemporalAuthority,
+      now,
+      maxAgeMs
+    });
     if (composition.compositionState !== 'COMPOSABLE_OFFLINE') reasonCodes.push('PROVIDER_PARTIAL_OR_INVALID_EVIDENCE');
   }
   if (saxoSnapshot && !allowedEvidence.has(saxoSnapshot.sampleEvidence)) reasonCodes.push('SAXO_SAMPLE_CONTEXT_AMBIGUOUS');
@@ -63,17 +72,32 @@ export function buildCrossProviderReadinessReport({ env = {}, saxoSnapshot = nul
     externalCallsPerformed: 0,
     providerConsumption: { twelveObserved: 0, saxoObserved: 0, estimated: 0 },
     configuration: config,
-    entitlement: { saxo: 'UNVERIFIED', twelve: 'UNVERIFIED' },
+    entitlement: { saxo: 'UNVERIFIED', twelve: 'UNVERIFIED', temporalAuthority: 'UNVERIFIED' },
     budget: CROSS_PROVIDER_BUDGET,
-    evidenceOwnership: { quoteFreshness: 'TWELVEDATA_WEBSOCKET_EVENT_TIMESTAMP_ONLY', closedOhlc: 'SAXO_DOCUMENTED_COMPLETED_SAMPLE_CONTEXT_ONLY' },
+    evidenceOwnership: {
+      quotePrice: 'INDEPENDENT_QUOTE_PRICE_ONLY',
+      temporalAuthority: 'INDEPENDENT_PROVIDER_EVENT_TIME_ONLY',
+      closedOhlc: 'SAXO_DOCUMENTED_COMPLETED_SAMPLE_CONTEXT_ONLY'
+    },
     providerState: {
-      twelve: { connected: twelveHealth?.connected === true, quoteFresh: composition?.quoteAgeMs !== null && composition?.quoteAgeMs <= 30_000 },
+      twelve: {
+        connected: twelveHealth?.connected === true,
+        quoteObserved: Boolean(composition?.quoteTimestamp)
+      },
+      temporalAuthority: {
+        authorityGate: quoteTemporalAuthority?.authorityGate ?? 'UNVERIFIED',
+        freshnessGate: quoteTemporalAuthority?.freshnessGate ?? 'UNVERIFIED',
+        timestampAuthority: quoteTemporalAuthority?.timestampAuthority ?? 'UNRESOLVED'
+      },
       saxo: { configuredEnvironment: config.environment, closedCompleteness: saxoSnapshot?.candleCompleteness ?? 'UNVERIFIED' }
     },
     counters: { sessions, saxoRequests, twelveSubscriptions, reconnects, resets },
     composition: composition ? {
-      state: composition.compositionState, quoteTimestamp: composition.quoteTimestamp,
-      latestClosedCandleTimestamp: composition.latestClosedCandleTimestamp, separation: composition.separation
+      state: composition.compositionState,
+      quoteTimestamp: composition.quoteTimestamp,
+      latestClosedCandleTimestamp: composition.latestClosedCandleTimestamp,
+      temporalAuthority: composition.temporalAuthority ?? null,
+      separation: composition.separation
     } : null,
     reasonCodes: [...new Set(reasonCodes)],
     secretsExposed: false,
