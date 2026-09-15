@@ -1,0 +1,12 @@
+﻿{
+    "schemaVersion":  "edge-gate-oos2-freeze-v1",
+    "experiment":  "WILL Edge Gate OOS-2",
+    "edgeCut":  "2026-09-15T02:09:11.360Z",
+    "frozenThreshold":  0.599936,
+    "officialPreCutN":  217,
+    "monitorProtocol":  "autonomous-paper-monitor-v1",
+    "settlementVersion":  "paper-outcome-settlement-v2",
+    "outcomeSource":  "paper-live-temporal-reference-v1",
+    "createdAtUtc":  "2026-09-15T02:39:39.6693949+00:00",
+    "policy":  "IMMUTABLE_AFTER_FREEZE"
+}
