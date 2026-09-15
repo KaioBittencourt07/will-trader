@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { CONTRACT, readFreeze, evaluateOos2, clusterBootstrap } from '../backend/src/evaluateOos2.js';
 const freezePath = new URL('../backend/config/experiments/edge-gate-oos2-freeze.json', import.meta.url);
@@ -20,6 +22,19 @@ test('every frozen field is mandatory and exact', () => {
     assert.throws(() => evaluateOos2([], missing)); assert.throws(() => evaluateOos2([], {...CONTRACT, [key]: 'wrong'})); }
   assert.throws(() => evaluateOos2([], {...CONTRACT, frozenThreshold: 0.599936477924654}));
   assert.throws(() => evaluateOos2({}, CONTRACT));
+});
+test('semantic-equivalent freeze with changed whitespace fails runtime SHA without rewriting', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oos2-freeze-'));
+  try {
+    const path = join(dir, 'freeze.json');
+    const original = readFileSync(freezePath);
+    const changed = Buffer.concat([original, Buffer.from(' ')]);
+    writeFileSync(path, changed);
+    assert.deepEqual(JSON.parse(changed.toString('utf8').replace(/^\uFEFF/, '')), readFreeze(freezePath));
+    assert.throws(() => readFreeze(path), /^Error: INVALID_OOS2_FREEZE_SHA256$/);
+    assert.deepEqual(readFileSync(path), changed);
+    assert.deepEqual(readFileSync(freezePath), original);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('official filters exclude every nonmatching provenance/status/outcome', () => {
   const rows = [record(), record('b'), record('c'), record('d'), record('e'), record('f')];
@@ -96,6 +111,7 @@ test('first fifty candidates fixed before integrity filtering, completion and la
   const rows = Array.from({length:51},(_,i) => record(String(i),.1,'WIN',new Date(Date.parse(CONTRACT.edgeCut)+1000+i*1000).toISOString()));
   rows[0].metadata.featureSnapshot.momentum = null;
   rows.push(record('1',.1,'WIN',CONTRACT.edgeCut));
+  rows.push(...Array.from({length:216},(_,i) => record(`pre-${i}`,.1,'WIN',CONTRACT.edgeCut)));
   const ids = rows.map(r => r.metadata.context.monitorCycleId);
   const early = evaluateOos2(rows.slice(0,49),CONTRACT,{completedCycleIds:ids}); assert.equal(early.analysisStatus,'PRELIMINARY');
   assert.equal(evaluateOos2(rows,CONTRACT).analysisStatus,'PRELIMINARY');
@@ -106,6 +122,25 @@ test('first fifty candidates fixed before integrity filtering, completion and la
   assert.ok(!formal.checkpoint.selectedCycleIds.includes('autonomous-paper-monitor-v1:50'));
   const pendingFirst = evaluateOos2(rows,CONTRACT,{completedCycleIds:ids.filter(id=>id!==ids[0])});
   assert.equal(pendingFirst.analysisStatus,'PRELIMINARY'); assert.deepEqual(pendingFirst.checkpoint.selectedCycleIds,formal.checkpoint.selectedCycleIds);
+});
+test('formal checkpoint requires exactly 217 official pre-cut records and retains cross-cut candidates', () => {
+  const pre = Array.from({length:217},(_,i) => record(`pre-${i}`,.1,'WIN',CONTRACT.edgeCut));
+  const post = Array.from({length:50},(_,i) => record(`post-${i}`));
+  const options = { completedCycleIds: post.map(r => r.metadata.context.monitorCycleId) };
+  const full = evaluateOos2([...pre,...post],CONTRACT,options);
+  assert.equal(full.analysisStatus,'FORMAL_FIRST_50');
+  assert.deepEqual(full.historyContinuity,{expectedPreCutOfficialRecords:217,observedPreCutOfficialRecords:217,matchesFreeze:true});
+  for (const rows of [pre.slice(1), [...pre,pre[0]]]) {
+    const r = evaluateOos2([...rows,...post],CONTRACT,options);
+    assert.equal(r.analysisStatus,'PRELIMINARY'); assert.equal(r.historyContinuity.matchesFreeze,false);
+    assert.equal(r.historyContinuity.observedPreCutOfficialRecords,rows.length);
+    assert.deepEqual(r.checkpoint.selectedCycleIds,full.checkpoint.selectedCycleIds);
+  }
+  pre[0].metadata.context.monitorCycleId = post[0].metadata.context.monitorCycleId;
+  const cross = evaluateOos2([...pre,...post],CONTRACT,options);
+  assert.equal(cross.invalidCycles,1); assert.ok(cross.cycles[0].reasons.includes('CROSS_CUT_CYCLE'));
+  const excluded = record('excluded',.1,'WIN',CONTRACT.edgeCut); excluded.execution.status = 'OTHER';
+  assert.equal(evaluateOos2([...pre,...post,excluded],CONTRACT,options).historyContinuity.observedPreCutOfficialRecords,217);
 });
 test('plan and provenance explicitly preserve untouched full-contract validation', () => {
   const plan = JSON.parse(readFileSync(new URL('../backend/config/experiments/edge-gate-oos2-analysis-plan.json',import.meta.url),'utf8'));

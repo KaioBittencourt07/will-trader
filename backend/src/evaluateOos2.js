@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 
 export const CONTRACT = Object.freeze({ schemaVersion: 'edge-gate-oos2-freeze-v1', policy: 'IMMUTABLE_AFTER_FREEZE',
@@ -7,7 +8,13 @@ export function validateFreeze(value) {
   if (!value || Object.entries(CONTRACT).some(([key, expected]) => value[key] !== expected)) throw new Error('INVALID_OOS2_FREEZE');
   return value;
 }
-export function readFreeze(path) { return validateFreeze(JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''))); }
+export const EXPECTED_FREEZE_SHA256 = '1F0D03A1FFD2AB1ADC0397BDAFFCCBB30D1B3BC0ACBC5C87B7779B3E920B3564';
+export function readFreeze(path) {
+  const bytes = readFileSync(path);
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  if (hash.toUpperCase() !== EXPECTED_FREEZE_SHA256.toUpperCase()) throw new Error('INVALID_OOS2_FREEZE_SHA256');
+  return validateFreeze(JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')));
+}
 const cycleId = r => r?.metadata?.context?.monitorCycleId;
 const official = r => typeof cycleId(r) === 'string' && /^autonomous-paper-monitor-v1:.+/.test(cycleId(r)) &&
   r.execution?.status === 'PAPER_CONFIRMED' && r.outcomeMetadata?.settlementVersion === 'paper-outcome-settlement-v2' &&
@@ -69,7 +76,12 @@ export function evaluateOos2(records, freeze, { completedCycleIds = [] } = {}) {
   const selected = candidates.slice(0, 50);
   const unorderableCycleIds = [...groups].filter(([,rows]) => !rows.some(r => time(r)>cut) && rows.some(r => !Number.isFinite(time(r)))).map(([id]) => id).sort();
   const complete = new Set(completedCycleIds);
-  const checkpointReached = selected.length === 50 && selected.every(([id]) => complete.has(id)) && !unorderableCycleIds.length;
+  const preCutOfficialRecordsObserved = [...groups.values()].reduce((count, rows) =>
+    count + rows.filter(r => Number.isFinite(time(r)) && time(r)<=cut).length, 0);
+  const historyContinuity = { expectedPreCutOfficialRecords: freeze.officialPreCutN,
+    observedPreCutOfficialRecords: preCutOfficialRecordsObserved,
+    matchesFreeze: preCutOfficialRecordsObserved === freeze.officialPreCutN };
+  const checkpointReached = historyContinuity.matchesFreeze && selected.length === 50 && selected.every(([id]) => complete.has(id)) && !unorderableCycleIds.length;
   const cycles = [], accepted = []; let eligibleRecords = 0;
   for (const [monitorCycleId, rows] of selected) {
     const post = rows.filter(r => time(r)>cut); if (!post.length && rows.every(r => Number.isFinite(time(r)))) continue;
@@ -97,6 +109,7 @@ export function evaluateOos2(records, freeze, { completedCycleIds = [] } = {}) {
   }
   return { evaluatorVersion: 'edge-gate-oos2-readonly-v1', threshold: freeze.frozenThreshold, operator: '<=',
     analysisStatus: checkpointReached ? 'FORMAL_FIRST_50' : 'PRELIMINARY',
+    historyContinuity,
     checkpoint: { requiredCandidateCycles: 50, observedCandidateCycles: candidates.length,
       selectedCycleIds: selected.map(([id]) => id), completenessConfirmedCycles: selected.filter(([id]) => complete.has(id)).length,
       unorderableCycleIds, laterCandidateCyclesExcluded: Math.max(0, candidates.length-50) },

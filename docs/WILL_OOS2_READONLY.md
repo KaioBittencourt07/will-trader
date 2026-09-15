@@ -8,7 +8,7 @@ Run from the repository root:
 node backend/src/evaluateOos2.js PATH_TO_HISTORY_JSON
 ```
 
-The CLI reads the history array and the existing freeze, tolerates a leading UTF-8 BOM in memory, and prints JSON to stdout. It does not import historyStore, provider clients, broker code or filesystem writers. The freeze stays byte-identical. Tests verify its original SHA256.
+The CLI reads the history array and the existing freeze, tolerates a leading UTF-8 BOM in memory, and prints JSON to stdout. It does not import historyStore, provider clients, broker code or filesystem writers. readFreeze reads bytes once and checks their SHA256 against the immutable original hash before decoding, stripping BOM in memory, parsing or validating fields. Even semantically equivalent whitespace changes throw INVALID_OOS2_FREEZE_SHA256. The freeze stays byte-identical.
 
 ## Frozen selection
 
@@ -20,7 +20,7 @@ The separate analysis-plan JSON freezes this plan before accessing real OOS-2. S
 
 Threshold 0.599936 was derived exclusively from IS (raw Q50 0.599936477924654). The <= operator was selected/confirmed retrospectively using IS + OOS-1. OOS-1 is not independent prospective validation of this new gate. OOS-2 is the first untouched prospective validation of the complete threshold + operator contract.
 
-MeanAbsMomentum is the arithmetic mean of abs(metadata.featureSnapshot.momentum) within a cycle. Values must be finite numbers; strings/null are not coerced. ACCEPT uses exactly <= 0.599936. The raw Q50 and score/confidence are never runtime gates. officialPreCutN=217 validates the freeze's declaration; it is not a requirement that an input history extract contain all pre-cut records. For reliable cross-cut detection, supply the complete history, including pre-cut records.
+MeanAbsMomentum is the arithmetic mean of abs(metadata.featureSnapshot.momentum) within a cycle. Values must be finite numbers; strings/null are not coerced. ACCEPT uses exactly <= 0.599936. The raw Q50 and score/confidence are never runtime gates. FORMAL_FIRST_50 requires the input to reproduce exactly the frozen 217 official pre-cut records (valid settledAt <= edgeCut), using the same official filters. This is a continuity/audit requirement for cross-cut detection, in addition to the existing 50-candidate completeness requirements. historyContinuity reports expected/observed counts and matchesFreeze. Missing or extra/duplicated pre-cut records keep PRELIMINARY; no records are inferred or repaired, and no candidates replaced. Count equality is necessary but does not itself prove record identity; supply the complete original history.
 
 ## Reporting conventions and limitations
 
