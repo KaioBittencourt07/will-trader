@@ -13,6 +13,7 @@
   "completeness": "All first 50 candidates must be confirmed complete by separate operator/campaign evidence. Settlement records alone are insufficient. Missing confirmation or unorderable official cycles keeps PRELIMINARY.",
   "earlyAnalyses": "PRELIMINARY; prohibited for decisions, tuning or early stopping based on win rate",
   "automaticLivePromotion": false,
+  "historyContinuity": "FORMAL_FIRST_50 additionally requires exactly 217 official records with valid settledAt <= edgeCut; otherwise PRELIMINARY. No inferred records, repair or candidate replacement.",
   "primaryCI": {
     "method": "cluster bootstrap by monitorCycleId with replacement",
     "sampleSize": "number of accepted cycles; all WIN/LOSS/TIE in each drawn cycle carried together",
