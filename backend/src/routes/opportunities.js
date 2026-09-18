@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { withCycleEvidenceRequest } from '../cycleEvidenceRequest.js';
 import { getMarketDataEngine, getLocalRelaySnapshot } from './market.js';
 import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { selectBestOpportunity } from '../../../engine/src/opportunityEngine.js';
@@ -125,7 +126,7 @@ function operationalSnapshotFor(asset, snapshot, app, requiredBars) {
   return snapshot;
 }
 
-router.get('/opportunities', async (req, res) => {
+router.get('/opportunities', withCycleEvidenceRequest(async (req, res) => {
   const latency = createOpportunityLatency();
   const providerTelemetry = createProviderEfficiencyTelemetry(
     req.query.monitorCycleId ? 'paper-monitor-opportunities' : 'api-opportunities-request'
@@ -350,7 +351,7 @@ router.get('/opportunities', async (req, res) => {
         decision,
         context: decisionContext
       }));
-      const history = latency.stage('persistenceMs', () => req.app.locals.historyStore.recordDecision({
+      const history = latency.stage('persistenceMs', () => (req.cycleEvidenceRecord ?? req.app.locals.historyStore.recordDecision)({
         decision,
         data: strategySnapshot,
         audit,
@@ -429,6 +430,6 @@ router.get('/opportunities', async (req, res) => {
       providerEfficiency: providerEfficiencySnapshot(providerTelemetry)
     });
   }
-});
+}));
 
 export default router;

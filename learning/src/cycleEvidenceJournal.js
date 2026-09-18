@@ -205,7 +205,8 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
         }
         // A future integration may materialize scheduler termination ONLY from these seal commits.
         const sealedCycleIds=[...state.cycles.values()].filter(m=>m.state==='SEALED').map(m=>m.cycleId);
-        return {records,materializedRecordIds,sealedCycleIds};
+        const unresolvedCycleIds=[...state.cycles.values()].filter(m=>m.state!=='SEALED').map(m=>m.cycleId);
+        return {records,materializedRecordIds,sealedCycleIds,unresolvedCycleIds};
       });
     },
     verifyManifestAgainstHistory

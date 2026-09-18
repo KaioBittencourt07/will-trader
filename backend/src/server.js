@@ -16,6 +16,7 @@ import { hydrateRuntimeSecrets } from './runtimeSecrets.js';
 import { createHistoryStore } from '../../learning/src/historyStore.js';
 import { createProspectiveManifest } from '../../learning/src/prospectiveEvidence.js';
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
+import { createCycleEvidenceRuntime } from '../../learning/src/cycleEvidenceRuntime.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import { createBlsCalendarAdapter } from '../../context/src/adapters/blsCalendarAdapter.js';
@@ -121,7 +122,16 @@ function runPaperOutcomeSettlementPass() {
   }
 }
 
+app.locals.cycleEvidenceRuntime = process.env.WILL_CYCLE_EVIDENCE_ENABLED === 'true'
+  ? createCycleEvidenceRuntime({
+      directory: process.env.WILL_CYCLE_EVIDENCE_DIRECTORY,
+      protocolId: process.env.WILL_CYCLE_EVIDENCE_PROTOCOL_ID,
+      campaignId: process.env.WILL_CYCLE_EVIDENCE_CAMPAIGN_ID,
+      historyStore: app.locals.historyStore
+    })
+  : null;
 app.locals.paperMonitor = createAutonomousPaperMonitor({
+  cycleEvidence: app.locals.cycleEvidenceRuntime,
   // Opt-in only. This prevents background scans from consuming provider budget
   // unless the operator explicitly enables the paper observation scheduler.
   enabled: paperMonitorEnabled,
