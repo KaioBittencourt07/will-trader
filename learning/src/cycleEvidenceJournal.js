@@ -78,6 +78,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
     }
     try {
       const bytes=fs.readFileSync(walPath,'utf8');
+      if (!bytes && fs.readdirSync(directory).some(name=>name.endsWith('.manifest.json'))) fail('WAL_EMPTY_WITH_PROJECTION');
       if (bytes && !bytes.endsWith('\n')) fail('WAL_TRUNCATED');
       for (const line of bytes.split('\n').slice(0,-1)) {
         const e=JSON.parse(line), {hash,...body}=e;
@@ -203,8 +204,8 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
           project(manifestPath(m.cycleId),m);
         }
         // A future integration may materialize scheduler termination ONLY from these seal commits.
-        const completedCycleIds=[...state.cycles.values()].filter(m=>m.state==='SEALED').map(m=>m.cycleId);
-        return {records,materializedRecordIds,completedCycleIds};
+        const sealedCycleIds=[...state.cycles.values()].filter(m=>m.state==='SEALED').map(m=>m.cycleId);
+        return {records,materializedRecordIds,sealedCycleIds};
       });
     },
     verifyManifestAgainstHistory

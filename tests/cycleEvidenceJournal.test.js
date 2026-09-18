@@ -61,7 +61,7 @@ for (const point of ['BEFORE_APPEND','AFTER_WAL_COMMIT','AFTER_PROJECTION']) {
     assert.equal(first.records.length,point==='BEFORE_APPEND'?0:1);
     const second=restarted.recover({history:first.records});
     assert.deepEqual(second.records,first.records); assert.deepEqual(second.materializedRecordIds,[]);
-    assert.deepEqual(second.completedCycleIds,[]);
+    assert.deepEqual(second.sealedCycleIds,[]);
   });
 }
 test('seal blocks active writers and closes admission immediately',t=>{
@@ -79,13 +79,14 @@ test('crash after seal commit restores manifest and termination evidence, never 
   const s=setup(t); s.begin(); s.commit(); s.journal.endWriter({...s.ctx,writerId:'w1'});
   s.crash('AFTER_WAL_COMMIT:CYCLE_SEAL_COMMIT'); assert.throws(s.seal,/INJECTED_CRASH/);
   const j=createCycleEvidenceJournal({directory:s.directory}), r=j.recover({history:[]});
-  assert.deepEqual(r.completedCycleIds,[s.ctx.cycleId]);
+  assert.deepEqual(r.sealedCycleIds,[s.ctx.cycleId]);
+  assert.equal(Object.hasOwn(r,'completedCycleIds'),false);
   assert.equal(j.readManifest(s.ctx.cycleId).state,'SEALED');
   assert.throws(()=>j.beginWriter({...s.ctx,writerId:'late'}),/CYCLE_NOT_OPEN/);
 });
 test('crash before seal commit cannot create completion',t=>{
   const s=setup(t); s.crash('BEFORE_APPEND:CYCLE_SEAL_COMMIT'); assert.throws(s.seal);
-  assert.deepEqual(createCycleEvidenceJournal({directory:s.directory}).recover({history:[]}).completedCycleIds,[]);
+  assert.deepEqual(createCycleEvidenceJournal({directory:s.directory}).recover({history:[]}).sealedCycleIds,[]);
 });
 test('newer settlement preserved byte-for-byte by recovery and inventory unchanged',t=>{
   const s=setup(t); s.begin(); const r=s.commit(); s.journal.endWriter({...s.ctx,writerId:'w1'}); const m=s.seal();
@@ -150,4 +151,28 @@ test('digest ordering is independent of inventory insertion order',t=>{
   const s=setup(t); s.begin(); s.commit(); s.begin('w2','r2','op2'); s.commit('op2');
   const m=s.journal.readManifest(s.ctx.cycleId);
   assert.equal(canonicalDigest(m),canonicalDigest({...m,recordIds:[...m.recordIds].reverse()}));
+});
+test('terminal settlement requires explicit allowed label, CLOSED and valid timestamp',t=>{
+  const s=setup(t); s.begin(); const r=s.commit(); s.journal.endWriter({...s.ctx,writerId:'w1'}); const m=s.seal();
+  for (const outcome of ['WIN','LOSS','TIE','DATA_INVALID']) {
+    assert.equal(verifyManifestAgainstHistory(m,[{...r,status:'CLOSED',settledAt:end,outcome}]).complete,true);
+  }
+  for (const patch of [{outcome:null},{outcome:undefined},{outcome:'UNKNOWN'},
+    {settledAt:null},{settledAt:'bad'},{status:'OPEN'}]) {
+    const result=verifyManifestAgainstHistory(m,[{...r,status:'CLOSED',settledAt:end,outcome:'WIN',...patch}]);
+    assert.equal(result.complete,false); assert.ok(result.reasons.includes('PENDING_RECORD'));
+  }
+});
+test('zero-length WAL with projection quarantines recovery, reads and mutations without generation reset',t=>{
+  const s=setup(t), file=path.join(s.directory,'journal.jsonl');
+  const projection=path.join(s.directory,fs.readdirSync(s.directory).find(name=>name.endsWith('.manifest.json')));
+  const before=fs.readFileSync(projection);
+  fs.writeFileSync(file,'');
+  assert.throws(()=>s.journal.recover({history:[]}),/JOURNAL_INVALID/);
+  const restarted=createCycleEvidenceJournal({directory:s.directory});
+  assert.throws(()=>restarted.readManifest(s.ctx.cycleId),/JOURNAL_INVALID/);
+  assert.throws(()=>restarted.openCycle({protocolId:'p',campaignId:'c',cycleId:'autonomous-paper-monitor-v1:2',openedAt:at,history:[]}),/JOURNAL_INVALID/);
+  assert.throws(()=>restarted.beginWriter({...s.ctx,writerId:'w'}),/JOURNAL_INVALID/);
+  assert.deepEqual(fs.readFileSync(projection),before); assert.equal(fs.statSync(file).size,0);
+  assert.equal(JSON.parse(before).writerGeneration,s.ctx.writerGeneration);
 });
