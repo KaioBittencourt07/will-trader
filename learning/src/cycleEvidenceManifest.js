@@ -58,6 +58,7 @@ export function verifyManifestAgainstHistory(manifest, history) {
   if (manifest.state !== 'SEALED') reasons.push('NOT_SEALED');
   const valid = reasons.length === 0;
   // Terminal state only: no result-label aggregation or performance evaluation.
-  if (rows.some(r => r.status !== 'CLOSED' || !validTime(r.settledAt))) reasons.push('PENDING_RECORD');
+  if (rows.some(r => r.status !== 'CLOSED' || !validTime(r.settledAt) ||
+    !['WIN', 'LOSS', 'TIE', 'DATA_INVALID'].includes(r.outcome))) reasons.push('PENDING_RECORD');
   return { valid, complete: reasons.length === 0, reasons };
 }
