@@ -55,6 +55,7 @@ export function createAutonomousPaperMonitor({
   intervalMs = MIN_INTERVAL_MS,
   filePath = null,
   runCycle,
+  cycleEvidence = null,
   now = () => Date.now(),
   onEvent = () => {},
   logger = () => {},
@@ -68,6 +69,33 @@ export function createAutonomousPaperMonitor({
   let running = false;
   let timer = null;
   let last = null;
+  let evidenceInitialized = false;
+  let evidencePaused = false;
+
+  async function runEvidenceCycle(id) {
+    const terminate = () => {
+      const next = new Set(completed); next.add(id);
+      persistCompleted(filePath, next); completed = next;
+    };
+    try {
+      cycleEvidence.openMonitorCycle(id);
+      let result;
+      try { result = await runCycle({cycleId:id,mode:'PAPER'}); }
+      catch {
+        if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
+        cycleEvidence.invalidateMonitorCycle(id); terminate();
+        return event({ran:false,status:'SKIPPED_INVALID_CYCLE',reason:'CYCLE_FAILURE',cycleId:id,mode:'PAPER'});
+      }
+      if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
+      if (result?.ok === true) cycleEvidence.sealMonitorCycle(id);
+      else cycleEvidence.invalidateMonitorCycle(id);
+      terminate();
+      return event({ran:true,status:result?.ok === true?'COMPLETED':'SKIPPED_INVALID_CYCLE',cycleId:id,mode:'PAPER'});
+    } catch {
+      evidencePaused = true; cycleEvidence.pause();
+      return event({ran:false,status:'PAUSED',reason:'STORAGE_FAILURE',cycleId:id,mode:'PAPER'});
+    } finally { running = false; }
+  }
 
   function cycleId(at = now()) {
     if (!Number.isFinite(Number(at))) return null;
@@ -83,11 +111,25 @@ export function createAutonomousPaperMonitor({
   async function runOnce({ at = now() } = {}) {
     if (!enabled) return event({ ran: false, status: 'DISABLED', mode: 'PAPER' });
     if (!completed) return event({ ran: false, status: 'PAUSED', reason: 'DURABLE_STATE_UNAVAILABLE', mode: 'PAPER' });
+    if (cycleEvidence) {
+      if (evidencePaused || cycleEvidence.health().paused) return event({ran:false,status:'PAUSED',reason:'STORAGE_FAILURE',mode:'PAPER'});
+      if (!evidenceInitialized) {
+        try {
+          const recovery=cycleEvidence.recover();
+          const next=new Set([...completed,...recovery.sealedCycleIds]);
+          persistCompleted(filePath,next); completed=next; evidenceInitialized=true;
+        } catch {
+          evidencePaused=true; cycleEvidence.pause();
+          return event({ran:false,status:'PAUSED',reason:'STORAGE_FAILURE',mode:'PAPER'});
+        }
+      }
+    }
     const id = cycleId(at);
     if (!id) return event({ ran: false, status: 'PAUSED', reason: 'CLOCK_FAILURE', mode: 'PAPER' });
     if (running) return event({ ran: false, status: 'OVERLAP_SKIPPED', cycleId: id, mode: 'PAPER' });
     if (completed.has(id)) return event({ ran: false, status: 'IDEMPOTENT', cycleId: id, mode: 'PAPER' });
     running = true;
+    if (cycleEvidence) return runEvidenceCycle(id);
     try {
       const result = await runCycle({ cycleId: id, mode: 'PAPER' });
       // A provider/data failure is a completed invalid observation for this

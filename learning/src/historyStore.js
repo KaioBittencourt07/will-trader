@@ -7,6 +7,7 @@ import { assessDisagreement } from '../../engine/src/disagreement.js';
 import { assessDecisionRobustness } from '../../engine/src/robustness.js';
 import { runFeatureAblation } from './featureAblation.js';
 import { createProspectiveEvidenceRecord } from './prospectiveEvidence.js';
+import { canonical, MEMBERSHIP_FIELDS } from './cycleEvidenceManifest.js';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
 const PAPER_ENTRY_MAX_LAG_MS = 30_000;
@@ -66,12 +67,8 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     fs.writeFileSync(temporary, JSON.stringify(records, null, 2));
     fs.renameSync(temporary, filePath);
   }
-  function recordDecision({ decision = {}, data = {}, audit = {}, context = {} } = {}) {
+  function prepareDecisionRecord({ decision = {}, data = {}, audit = {}, context = {} } = {}, membership = null) {
     const decisionId = context.decisionId ?? decision.decisionId ?? audit.id ?? null;
-    if (decisionId) {
-      const existing = records.find((item) => item.decisionId === decisionId);
-      if (existing) return { ...structuredClone(existing), idempotent: true };
-    }
     const stateFingerprint = createStateFingerprint({ data, decision, context });
     const familiarityEvidence = assessFamiliarity(stateFingerprint, records);
     const lifecycle = assessSignalLifecycle({ snapshot: data, decision, now: Date.now() });
@@ -146,9 +143,35 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
         prospective
       }
     };
-    records.push(record);
-    persist();
+    if (membership) {
+      for (const key of MEMBERSHIP_FIELDS) record[key] = membership[key];
+      if (record.cycleId !== context.monitorCycleId) throw new Error('EVIDENCE_CYCLE_MISMATCH');
+    }
     return structuredClone(record);
+  }
+  function insertPreparedRecord(prepared) {
+    if (!prepared || typeof prepared.id !== 'string' || !prepared.id) throw new Error('PREPARED_ID_REQUIRED');
+    const record = JSON.parse(JSON.stringify(prepared));
+    const matches = records.filter(r => r.id === record.id || (record.decisionId && r.decisionId === record.decisionId));
+    if (matches.length > 1) throw new Error('INCOMPATIBLE_PREPARED_DUPLICATE');
+    const duplicate = matches[0];
+    if (duplicate) {
+      if (canonical(JSON.parse(JSON.stringify(duplicate))) !== canonical(record)) throw new Error('INCOMPATIBLE_PREPARED_DUPLICATE');
+      return { ...structuredClone(duplicate), idempotent: true };
+    }
+    records.push(record);
+    try { persist(); } catch (error) { records.pop(); throw error; }
+    return structuredClone(record);
+  }
+  function recordDecision(input = {}) {
+    const decisionId = input.context?.decisionId ?? input.decision?.decisionId ?? input.audit?.id ?? null;
+    if (decisionId) {
+      const existing = records.find(item => item.decisionId === decisionId);
+      if (existing) return { ...structuredClone(existing), idempotent: true };
+    }
+    // Preserve the legacy path, including its object shape and duplicate behavior.
+    const record = prepareDecisionRecord(input);
+    records.push(record); persist(); return structuredClone(record);
   }
   function settle(idValue, outcome, metadata = {}) {
     if (!OUTCOMES.has(outcome)) throw new Error('Outcome inválido.');
@@ -256,5 +279,5 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     persist();
     return structuredClone(records[index]);
   }
-  return { recordDecision, settle, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
+  return { recordDecision, prepareDecisionRecord, insertPreparedRecord, settle, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
 }
