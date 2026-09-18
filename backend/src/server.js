@@ -141,10 +141,11 @@ app.locals.paperMonitor = createAutonomousPaperMonitor({
     // The monitor supplies only the bounded, redacted diagnostic fields.
     console.warn(`[PAPER monitor] ${event.status} ${event.cycleId} ${event.errorCode}: ${event.errorDetail}`);
   },
-  runCycle: async ({ cycleId }) => {
+  runCycle: async ({ cycleId, capability }) => {
     const cycle = await runPaperMonitorCycle({
       baseUrl: `http://127.0.0.1:${config.port}`,
       cycleId,
+      capability,
       timeout: paperMonitorTimeout,
       multiAsset: true,
       assetClass: paperMonitorAssetClass,

@@ -109,17 +109,17 @@ test('request ignores forged query membership and ends writer before response',a
   const s=setup(t), c=s.runtime(); c.recover(); c.openMonitorCycle(cycleId);
   const handler=withCycleEvidenceRequest(async(req,res)=>res.json({ok:true,record:req.cycleEvidenceRecord(input)}));
   const res=response();
-  await handler({query:{monitorCycleId:cycleId,protocolId:'forged',campaignId:'forged',writerGeneration:'999'},app:{locals:{cycleEvidenceRuntime:c}}},res);
+  await handler({query:{monitorCycleId:cycleId,protocolId:'forged',campaignId:'forged',writerGeneration:'999'},headers:{'x-will-cycle-evidence-capability':c.issueRequestCapability(cycleId)},app:{locals:{cycleEvidenceRuntime:c}}},res);
   assert.equal(res.code,200); assert.equal(res.body.record.protocolId,'synthetic-protocol');
   assert.equal(res.body.record.campaignId,'synthetic-campaign'); assert.equal(res.body.record.writerGeneration,1);
   assert.equal(c.sealMonitorCycle(cycleId).state,'SEALED');
 });
 test('early response ends writer; pending transaction in finally blocks response and pauses',async t=>{
   const s=setup(t), c=s.runtime(); c.recover(); c.openMonitorCycle(cycleId);
-  const early=response(); await withCycleEvidenceRequest(async(req,res)=>res.status(400).json({ok:false}))({query:{monitorCycleId:cycleId},app:{locals:{cycleEvidenceRuntime:c}}},early);
+  const early=response(); await withCycleEvidenceRequest(async(req,res)=>res.status(400).json({ok:false}))({query:{monitorCycleId:cycleId},headers:{'x-will-cycle-evidence-capability':c.issueRequestCapability(cycleId)},app:{locals:{cycleEvidenceRuntime:c}}},early);
   assert.equal(early.code,400); assert.equal(c.sealMonitorCycle(cycleId).state,'SEALED');
   const s2=setup(t), c2=s2.runtime({fault:p=>{if(p==='AFTER_INTENT') throw new Error('crash');}}); c2.recover(); c2.openMonitorCycle(cycleId);
-  const failed=response(); await withCycleEvidenceRequest(async(req,res)=>res.json(req.cycleEvidenceRecord(input)))({query:{monitorCycleId:cycleId},app:{locals:{cycleEvidenceRuntime:c2}}},failed);
+  const failed=response(); await withCycleEvidenceRequest(async(req,res)=>res.json(req.cycleEvidenceRecord(input)))({query:{monitorCycleId:cycleId},headers:{'x-will-cycle-evidence-capability':c2.issueRequestCapability(cycleId)},app:{locals:{cycleEvidenceRuntime:c2}}},failed);
   assert.equal(failed.code,503); assert.equal(c2.health().paused,true); assert.equal(s2.store.list().length,0);
 });
 test('disabled evidence preserves legacy request and failed-cycle behavior',async t=>{
@@ -138,14 +138,14 @@ test('real opportunities route is wrapped and closes writer on query validation 
   const s=setup(t),c=s.runtime();c.recover();c.openMonitorCycle(cycleId);
   const route=opportunitiesRouter.stack.find(layer=>layer.route?.path==='/opportunities').route.stack[0].handle;
   const res=response();
-  await route({query:{monitorCycleId:cycleId,assets:'@@',protocolId:'forged',campaignId:'forged',writerGeneration:'999'},app:{locals:{cycleEvidenceRuntime:c}}},res);
+  await route({query:{monitorCycleId:cycleId,assets:'@@',protocolId:'forged',campaignId:'forged',writerGeneration:'999'},headers:{'x-will-cycle-evidence-capability':c.issueRequestCapability(cycleId)},app:{locals:{cycleEvidenceRuntime:c}}},res);
   assert.equal(res.code,400);assert.equal(s.store.list().length,0);assert.equal(c.sealMonitorCycle(cycleId).state,'SEALED');
 });
 test('late request for sealed evidence cycle never falls back to legacy',async t=>{
   const s=setup(t),c=s.runtime();c.recover();c.openMonitorCycle(cycleId);c.sealMonitorCycle(cycleId);
   let calls=0;const res=response();
   await withCycleEvidenceRequest(async()=>{calls++;})({query:{monitorCycleId:cycleId},app:{locals:{cycleEvidenceRuntime:c}}},res);
-  assert.equal(res.code,503);assert.equal(calls,0);
+  assert.equal(res.code,403);assert.equal(calls,0);
 });
 test('scheduler persistence failure after seal can recover termination',async t=>{
   const s=setup(t),c=s.runtime(),block=path.join(s.directory,'monitor.json.tmp');

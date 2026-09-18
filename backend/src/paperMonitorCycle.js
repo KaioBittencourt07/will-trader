@@ -5,6 +5,7 @@
 export async function runPaperMonitorCycle({
   baseUrl,
   cycleId,
+  capability,
   timeout,
   asset = 'EUR/USD',
   assetClass = 'FX_CRYPTO',
@@ -16,6 +17,14 @@ export async function runPaperMonitorCycle({
 } = {}) {
   if (!timeout?.valid) {
     return { ok: false, status: timeout?.status ?? 'MONITOR_TIMEOUT_CONFIG_INVALID', scanned: 0, recommendation: null };
+  }
+  if (capability !== undefined) {
+    let target;
+    try { target=new URL(baseUrl); } catch { return {ok:false,status:'EVIDENCE_TARGET_INVALID'}; }
+    if (typeof capability !== 'string' || !/^[a-f0-9]{64}$/.test(capability) ||
+      !['127.0.0.1','localhost','[::1]'].includes(target.hostname) || !['http:','https:'].includes(target.protocol) || target.username || target.password) {
+      return {ok:false,status:'EVIDENCE_TARGET_INVALID'};
+    }
   }
 
   const boundedLimit = Math.min(4, Math.max(1, Number(limit) || 1));
@@ -30,8 +39,13 @@ export async function runPaperMonitorCycle({
       if (Number.isFinite(amount) && amount >= 0) efficiency[key] += amount;
     }
   };
-  const request = async (url) => {
-    const response = await fetchImpl(url, { signal: abortSignalFactory(timeout.timeoutMs) });
+  const request = async (url, evidence = false) => {
+    const options={ signal: abortSignalFactory(timeout.timeoutMs) };
+    if (evidence && capability !== undefined) {
+      options.headers={'X-WILL-CYCLE-EVIDENCE-CAPABILITY':capability};
+      options.redirect='error';
+    }
+    const response = await fetchImpl(url, options);
     return { response, body: await response.json() };
   };
 
@@ -63,7 +77,7 @@ export async function runPaperMonitorCycle({
   opportunitiesUrl.searchParams.set('monitorCycleId', cycleId);
   if (multiAsset) opportunitiesUrl.searchParams.set('assetClass', assetClass);
 
-  const opportunities = await request(opportunitiesUrl);
+  const opportunities = await request(opportunitiesUrl, true);
   const body = opportunities.body;
   addEfficiency(body?.providerEfficiency);
   return {
