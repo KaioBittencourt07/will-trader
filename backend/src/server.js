@@ -17,6 +17,7 @@ import { createHistoryStore } from '../../learning/src/historyStore.js';
 import { createProspectiveManifest } from '../../learning/src/prospectiveEvidence.js';
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
 import { createCycleEvidenceRuntime } from '../../learning/src/cycleEvidenceRuntime.js';
+import { prepareOos2rEnvironment, createPreparedOos2rRuntime } from './oos2rActivation.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import { createBlsCalendarAdapter } from '../../context/src/adapters/blsCalendarAdapter.js';
@@ -33,6 +34,7 @@ import { scannerStudyRegistry } from './scannerStudyRegistry.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const oos2rPrepared = prepareOos2rEnvironment();
 const runtimeSecrets = await hydrateRuntimeSecrets();
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 const paperMonitorEnabled = process.env.WILL_PAPER_MONITOR_ENABLED === 'true';
@@ -122,7 +124,9 @@ function runPaperOutcomeSettlementPass() {
   }
 }
 
-app.locals.cycleEvidenceRuntime = process.env.WILL_CYCLE_EVIDENCE_ENABLED === 'true'
+app.locals.cycleEvidenceRuntime = oos2rPrepared
+  ? createPreparedOos2rRuntime({prepared:oos2rPrepared,historyStore:app.locals.historyStore})
+  : process.env.WILL_CYCLE_EVIDENCE_ENABLED === 'true'
   ? createCycleEvidenceRuntime({
       directory: process.env.WILL_CYCLE_EVIDENCE_DIRECTORY,
       protocolId: process.env.WILL_CYCLE_EVIDENCE_PROTOCOL_ID,
