@@ -9,6 +9,7 @@ import executionRouter from './routes/execution.js';
 import opportunitiesRouter from './routes/opportunities.js';
 import researchRouter from './routes/research.js';
 import intelligenceRouter from './routes/intelligence.js';
+import oos2CollectionRouter from './routes/oos2Collection.js';
 import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
 import { hydrateRuntimeSecrets } from './runtimeSecrets.js';
@@ -237,6 +238,7 @@ app.use('/api', historyRouter);
 app.use('/api', executionRouter);
 app.use('/api', opportunitiesRouter);
 app.use('/api', researchRouter);
+app.use('/api', oos2CollectionRouter);
 
 const server = app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
