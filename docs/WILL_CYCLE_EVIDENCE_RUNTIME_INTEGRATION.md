@@ -8,6 +8,14 @@ Monitor -> runtime controller -> opportunities request writer -> prepared histor
 
 The history store exposes prepareDecisionRecord and insertPreparedRecord. Preparation generates the ID but does not persist. Exact duplicate insertion is idempotent; conflicting ID/decisionId is rejected. Insert failure rolls back the in-memory insertion. Existing legacy recordDecision keeps its original deduplication and persistence path when evidence is absent. Membership is top-level and preserved by confirmation/settlement methods.
 
+## Internal request capability
+
+A predictable monitorCycleId grants no writer authority. After durable open, the internal monitor obtains 32 cryptographically random bytes encoded as hex. The controller retains the one-time grant in memory bound to its cycle for strictly less than 30 seconds, measured on a monotonic clock. Issuing a new grant replaces the previous grant for that cycle; consumption deletes it even on cycle mismatch. Expiry, seal, INVALID, pause and process restart prevent reuse. This TTL is request authorization only, not the frozen market freshness gate.
+
+runPaperMonitorCycle sends it solely through X-WILL-CYCLE-EVIDENCE-CAPABILITY to the loopback opportunities endpoint, never the diagnostic endpoint or URL. Capability-bearing requests disallow redirects and non-loopback targets. The wrapper consumes the grant before registering a writer and removes the header from downstream request headers/rawHeaders. Tokens never enter records, WAL, manifests, health, responses or logs.
+
+When evidence is enabled, every request using an autonomous-paper-monitor-v1: ID without a valid capability receives 403 (503 if paused), including unknown/inactive IDs; there is no legacy fallback for such requests. Non-monitor requests and evidence-disabled operation retain legacy behavior. This is an ephemeral bearer capability, not a replacement for transport/process security; software with access to controller methods or process memory remains trusted. No real campaign or capability is configured by this change.
+
 The request wrapper buffers JSON until finally has ended the writer durably. Exceptions/pending transactions or controller pause yield a sanitized 503. Early responses also close the writer. The monitor opens before runCycle, seals only on explicit ok=true, invalidates operational failures, and persists scheduler termination only afterwards. Storage failures pause without pretending termination. Default evidence-disabled behavior remains unchanged.
 
 ## Recovery

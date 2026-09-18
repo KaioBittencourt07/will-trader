@@ -80,7 +80,10 @@ export function createAutonomousPaperMonitor({
     try {
       cycleEvidence.openMonitorCycle(id);
       let result;
-      try { result = await runCycle({cycleId:id,mode:'PAPER'}); }
+      try {
+        const capability=cycleEvidence.issueRequestCapability(id);
+        result = await runCycle({cycleId:id,mode:'PAPER',capability});
+      }
       catch {
         if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
         cycleEvidence.invalidateMonitorCycle(id); terminate();
