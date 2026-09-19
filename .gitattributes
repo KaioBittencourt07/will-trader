@@ -1,1 +1,3 @@
 backend/config/experiments/edge-gate-oos2r-freeze.json -text
+backend/config/experiments/edge-gate-oos2s-freeze.json -text
+backend/config/experiments/edge-gate-oos2s-freeze.json.sha256 -text

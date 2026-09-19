@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import { settleDuePaperCampaignOutcomes } from '../backend/src/paperOutcomeSettlement.js';
+const S={protocolId:'will-edge-gate-oos2s-v1',campaignId:'will-edge-gate-oos2s-20260919-v1'};
+function record(id,protocolId,campaignId){return {id,protocolId,campaignId,status:'OPEN',direction:'BUY',outcome:null,clickTime:'2099-01-01T00:00:00.000Z',execution:{status:'PENDING',plannedClickTime:'2099-01-01T00:00:00.000Z'},metadata:{context:{monitorCycleId:'autonomous-paper-monitor-v1:x'}}};}
+function store(rows){return {list:()=>structuredClone(rows),settle:()=>{throw Error('UNEXPECTED_SETTLE');},confirmPaperExecution:()=>{throw Error('UNEXPECTED_CONFIRM');}};}
+test('exact OOS2S settlement scope ignores pre-existing OPEN OOS2R',()=>{const rows=[record('r','will-edge-gate-oos2r-v1','will-edge-gate-oos2r-20260918-v1'),record('s',S.protocolId,S.campaignId)],before=structuredClone(rows);const result=settleDuePaperCampaignOutcomes({historyStore:store(rows),scope:S,now:0});assert.equal(result.openCampaignSignalsChecked,1);assert.deepEqual(rows,before);assert.deepEqual(result.settlementScope,{mode:'EXACT_PROTOCOL_CAMPAIGN',...S});});
+test('partial settlement scope fails closed',()=>{for(const scope of [{protocolId:S.protocolId},{campaignId:S.campaignId}])assert.throws(()=>settleDuePaperCampaignOutcomes({historyStore:store([]),scope,now:0}),/SCOPE_INCOMPLETE/);});
+test('legacy settlement mode remains available only when no explicit scope is supplied',()=>{const result=settleDuePaperCampaignOutcomes({historyStore:store([record('legacy')]),now:0});assert.equal(result.settlementScope.mode,'LEGACY_MONITOR_PREFIX');});

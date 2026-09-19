@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "edge-gate-oos2r-retirement-v1",
+  "classification": "OPERATOR_CAPTURED_PROVENANCE",
+  "reason": "PROTOCOL_COMPLETENESS_DEFECT_SKIPPED_NONTERMINAL",
+  "performanceStopping": false,
+  "historyCount": 1108,
+  "historyFileSha256": "4205D3E27EC6E374C3A3A746F19E9F85EDD4B83772C3CB3BDA35D8985F06D6CA",
+  "oos2rJournalSha256": "7FD67906684C7BE6FF2F9F7C5147992DC05ECFF3CAC9270E5895FA769D916B1F",
+  "cycles": 23,
+  "sealed": 23,
+  "invalid": 0,
+  "openManifests": 0,
+  "inventoryRecords": 12,
+  "recordSnapshot": {
+    "closedWin": 3,
+    "closedLoss": 4,
+    "skippedOutcomeNull": 4,
+    "open": 1
+  },
+  "lastCycle": {
+    "cycleId": "autonomous-paper-monitor-v1:29829699",
+    "writerGeneration": 23,
+    "expectedRecordCount": 1,
+    "state": "SEALED",
+    "sealSequence": 139
+  },
+  "note": "Captured by the operator; not reverified from unavailable local bytes. OOS-2R remains immutable and is not repaired or retuned."
+}

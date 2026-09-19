@@ -4,12 +4,21 @@ export const PAPER_OUTCOME_SETTLEMENT_VERSION = 'paper-outcome-settlement-v2';
 export const PAPER_OUTCOME_REFERENCE_MAX_LAG_MS = 30_000;
 const CAMPAIGN_PREFIX = 'autonomous-paper-monitor-v1:';
 
-function isCampaignRecord(record) {
+function settlementScope(scope) {
+  if (scope == null) return null;
+  if (typeof scope?.protocolId !== 'string' || !scope.protocolId || typeof scope?.campaignId !== 'string' || !scope.campaignId) {
+    throw new Error('PAPER_OUTCOME_SETTLEMENT_SCOPE_INCOMPLETE');
+  }
+  return Object.freeze({ protocolId: scope.protocolId, campaignId: scope.campaignId });
+}
+
+function isCampaignRecord(record, scope) {
+  if (scope) return record?.protocolId === scope.protocolId && record?.campaignId === scope.campaignId;
   return String(record?.metadata?.context?.monitorCycleId || '').startsWith(CAMPAIGN_PREFIX);
 }
 
-function eligibleOpenRecord(record) {
-  return isCampaignRecord(record)
+function eligibleOpenRecord(record, scope) {
+  return isCampaignRecord(record, scope)
     && record?.status === 'OPEN'
     && ['BUY', 'SELL'].includes(record?.direction)
     && record?.execution?.status !== 'CONFIRMED'
@@ -39,6 +48,7 @@ export function settleDuePaperCampaignOutcomes({
   historyStore,
   coinbaseTemporalFeeds,
   biquoteForexFeed,
+  scope = null,
   now = Date.now(),
   maxReferenceLagMs = PAPER_OUTCOME_REFERENCE_MAX_LAG_MS
 } = {}) {
@@ -54,8 +64,9 @@ export function settleDuePaperCampaignOutcomes({
 
   const checkedAt = Number(now);
   if (!Number.isFinite(checkedAt)) throw new Error('PAPER_OUTCOME_CLOCK_INVALID');
+  const exactScope = settlementScope(scope);
 
-  const records = historyStore.list().filter(eligibleOpenRecord);
+  const records = historyStore.list().filter(record => eligibleOpenRecord(record, exactScope));
   const results = [];
   let entriesCaptured = 0;
   let settled = 0;
@@ -192,7 +203,7 @@ export function settleDuePaperCampaignOutcomes({
   return Object.freeze({
     version: PAPER_OUTCOME_SETTLEMENT_VERSION,
     mode: 'PAPER_ONLY',
-    campaignPrefix: CAMPAIGN_PREFIX,
+    settlementScope: exactScope ? Object.freeze({ mode: 'EXACT_PROTOCOL_CAMPAIGN', ...exactScope }) : Object.freeze({ mode: 'LEGACY_MONITOR_PREFIX', campaignPrefix: CAMPAIGN_PREFIX }),
     checkedAt: new Date(checkedAt).toISOString(),
     openCampaignSignalsChecked: records.length,
     entriesCaptured,

@@ -19,6 +19,8 @@ import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaper
 import { createCycleEvidenceRuntime } from '../../learning/src/cycleEvidenceRuntime.js';
 import { prepareOos2rEnvironment, createPreparedOos2rRuntime } from './oos2rActivation.js';
 import { inspectOos2rCollectionStatus } from './oos2rStatus.js';
+import { prepareOos2sEnvironment, createPreparedOos2sRuntime } from './oos2sActivation.js';
+import { inspectOos2sStatus } from './oos2sStatus.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import { createBlsCalendarAdapter } from '../../context/src/adapters/blsCalendarAdapter.js';
@@ -36,6 +38,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const oos2rPrepared = prepareOos2rEnvironment();
+const oos2sPrepared = prepareOos2sEnvironment();
+if(oos2rPrepared&&oos2sPrepared)throw new Error('MULTIPLE_EVIDENCE_CAMPAIGNS_CONFIGURED');
 const runtimeSecrets = await hydrateRuntimeSecrets();
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 const paperMonitorEnabled = process.env.WILL_PAPER_MONITOR_ENABLED === 'true';
@@ -97,6 +101,7 @@ app.locals.paperOutcomeSettlement = Object.freeze({
   losses: 0,
   ties: 0,
   dataInvalid: 0,
+  settlementScope:oos2sPrepared?Object.freeze({mode:'EXACT_PROTOCOL_CAMPAIGN',protocolId:'will-edge-gate-oos2s-v1',campaignId:'will-edge-gate-oos2s-20260919-v1'}):Object.freeze({mode:'LEGACY_MONITOR_PREFIX'}),
   automatedBrokerExecution: false
 });
 app.locals.paperOutcomeSettlementTimer = null;
@@ -108,7 +113,8 @@ function runPaperOutcomeSettlementPass() {
       historyStore: app.locals.historyStore,
       coinbaseTemporalFeeds: app.locals.coinbaseTemporalFeeds,
       biquoteForexFeed: app.locals.biquoteForexFeed,
-      now: Date.now()
+      now: Date.now(),
+      scope:oos2sPrepared?{protocolId:'will-edge-gate-oos2s-v1',campaignId:'will-edge-gate-oos2s-20260919-v1'}:null
     });
     app.locals.paperOutcomeSettlement = settlement;
     return settlement;
@@ -125,7 +131,9 @@ function runPaperOutcomeSettlementPass() {
   }
 }
 
-app.locals.cycleEvidenceRuntime = oos2rPrepared
+app.locals.cycleEvidenceRuntime = oos2sPrepared
+  ? createPreparedOos2sRuntime({prepared:oos2sPrepared,historyStore:app.locals.historyStore})
+  : oos2rPrepared
   ? createPreparedOos2rRuntime({prepared:oos2rPrepared,historyStore:app.locals.historyStore})
   : process.env.WILL_CYCLE_EVIDENCE_ENABLED === 'true'
   ? createCycleEvidenceRuntime({
@@ -246,6 +254,10 @@ app.get('/api/oos2r/status', (_req, res) => {
     evidenceDirectory:process.env.WILL_CYCLE_EVIDENCE_DIRECTORY
   });
   res.status(status.ok ? 200 : 503).json(status);
+});
+app.get('/api/oos2s/status', (_req,res)=>{
+  const status=inspectOos2sStatus({evidenceDirectory:process.env.WILL_CYCLE_EVIDENCE_DIRECTORY,history:app.locals.historyStore.list()});
+  res.status(status.ok?200:503).json(status);
 });
 app.get('/api/paper-monitor', (_req, res) => {
   res.json({ ok: true, monitor: app.locals.paperMonitor.health(), outcomeSettlement: app.locals.paperOutcomeSettlement });
