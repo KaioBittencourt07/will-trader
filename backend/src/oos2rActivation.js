@@ -58,7 +58,16 @@ export function inspectOos2rActivation({historyFile,evidenceDirectory,scanRoots,
 
 // Called before secret hydration/history backup/provider creation in server.js.
 export function prepareOos2rEnvironment(env=process.env) {
-  const requested=env.WILL_OOS2R_START_AUTHORIZATION!==undefined||env.WILL_CYCLE_EVIDENCE_PROTOCOL_ID===OOS2R_PROTOCOL||env.WILL_CYCLE_EVIDENCE_CAMPAIGN_ID===OOS2R_CAMPAIGN;
+  const reservedEvidenceDirectory=
+    typeof env.WILL_CYCLE_EVIDENCE_DIRECTORY==='string'&&
+    path.basename(path.normalize(env.WILL_CYCLE_EVIDENCE_DIRECTORY)).toLowerCase()==='oos2r-evidence-20260918-v1';
+
+  const requested=
+    env.WILL_OOS2R_START_AUTHORIZATION!==undefined||
+    env.WILL_OOS2R_EVIDENCE_SCAN_ROOTS!==undefined||
+    env.WILL_CYCLE_EVIDENCE_PROTOCOL_ID===OOS2R_PROTOCOL||
+    env.WILL_CYCLE_EVIDENCE_CAMPAIGN_ID===OOS2R_CAMPAIGN||
+    reservedEvidenceDirectory;
   if(!requested)return null;
   if(env.WILL_OOS2R_START_AUTHORIZATION!==OOS2R_START_AUTHORIZATION||env.WILL_CYCLE_EVIDENCE_ENABLED!=='true'||
     env.WILL_CYCLE_EVIDENCE_PROTOCOL_ID!==OOS2R_PROTOCOL||env.WILL_CYCLE_EVIDENCE_CAMPAIGN_ID!==OOS2R_CAMPAIGN)fail('OOS2R_EXACT_ACTIVATION_CONFIGURATION_REQUIRED');

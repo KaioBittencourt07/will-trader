@@ -18,6 +18,7 @@ import { createProspectiveManifest } from '../../learning/src/prospectiveEvidenc
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
 import { createCycleEvidenceRuntime } from '../../learning/src/cycleEvidenceRuntime.js';
 import { prepareOos2rEnvironment, createPreparedOos2rRuntime } from './oos2rActivation.js';
+import { inspectOos2rCollectionStatus } from './oos2rStatus.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import { createBlsCalendarAdapter } from '../../context/src/adapters/blsCalendarAdapter.js';
@@ -240,6 +241,12 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.get('/api/oos2r/status', (_req, res) => {
+  const status=inspectOos2rCollectionStatus({
+    evidenceDirectory:process.env.WILL_CYCLE_EVIDENCE_DIRECTORY
+  });
+  res.status(status.ok ? 200 : 503).json(status);
+});
 app.get('/api/paper-monitor', (_req, res) => {
   res.json({ ok: true, monitor: app.locals.paperMonitor.health(), outcomeSettlement: app.locals.paperOutcomeSettlement });
 });

@@ -72,3 +72,41 @@ test('server checks activation before secrets/provider/history side effects and 
   assert.ok(source.indexOf('const oos2rPrepared = prepareOos2rEnvironment()')<source.indexOf('const runtimeSecrets = await hydrateRuntimeSecrets()'));
   assert.match(source,/createPreparedOos2rRuntime\(\{prepared:oos2rPrepared,historyStore:app.locals.historyStore\}\)/);
 });
+
+test('partial OOS2R activation signals fail closed instead of falling back to legacy',()=>{
+  const signals=[
+    ['WILL_OOS2R_START_AUTHORIZATION','wrong'],
+    ['WILL_CYCLE_EVIDENCE_PROTOCOL_ID',OOS2R_PROTOCOL],
+    ['WILL_CYCLE_EVIDENCE_CAMPAIGN_ID',OOS2R_CAMPAIGN],
+    ['WILL_CYCLE_EVIDENCE_DIRECTORY','C:/reserved/oos2r-evidence-20260918-v1'],
+    ['WILL_OOS2R_EVIDENCE_SCAN_ROOTS','["C:/reserved"]']
+  ];
+  for(const [key,value] of signals) {
+    assert.throws(
+      ()=>prepareOos2rEnvironment({[key]:value}),
+      /OOS2R_EXACT_ACTIVATION_CONFIGURATION_REQUIRED/
+    );
+  }
+});
+
+test('unrelated legacy environment remains outside OOS2R activation',()=>{
+  assert.equal(
+    prepareOos2rEnvironment({
+      WILL_PAPER_MONITOR_ENABLED:'false',
+      DEFAULT_ASSET:'EUR/USD'
+    }),
+    null
+  );
+});
+
+test('complete unrelated legacy evidence configuration does not enter OOS2R activation',()=>{
+  assert.equal(
+    prepareOos2rEnvironment({
+      WILL_CYCLE_EVIDENCE_ENABLED:'true',
+      WILL_CYCLE_EVIDENCE_PROTOCOL_ID:'legacy-protocol-v1',
+      WILL_CYCLE_EVIDENCE_CAMPAIGN_ID:'legacy-campaign-v1',
+      WILL_CYCLE_EVIDENCE_DIRECTORY:'C:/legacy/evidence'
+    }),
+    null
+  );
+});
