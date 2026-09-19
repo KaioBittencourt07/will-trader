@@ -1,0 +1,211 @@
+import { observationFromCoinbaseTicker, qualifyCoinbaseTickerSeries, coinbaseProductFor } from './coinbaseTemporalAuthority.js';
+
+const WS_URL = 'wss://ws-feed.exchange.coinbase.com';
+const OUTCOME_REFERENCE_MAX_LAG_MS = 30_000;
+const OUTCOME_REFERENCE_RETENTION_MS = 40_000;
+const OUTCOME_REFERENCE_MAX_ENTRIES = 10_000;
+
+function addListener(socket, event, handler) {
+  if (typeof socket.addEventListener === 'function') socket.addEventListener(event, handler);
+  else socket[`on${event}`] = handler;
+}
+
+function asTimestamp(value) {
+  if (Number.isFinite(Number(value))) return Number(value);
+  const parsed = Date.parse(value ?? '');
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function createCoinbaseTemporalFeed({
+  enabled = false,
+  symbol = 'BTC/USD',
+  webSocketFactory = (url) => new WebSocket(url),
+  now = () => Date.now(),
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+  reconnectMs = 2_000,
+  maxObservations = 40
+} = {}) {
+  const providerProduct = coinbaseProductFor(symbol);
+  const observations = [];
+  const outcomeReferences = [];
+  let socket = null;
+  let running = false;
+  let reconnectTimer = null;
+  let state = enabled ? 'IDLE' : 'DISABLED';
+  let messagesReceived = 0;
+  let acceptedObservations = 0;
+  let subscriptionsAccepted = 0;
+  let reconnects = 0;
+  let lastError = null;
+
+  function pushObservation(observation) {
+    observations.push(observation);
+    if (observations.length > Math.max(8, Number(maxObservations) || 40)) observations.shift();
+
+    if (Number.isFinite(Number(observation?.eventTimestamp)) && Number.isFinite(Number(observation?.price))) {
+      outcomeReferences.push(observation);
+      const cutoff = Number(observation.eventTimestamp) - OUTCOME_REFERENCE_RETENTION_MS;
+      while (outcomeReferences.length && Number(outcomeReferences[0].eventTimestamp) < cutoff) outcomeReferences.shift();
+      if (outcomeReferences.length > OUTCOME_REFERENCE_MAX_ENTRIES) {
+        outcomeReferences.splice(0, outcomeReferences.length - OUTCOME_REFERENCE_MAX_ENTRIES);
+      }
+    }
+    acceptedObservations += 1;
+  }
+
+  function referenceAtOrAfter(targetTimestamp, maxLagMs = OUTCOME_REFERENCE_MAX_LAG_MS) {
+    const target = asTimestamp(targetTimestamp);
+    if (!Number.isFinite(target) || Number(maxLagMs) !== OUTCOME_REFERENCE_MAX_LAG_MS) return null;
+    const upperBound = target + OUTCOME_REFERENCE_MAX_LAG_MS;
+    const match = outcomeReferences.find((observation) => Number.isFinite(Number(observation?.eventTimestamp))
+      && Number(observation.eventTimestamp) >= target
+      && Number(observation.eventTimestamp) <= upperBound
+      && Number.isFinite(Number(observation?.price))
+      && Number(observation.price) > 0) ?? null;
+
+    if (!match) return null;
+    const eventTimestamp = Number(match.eventTimestamp);
+    return Object.freeze({
+      provider: 'coinbase-exchange-ticker',
+      symbol,
+      price: Number(match.price),
+      timestamp: new Date(eventTimestamp).toISOString(),
+      eventTimestamp,
+      lagMs: eventTimestamp - target,
+      valid: true,
+      status: 'OK'
+    });
+  }
+
+  function scheduleReconnect() {
+    if (!running || reconnectTimer) return;
+    reconnectTimer = setTimer(() => {
+      reconnectTimer = null;
+      reconnects += 1;
+      connect();
+    }, Math.max(500, Number(reconnectMs) || 2_000));
+  }
+
+  function connect() {
+    if (!running || socket) return;
+    state = 'CONNECTING';
+    try {
+      const candidate = webSocketFactory(WS_URL);
+      socket = candidate;
+      addListener(candidate, 'open', () => {
+        if (socket !== candidate || !running) return;
+        state = 'CONNECTED';
+        try {
+          candidate.send(JSON.stringify({ type: 'subscribe', product_ids: [providerProduct], channels: ['ticker'] }));
+        } catch (error) {
+          lastError = String(error?.message || 'COINBASE_SUBSCRIBE_SEND_FAILED').slice(0, 200);
+        }
+      });
+      addListener(candidate, 'message', (event) => {
+        messagesReceived += 1;
+        let payload;
+        try {
+          payload = JSON.parse(typeof event?.data === 'string' ? event?.data : String(event?.data ?? ''));
+        } catch {
+          return;
+        }
+        if (payload?.type === 'subscriptions') {
+          const ticker = Array.isArray(payload?.channels)
+            ? payload.channels.find((channel) => channel?.name === 'ticker' && Array.isArray(channel?.product_ids) && channel.product_ids.includes(providerProduct))
+            : null;
+          if (ticker) subscriptionsAccepted = 1;
+          return;
+        }
+        if (payload?.type !== 'ticker' || payload?.product_id !== providerProduct) return;
+        try {
+          pushObservation(observationFromCoinbaseTicker({
+            payload,
+            receivedAt: new Date(now()).toISOString(),
+            canonicalSymbol: symbol
+          }));
+        } catch (error) {
+          lastError = String(error?.message || 'COINBASE_TICKER_PARSE_FAILED').slice(0, 200);
+        }
+      });
+      addListener(candidate, 'error', (error) => {
+        lastError = String(error?.message || error?.type || 'COINBASE_WEBSOCKET_ERROR').slice(0, 200);
+      });
+      addListener(candidate, 'close', () => {
+        if (socket !== candidate) return;
+        socket = null;
+        subscriptionsAccepted = 0;
+        state = running ? 'RECONNECTING' : 'STOPPED';
+        if (running) scheduleReconnect();
+      });
+    } catch (error) {
+      socket = null;
+      lastError = String(error?.message || 'COINBASE_WEBSOCKET_CONSTRUCTOR_FAILED').slice(0, 200);
+      state = 'RECONNECTING';
+      scheduleReconnect();
+    }
+  }
+
+  function start() {
+    if (!enabled || running) return false;
+    running = true;
+    connect();
+    return true;
+  }
+
+  function stop() {
+    running = false;
+    clearTimer(reconnectTimer);
+    reconnectTimer = null;
+    const candidate = socket;
+    socket = null;
+    state = enabled ? 'STOPPED' : 'DISABLED';
+    try { candidate?.close?.(); } catch {}
+  }
+
+  function health() {
+    const checkedAt = now();
+    const qualification = qualifyCoinbaseTickerSeries({ observations, now: checkedAt });
+    const latest = observations.at(-1) ?? null;
+    const authority = qualification.temporalAuthority;
+    const ready = qualification.canEvaluateFrozenFreshness === true
+      && authority?.authorityGate === 'PASS'
+      && authority?.freshnessGate === 'PASS';
+    return Object.freeze({
+      version: 'coinbase-temporal-runtime-feed-v1',
+      mode: 'TEMPORAL_AUTHORITY_ONLY',
+      enabled,
+      running,
+      state,
+      symbol,
+      providerProduct,
+      endpoint: WS_URL,
+      channel: 'ticker',
+      authenticationRequired: false,
+      messagesReceived,
+      acceptedObservations,
+      retainedObservations: observations.length,
+      retainedOutcomeReferences: outcomeReferences.length,
+      outcomeReferenceRetentionMs: OUTCOME_REFERENCE_RETENTION_MS,
+      subscriptionsAccepted,
+      reconnects,
+      lastError,
+      ready,
+      latestTick: latest ? Object.freeze({
+        symbol: latest.symbol,
+        price: latest.price,
+        eventTimestamp: latest.eventTimestamp,
+        eventTimeRaw: latest.eventTimeRaw,
+        receivedAt: latest.receivedAt,
+        sequence: latest.sequence,
+        tradeId: latest.tradeId
+      }) : null,
+      qualification,
+      temporalAuthority: authority,
+      decisionImpact: ready ? 'ALLOW_ANALYSIS_ONLY' : 'NONE',
+      ordersExecuted: 0
+    });
+  }
+
+  return Object.freeze({ start, stop, health, referenceAtOrAfter });
+}
