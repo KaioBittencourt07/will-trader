@@ -8,6 +8,11 @@ export function validateOos2rSnapshot(entries) {
   if(entries.length!==23||entries.some(e=>!e.projectionValid||e.manifest.state!=='SEALED')||entries.reduce((n,e)=>n+e.manifest.expectedRecordCount,0)!==12)throw new Error('OOS2S_OOS2R_SNAPSHOT_MISMATCH');
   return true;
 }
+export function assertTemporalEdgeCut(edgeCut,history,entries) {
+  const edge=Date.parse(edgeCut);if(!Number.isFinite(edge))throw new Error('OOS2S_EXPLICIT_EDGE_CUT_REQUIRED');
+  const values=[];for(const entry of entries){values.push(entry?.manifest?.openedAt,entry?.manifest?.sealedAt);}for(const record of history){values.push(record?.createdAt,record?.settledAt);}
+  const times=values.map(Date.parse).filter(Number.isFinite);if(times.length&&edge<=Math.max(...times))throw new Error('OOS2S_EDGE_CUT_NOT_AFTER_BASELINE');return true;
+}
 export function finalizeOos2sFreeze({historyFile,oos2rEvidenceDirectory,edgeCut,write=false,confirmBackendStopped=false,freezeFile,sourceHead}={}) {
   if(!/^\d{4}-\d{2}-\d{2}T.*Z$/.test(edgeCut??'')||!Number.isFinite(Date.parse(edgeCut)))throw new Error('OOS2S_EXPLICIT_EDGE_CUT_REQUIRED');
   if(write&&!confirmBackendStopped)throw new Error('OOS2S_BACKEND_STOP_CONFIRMATION_REQUIRED');
@@ -17,12 +22,13 @@ export function finalizeOos2sFreeze({historyFile,oos2rEvidenceDirectory,edgeCut,
   assertOos2rJournalHash(journalBytes);
   const manifests=fs.readdirSync(oos2rEvidenceDirectory).filter(x=>x.endsWith('.manifest.json')).map(x=>JSON.parse(fs.readFileSync(path.join(oos2rEvidenceDirectory,x),'utf8'))),entries=replayEvidence(journalBytes,manifests);
   validateOos2rSnapshot(entries);
+  assertTemporalEdgeCut(edgeCut,history,entries);
   const head=sourceHead??execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
   const freeze={schemaVersion:'edge-gate-oos2s-freeze-v1',policy:'IMMUTABLE_AFTER_FREEZE',experiment:'WILL Edge Gate OOS-2S',protocolId:'will-edge-gate-oos2s-v1',campaignId:'will-edge-gate-oos2s-20260919-v1',edgeCut,createdAt:edgeCut,sourceHead:head,mode:'PAPER_READ_ONLY',frozenThreshold:0.599936,operator:'<=',metric:'MeanAbsMomentum',rawQ50:0.599936477924654,
     formula:{field:'metadata.featureSnapshot.momentum',transform:'abs',aggregation:'arithmetic mean by cycle',population:'official PAPER_CONFIRMED WIN/LOSS/TIE only'},baselineCount:commitment.baselineCount,baselineIdsSha256:commitment.baselineIdsSha256,historyFileSha256:EXPECTED_HISTORY_SHA,
     terminal:{trade:'CLOSED WIN/LOSS/TIE/DATA_INVALID with valid post-open settledAt; W/L/T require frozen settlement provenance',noTrade:'unchanged WAL-born SKIPPED with null execution/outcome/settledAt/clickTime'},checkpoint:{candidateCycles:50,selection:'first 50 matching WAL OPENs ordered by openedAt then cycleId',invalidAndIncompleteSlots:'retained; no replacements'},bootstrap:{unit:'cycle',replications:10000,seed:20260915,rng:'xorshift32'},
     performance:{primary:'accepted-cycle official WIN/LOSS/TIE only',noTrade:'excluded',dataInvalid:'reported separately and excluded',expectancy:'NOT_AVAILABLE',financialEdge:'NOT_AVAILABLE',subgroups:'EXPLORATORY_ONLY'},
-    retirementProvenanceOos2r:{classification:'OPERATOR_CAPTURED_PROVENANCE',reason:'PROTOCOL_COMPLETENESS_DEFECT_SKIPPED_NONTERMINAL',historyCount:1108,historyFileSha256:EXPECTED_HISTORY_SHA,oos2rJournalSha256:EXPECTED_OOS2R_JOURNAL_SHA,cycles:23,sealed:23,invalid:0,open:0,inventoryRecords:12},noRetuning:true,noEarlyStopping:true,noAutomaticLivePromotion:true,activationAuthorized:false};
+    retirementProvenanceOos2r:{classification:'OPERATOR_CAPTURED_PROVENANCE',reason:'PROTOCOL_COMPLETENESS_DEFECT_SKIPPED_NONTERMINAL',historyCount:1108,historyFileSha256:EXPECTED_HISTORY_SHA,oos2rJournalSha256:EXPECTED_OOS2R_JOURNAL_SHA,cycles:23,sealed:23,invalid:0,openManifests:0,inventoryRecords:12,recordSnapshot:{closedWin:3,closedLoss:4,skippedOutcomeNull:4,openRecords:1}},noRetuning:true,noEarlyStopping:true,noAutomaticLivePromotion:true,activationAuthorized:false};
   const bytes=Buffer.from(`${JSON.stringify(freeze,null,2)}\n`,'utf8'),freezeSha256=sha256(bytes),report={mode:write?'WRITE':'DRY_RUN',...commitment,historyFileSha256:EXPECTED_HISTORY_SHA,oos2rJournalSha256:EXPECTED_OOS2R_JOURNAL_SHA,cycles:23,freezeSha256,edgeCut,freeze};
   if(write){if(!freezeFile)throw new Error('OOS2S_FREEZE_FILE_REQUIRED');const sidecar=`${freezeFile}.sha256`;if(fs.existsSync(freezeFile)||fs.existsSync(sidecar))throw new Error('OOS2S_FREEZE_ALREADY_EXISTS');fs.mkdirSync(path.dirname(freezeFile),{recursive:true});fs.writeFileSync(freezeFile,bytes,{flag:'wx'});fs.writeFileSync(sidecar,`${freezeSha256}\n`,{flag:'wx'});}
   return report;

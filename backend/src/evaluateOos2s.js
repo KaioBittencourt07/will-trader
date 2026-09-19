@@ -11,12 +11,12 @@ export function evaluateOos2s({history,walBytes,manifests,freeze=readOos2sFreeze
   const report={experiment:'WILL Edge Gate OOS-2S',status:'PRELIMINARY',formalAnalysisAllowed:false,freezeIntegrity:'PASS',baselineIntegrity:'FAIL',evidenceIntegrity:'FAIL',candidateCyclesObserved:0,requiredCandidateCycles:50,decisionImpact:'NONE',prospectivePaperAuthorized:false,ordersExecuted:0,reasonCodes:[]};
   if(!isVerifiedOos2sFreeze(freeze)){report.freezeIntegrity='FAIL';report.reasonCodes.push('UNVERIFIED_FREEZE');return report;}
   try{canonicalIds(history);}catch{report.reasonCodes.push('HISTORY_IDS_INVALID');return report;}
-  if(baselineAudit?.baselineCount===freeze.baselineCount&&baselineAudit?.baselineIdsSha256===freeze.baselineIdsSha256&&baselineAudit?.historyFileSha256===freeze.historyFileSha256)report.baselineIntegrity='PASS';else report.reasonCodes.push('BASELINE_AUDIT_REQUIRED');
+  if(baselineAudit?.schemaVersion==='oos2s-baseline-audit-v1'&&baselineAudit?.status==='PASS'&&baselineAudit.baselineCount===freeze.baselineCount&&baselineAudit.baselineIdsSha256===freeze.baselineIdsSha256&&baselineAudit.historyFileSha256===freeze.historyFileSha256)report.baselineIntegrity='PASS';else report.reasonCodes.push('BASELINE_AUDIT_REQUIRED');
   let entries;try{entries=replayEvidence(walBytes,manifests);}catch{report.reasonCodes.push('WAL_UNVERIFIABLE');return report;}
   const cut=Date.parse(freeze.edgeCut),campaign=entries.filter(e=>e.manifest.protocolId===freeze.protocolId&&e.manifest.campaignId===freeze.campaignId);
-  const selected=campaign.filter(e=>Date.parse(e.manifest.openedAt)>cut).sort((a,b)=>Date.parse(a.manifest.openedAt)-Date.parse(b.manifest.openedAt)||a.manifest.cycleId.localeCompare(b.manifest.cycleId)).slice(0,50);
-  report.candidateCyclesObserved=selected.length;report.selectedCycleIds=selected.map(e=>e.manifest.cycleId);
-  const ambiguity=history.some(r=>(r.protocolId===freeze.protocolId||r.campaignId===freeze.campaignId)&&!campaign.some(e=>sameMembership(r,e.manifest)&&e.manifest.recordIds.includes(r.id)));
+  const candidates=campaign.filter(e=>Date.parse(e.manifest.openedAt)>cut).sort((a,b)=>Date.parse(a.manifest.openedAt)-Date.parse(b.manifest.openedAt)||a.manifest.cycleId.localeCompare(b.manifest.cycleId)),selected=candidates.slice(0,50);
+  report.candidateCyclesObserved=candidates.length;report.selectedCycleIds=selected.map(e=>e.manifest.cycleId);
+  const ambiguity=history.some(r=>(r.protocolId===freeze.protocolId||r.campaignId===freeze.campaignId)&&!campaign.some(e=>sameMembership(r,e.manifest)&&e.manifest.recordIds.includes(r.id)&&r.metadata?.context?.monitorCycleId===e.manifest.cycleId));
   const checked=selected.map(entry=>({...verifyOos2sCycle(entry,history),entry}));
   report.inventoryRecords=checked.reduce((n,c)=>n+c.records.length,0);report.tradeTerminalRecords=checked.reduce((n,c)=>n+c.tradeTerminalRecords,0);report.noTradeRecords=checked.reduce((n,c)=>n+c.noTradeRecords,0);report.dataInvalidRecords=checked.reduce((n,c)=>n+c.dataInvalidRecords,0);
   report.completedCandidateCycles=checked.filter(c=>c.complete).length;report.invalidCycles=checked.filter(c=>!c.valid).length;

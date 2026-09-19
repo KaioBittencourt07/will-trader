@@ -8,6 +8,8 @@ OOS-2S preserves `MeanAbsMomentum <= 0.599936`, raw IS Q50 `0.599936477924654`, 
 
 `TRADE_TERMINAL` requires `CLOSED`, a valid `settledAt >= manifest.openedAt`, and `WIN`, `LOSS`, `TIE`, or separately classified `DATA_INVALID`. W/L/T additionally require `PAPER_CONFIRMED`, `paper-outcome-settlement-v2`, and `paper-live-temporal-reference-v1`.
 
+Every terminal row must retain exact membership, context cycle ID, and an immutable WAL-born decision projection (`asset`, `timeframe`, `direction`, `regime`, `setup`, and `metadata.featureSnapshot`). Settlement-only fields may evolve. A trade terminal must originate as an OPEN BUY/SELL; a WAL-born SKIPPED can never be rewritten into a trade or DATA_INVALID terminal.
+
 `NO_TRADE_TERMINAL` requires an unchanged record that authoritatively originated in `RECORD_CREATE_INTENT` as `SKIPPED` with null execution, outcome, settledAt and clickTime, and remains so. Direction is deliberately irrelevant: a blocked BUY or SELL can be born skipped. No outcome or settlement timestamp is synthesized. No-trades satisfy inventory completeness but never enter momentum, binary N, WR or bootstrap. A no-trade-only cycle is complete for inventory and invalid for the metric; its slot is retained.
 
 The first 50 matching WAL OPENs are ordered by `openedAt`, then `cycleId`. INVALID, OPEN, incomplete and metric-invalid slots remain fixed and are never replaced by slot 51. Before all formal gates pass, evaluator/status output contains no performance.
@@ -32,12 +34,14 @@ After independent review of the printed summary, final creation is explicit and 
 node scripts/finalizeOos2sFreeze.mjs --edge-cut $edgeCut --confirm-backend-stopped --write
 ```
 
-The writer creates `edge-gate-oos2s-freeze.json` and its `.sha256` sidecar only when absent. The reader pins bytes to that sidecar, rejects missing/malformed/tampered files, and has no environment bypass. The dry-run never writes.
+The writer also requires edgeCut to be strictly later than every valid baseline history `createdAt`/`settledAt` and every OOS-2R manifest `openedAt`/`sealedAt`. It creates `edge-gate-oos2s-freeze.json` and its `.sha256` sidecar only when absent. The reader pins bytes to that sidecar, deep-freezes the verified object, rejects missing/malformed/tampered files, and has no environment bypass. The dry-run never writes.
 
 ## First start and recovery
 
 The reviewed environment template keeps the monitor OFF. First-start preflight checks freeze integrity, exact baseline count, canonical ID hash and full history-file SHA, absence of prior OOS-2S membership/evidence, an absent target directory, and strict time after edgeCut. It creates no directory, WAL, manifest, cycle or record. The same full continuity check repeats immediately before the first authoritative OPEN; mutation pauses fail closed.
 
 Restart is separate from first start. The current delivery provides only a read-only restart inspector: existing directory, no lock, valid WAL replay/projections, exact identity and sealed-only state. Writable recovery remains `NOT_AUTHORIZED`; it never deletes/truncates WAL, resets generation or creates a replacement directory.
+
+Formal baseline audit is caller-supplied but byte-derived through `auditOos2sBaselineBytes`; copied commitment values are not an audit. After first start, the expected audit source is the immutable pre-monitor backup `will-history.json.bak`, not the evolving live history. The evaluator itself remains pure and does not open files.
 
 Future activation identity is `will-edge-gate-oos2s-v1` / `will-edge-gate-oos2s-20260919-v1`, with evidence at `backend/data/oos2s-evidence-20260919-v1`. It remains PAPER only. This work starts no server, monitor, provider, broker, order, campaign or collection and grants no LIVE authorization.
