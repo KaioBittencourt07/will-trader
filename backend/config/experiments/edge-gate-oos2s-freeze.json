@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "edge-gate-oos2s-freeze-v1",
+  "policy": "IMMUTABLE_AFTER_FREEZE",
+  "experiment": "WILL Edge Gate OOS-2S",
+  "protocolId": "will-edge-gate-oos2s-v1",
+  "campaignId": "will-edge-gate-oos2s-20260919-v1",
+  "edgeCut": "2026-09-21T16:29:46.635Z",
+  "createdAt": "2026-09-21T16:29:46.635Z",
+  "sourceHead": "c6a715e653eef62b10d9f0ceadbb99bc8a62055e",
+  "mode": "PAPER_READ_ONLY",
+  "frozenThreshold": 0.599936,
+  "operator": "<=",
+  "metric": "MeanAbsMomentum",
+  "rawQ50": 0.599936477924654,
+  "formula": {
+    "field": "metadata.featureSnapshot.momentum",
+    "transform": "abs",
+    "aggregation": "arithmetic mean by cycle",
+    "population": "official PAPER_CONFIRMED WIN/LOSS/TIE only"
+  },
+  "baselineCount": 1108,
+  "baselineIdsSha256": "612b2b75c33d3f91db71e6fdd549f6de7076bfebaedf200dafeca00d58e336bf",
+  "historyFileSha256": "4205d3e27ec6e374c3a3a746f19e9f85edd4b83772c3cb3bda35d8985f06d6ca",
+  "terminal": {
+    "trade": "CLOSED WIN/LOSS/TIE/DATA_INVALID with valid post-open settledAt; W/L/T require frozen settlement provenance",
+    "noTrade": "unchanged WAL-born SKIPPED with null execution/outcome/settledAt/clickTime"
+  },
+  "checkpoint": {
+    "candidateCycles": 50,
+    "selection": "first 50 matching WAL OPENs ordered by openedAt then cycleId",
+    "invalidAndIncompleteSlots": "retained; no replacements"
+  },
+  "bootstrap": {
+    "unit": "cycle",
+    "replications": 10000,
+    "seed": 20260915,
+    "rng": "xorshift32"
+  },
+  "performance": {
+    "primary": "accepted-cycle official WIN/LOSS/TIE only",
+    "noTrade": "excluded",
+    "dataInvalid": "reported separately and excluded",
+    "expectancy": "NOT_AVAILABLE",
+    "financialEdge": "NOT_AVAILABLE",
+    "subgroups": "EXPLORATORY_ONLY"
+  },
+  "retirementProvenanceOos2r": {
+    "classification": "OPERATOR_CAPTURED_PROVENANCE",
+    "reason": "PROTOCOL_COMPLETENESS_DEFECT_SKIPPED_NONTERMINAL",
+    "historyCount": 1108,
+    "historyFileSha256": "4205d3e27ec6e374c3a3a746f19e9f85edd4b83772c3cb3bda35d8985f06d6ca",
+    "oos2rJournalSha256": "7fd67906684c7be6ff2f9f7c5147992dc05ecff3cac9270e5895fa769d916b1f",
+    "cycles": 23,
+    "sealed": 23,
+    "invalid": 0,
+    "openManifests": 0,
+    "inventoryRecords": 12,
+    "recordSnapshot": {
+      "closedWin": 3,
+      "closedLoss": 4,
+      "skippedOutcomeNull": 4,
+      "openRecords": 1
+    }
+  },
+  "noRetuning": true,
+  "noEarlyStopping": true,
+  "noAutomaticLivePromotion": true,
+  "activationAuthorized": false
+}
