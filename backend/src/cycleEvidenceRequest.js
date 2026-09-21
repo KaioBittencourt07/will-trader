@@ -18,10 +18,13 @@ export function withCycleEvidenceRequest(handler) {
     let token, body, code=200;
     try {
       token=controller.beginCycleWriter(cycleId);
-      req.cycleEvidenceRecord = input => controller.commitRecord(token,input);
+      req.cycleEvidenceRecord = input => controller.stageRecord(token,input);
       const buffered={status(value){code=value;return this;},json(value){body=value;return this;}};
       try { await handler(req,buffered); }
-      finally { delete req.cycleEvidenceRecord; controller.endCycleWriter(token); token=null; }
+      finally { delete req.cycleEvidenceRecord; }
+      if(code<400&&body?.ok!==false&&!(body?.ok===true&&typeof body?.status==='string'))controller.commitStagedRecords(token);
+      else controller.abortStagedRecords(token);
+      controller.endCycleWriter(token);token=null;
       if (controller.health().paused) throw new Error('EVIDENCE_PAUSED');
       return res.status(code).json(body);
     } catch {

@@ -163,6 +163,22 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     try { persist(); } catch (error) { records.pop(); throw error; }
     return structuredClone(record);
   }
+  function insertPreparedRecords(preparedRecords) {
+    if (!Array.isArray(preparedRecords)) throw new Error('PREPARED_RECORDS_REQUIRED');
+    const before=records;
+    const next=records.map(record=>structuredClone(record));
+    const inserted=[];
+    for(const prepared of preparedRecords){
+      if (!prepared || typeof prepared.id !== 'string' || !prepared.id) throw new Error('PREPARED_ID_REQUIRED');
+      const record=JSON.parse(JSON.stringify(prepared));
+      const matches=next.filter(r=>r.id===record.id||(record.decisionId&&r.decisionId===record.decisionId));
+      if(matches.length>1||(matches[0]&&canonical(matches[0])!==canonical(record)))throw new Error('INCOMPATIBLE_PREPARED_DUPLICATE');
+      if(!matches.length){next.push(record);inserted.push(record);}
+    }
+    records=next;
+    try{persist();}catch(error){records=before;throw error;}
+    return inserted.map(record=>structuredClone(record));
+  }
   function recordDecision(input = {}) {
     const decisionId = input.context?.decisionId ?? input.decision?.decisionId ?? input.audit?.id ?? null;
     if (decisionId) {
@@ -279,5 +295,5 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     persist();
     return structuredClone(records[index]);
   }
-  return { recordDecision, prepareDecisionRecord, insertPreparedRecord, settle, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
+  return { recordDecision, prepareDecisionRecord, insertPreparedRecord, insertPreparedRecords, settle, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
 }

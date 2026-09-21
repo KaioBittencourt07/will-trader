@@ -41,8 +41,10 @@ export function sanitizeObservationFailure(error) {
   return 'CYCLE_ERROR';
 }
 
-function isEvidenceIntegrityFailure(error) {
-  return /^(EVIDENCE_|JOURNAL_|WAL_|PROJECTION_|GENERATION_|WRITER_|OBSERVATION_TERMINAL_|CYCLE_NOT_|HISTORY_INVENTORY_|INCOMPATIBLE_DUPLICATE|ACTIVE_)/.test(String(error?.message??error??''));
+export function classifyObservationFailure(value) {
+  const code=String(value?.status??value?.message??value??'').trim().toUpperCase();
+  const integrity=/^(EVIDENCE_|JOURNAL_|WAL_|PROJECTION_|GENERATION_|WRITER_|OBSERVATION_TERMINAL_|CYCLE_NOT_|HISTORY_INVENTORY_|INCOMPATIBLE_DUPLICATE|ACTIVE_|CAPABILITY_|MEMBERSHIP_|INVALID_CREATION|INTENT_REQUIRED)/.test(code);
+  return Object.freeze({classification:integrity?'EVIDENCE_INTEGRITY_FAILURE':'OPERATIONAL_FAILURE',reasonCode:integrity?null:sanitizeObservationFailure(value?.status??value)});
 }
 
 function loadCompleted(filePath) {
@@ -99,9 +101,10 @@ export function createAutonomousPaperMonitor({
         result = await runCycle({cycleId:id,mode:'PAPER',capability});
       }
       catch (error) {
-        if (cycleEvidence.health().paused || isEvidenceIntegrityFailure(error)) throw new Error('EVIDENCE_PAUSED');
+        const failure=classifyObservationFailure(error);
+        if (cycleEvidence.health().paused || failure.classification==='EVIDENCE_INTEGRITY_FAILURE') throw new Error('EVIDENCE_PAUSED');
         if (cycleEvidence.health().observationTerminalRequired) {
-          cycleEvidence.commitObservationTerminal(id,{outcome:'OPERATIONAL_FAILURE',reasonCode:sanitizeObservationFailure(error)});
+          cycleEvidence.commitObservationTerminal(id,{outcome:'OPERATIONAL_FAILURE',reasonCode:failure.reasonCode});
           cycleEvidence.sealMonitorCycle(id); terminate();
           return event({ran:false,status:'OBSERVATION_OPERATIONAL_FAILURE',reason:'CYCLE_FAILURE',cycleId:id,mode:'PAPER'});
         }
@@ -110,7 +113,9 @@ export function createAutonomousPaperMonitor({
       }
       if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
       if (cycleEvidence.health().observationTerminalRequired) {
-        cycleEvidence.commitObservationTerminal(id,result?.ok===true?{outcome:'SUCCESS'}:{outcome:'OPERATIONAL_FAILURE',reasonCode:sanitizeObservationFailure(result?.status??'CYCLE_ERROR')});
+        const failure=result?.ok===true?null:classifyObservationFailure(result);
+        if(failure?.classification==='EVIDENCE_INTEGRITY_FAILURE')throw new Error('EVIDENCE_PAUSED');
+        cycleEvidence.commitObservationTerminal(id,result?.ok===true?{outcome:'SUCCESS'}:{outcome:'OPERATIONAL_FAILURE',reasonCode:failure.reasonCode});
         cycleEvidence.sealMonitorCycle(id);
       } else if (result?.ok === true) cycleEvidence.sealMonitorCycle(id);
       else cycleEvidence.invalidateMonitorCycle(id);

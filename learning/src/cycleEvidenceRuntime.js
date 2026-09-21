@@ -78,7 +78,29 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
       return durable(() => {
         const m = membership(cycleId), writerId=randomUUID();
         wal.beginWriter({ ...m,writerId });
-        const token=Object.freeze({ writerId }); writers.set(token,{ ...m,writerId }); return token;
+        const token=Object.freeze({ writerId }); writers.set(token,{ ...m,writerId,staged:[] }); return token;
+      });
+    },
+    stageRecord(token,input) {
+      guard(); const ctx=writers.get(token); if(!ctx)throw new Error('WRITER_REQUIRED');
+      const m=membership(ctx.cycleId),prepared=JSON.parse(JSON.stringify(historyStore.prepareDecisionRecord({ ...input,
+        context:{ ...input.context,monitorCycleId:m.cycleId } },m)));
+      ctx.staged.push(prepared);return structuredClone(prepared);
+    },
+    abortStagedRecords(token) {
+      const ctx=writers.get(token);if(!ctx)throw new Error('WRITER_REQUIRED');ctx.staged.length=0;
+    },
+    commitStagedRecords(token) {
+      return durable(()=>{
+        guard();const ctx=writers.get(token);if(!ctx)throw new Error('WRITER_REQUIRED');
+        const prepared=ctx.staged.map(record=>structuredClone(record)),operations=[];
+        for(const record of prepared){const operationId=randomUUID();fault('BEFORE_INTENT');wal.beginRecordCreation({...ctx,operationId,record});fault('AFTER_INTENT');operations.push({operationId,record});}
+        for(const {operationId} of operations){wal.commitRecordCreation({...ctx,operationId});fault('AFTER_COMMIT');}
+        let result;
+        if(typeof historyStore.insertPreparedRecords==='function')result=historyStore.insertPreparedRecords(prepared);
+        else if(prepared.length<=1)result=prepared.map(record=>historyStore.insertPreparedRecord(record));
+        else throw new Error('EVIDENCE_BATCH_STORE_REQUIRED');
+        fault('AFTER_INSERT');ctx.staged.length=0;return result;
       });
     },
     commitRecord(token,input) {
@@ -100,6 +122,7 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
     endCycleWriter(token) {
       return durable(() => {
         const ctx=writers.get(token); if (!ctx) throw new Error('WRITER_REQUIRED');
+        if(ctx.staged.length)throw new Error('WRITER_STAGED_RECORDS_PENDING');
         wal.endWriter(ctx); writers.delete(token);
       });
     },
