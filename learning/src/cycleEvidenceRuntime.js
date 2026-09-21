@@ -4,11 +4,11 @@ import { MEMBERSHIP_FIELDS, validId } from './cycleEvidenceManifest.js';
 
 // No defaults for campaign/protocol: enabling without explicit configuration fails closed.
 export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, historyStore,
-  journal = null, now = () => new Date().toISOString(), fault = () => {}, capabilityNow = () => performance.now() } = {}) {
+  journal = null, now = () => new Date().toISOString(), fault = () => {}, capabilityNow = () => performance.now(), observationTerminalRequired = false } = {}) {
   if (!validId(protocolId) || !validId(campaignId) || !historyStore?.prepareDecisionRecord || !historyStore?.insertPreparedRecord) {
     throw new Error('EVIDENCE_CONFIGURATION_REQUIRED');
   }
-  const wal = journal ?? createCycleEvidenceJournal({ directory });
+  const wal = journal ?? createCycleEvidenceJournal({ directory,observationTerminalRequired });
   const active = new Set(), known = new Set(), writers = new Map();
   const capabilities = new Map();
   const revoke = cycleId => { for (const [token,value] of capabilities) if (value.cycleId === cycleId) capabilities.delete(token); };
@@ -28,7 +28,7 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
   }
   return {
     pause,
-    health: () => ({ ready, paused }),
+    health: () => ({ ready, paused, observationTerminalRequired }),
     issueRequestCapability(cycleId) {
       return durable(() => {
         membership(cycleId);
@@ -101,6 +101,12 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
       return durable(() => {
         const ctx=writers.get(token); if (!ctx) throw new Error('WRITER_REQUIRED');
         wal.endWriter(ctx); writers.delete(token);
+      });
+    },
+    commitObservationTerminal(cycleId,{outcome,reasonCode=null}={}) {
+      return durable(() => {
+        revoke(cycleId); const m=membership(cycleId);
+        return wal.commitObservationTerminal({...m,outcome,reasonCode});
       });
     },
     sealMonitorCycle(cycleId) {

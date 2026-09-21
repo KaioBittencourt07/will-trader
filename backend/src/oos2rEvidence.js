@@ -35,7 +35,7 @@ export function replayEvidence(bytes,projections) {
     previousHash=hash;
     if(e.type==='CYCLE_OPEN_COMMIT') {
       require(!cycles.has(p.cycleId) && ![...cycles.values()].some(c=>c.manifest.writerGeneration===p.writerGeneration));
-      cycles.set(p.cycleId,{manifest:newManifest(p),writers:new Set(),closing:false});continue;
+      cycles.set(p.cycleId,{manifest:newManifest(p),writers:new Set(),closing:false,observationTerminal:null});continue;
     }
     const c=cycles.get(p.cycleId);require(c && c.manifest.state!=='INVALID');const m=c.manifest;
     if(e.type==='CYCLE_INVALID_COMMIT'){m.state='INVALID';continue;}
@@ -52,6 +52,10 @@ export function replayEvidence(bytes,projections) {
         const o=operations.get(p.operationId);require(o&&!o.committed&&o.p.cycleId===p.cycleId&&o.p.recordId===p.recordId&&c.writers.has(o.p.writerId)&&p.protocolId===m.protocolId&&p.campaignId===m.campaignId);
         o.committed=true;m.recordIds.push(p.recordId);m.expectedRecordCount++;m.inventoryRevision++;m.canonicalDigest=canonicalDigest(m);break;
       }
+      case 'CYCLE_OBSERVATION_COMMIT':
+        require(!c.closing&&!c.observationTerminal&&!c.writers.size&&!pending().length&&
+          (p.outcome==='SUCCESS'&&(p.reasonCode===null||p.reasonCode===undefined)||p.outcome==='OPERATIONAL_FAILURE'&&!m.recordIds.length&&/^[A-Z][A-Z0-9_]{0,63}$/.test(p.reasonCode??'')));
+        c.observationTerminal={outcome:p.outcome,reasonCode:p.reasonCode??null,sequence:e.sequence};break;
       case 'CYCLE_SEAL_BEGIN':require(!c.closing);c.closing=true;break;
       case 'CYCLE_SEAL_COMMIT':
         require(c.closing&&!c.writers.size&&!pending().length&&p.canonicalDigest===canonicalDigest(m)&&validTime(p.sealedAt)&&Date.parse(p.sealedAt)>=Date.parse(m.openedAt));
@@ -62,10 +66,10 @@ export function replayEvidence(bytes,projections) {
   // Projections are checked, never repaired. A corrupt projection retains its WAL-open slot.
   const projectedIds=projections.map(p=>p?.cycleId);
   require(projectedIds.every(id=>cycles.has(id))&&new Set(projectedIds).size===projectedIds.length);
-  return [...cycles.values()].map(({manifest})=>{
+  return [...cycles.values()].map(({manifest,observationTerminal})=>{
     const projection=projections.find(p=>p?.cycleId===manifest.cycleId);let projectionValid=false;
     try{validateManifest(projection);projectionValid=canonical(projection)===canonical(manifest);}catch{}
     const creations=[...operations.values()].filter(o=>o.committed&&o.p.cycleId===manifest.cycleId).map(o=>o.p.record);
-    return {manifest,projectionValid,creations};
+    return {...(observationTerminal?{observationTerminal}:{}),manifest,projectionValid,creations};
   });
 }

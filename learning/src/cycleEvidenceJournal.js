@@ -9,7 +9,7 @@ const fail = code => { throw new Error(code); };
 const clone = value => JSON.parse(canonical(value));
 
 // Explicit opt-in storage directory. No imports of runtime, historyStore, or providers.
-export function createCycleEvidenceJournal({ directory, fault = () => {} } = {}) {
+export function createCycleEvidenceJournal({ directory, fault = () => {}, observationTerminalRequired = false } = {}) {
   if (typeof directory !== 'string' || !path.isAbsolute(directory)) fail('ABSOLUTE_JOURNAL_DIRECTORY_REQUIRED');
   fs.mkdirSync(directory, { recursive: true });
   const walPath = path.join(directory,'journal.jsonl'), lockPath = path.join(directory,'writer.lock');
@@ -37,20 +37,20 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
     if (e.type === 'CYCLE_OPEN_COMMIT') {
       if (m || [...state.cycles.values()].some(x => x.writerGeneration === p.writerGeneration)) fail('WAL_SEQUENCE_INVALID');
       const fresh=newManifest(p); state.cycles.set(p.cycleId,fresh);
-      state.writers.set(p.cycleId,new Set()); return;
+      state.writers.set(p.cycleId,new Set()); state.observationTerminals.set(p.cycleId,null); return;
     }
     if (!m || m.state === 'INVALID') fail('WAL_SEQUENCE_INVALID');
     if (e.type === 'CYCLE_INVALID_COMMIT') { m.state='INVALID'; return; }
     if (m.state !== 'OPEN' || p.writerGeneration !== m.writerGeneration) fail('WAL_SEQUENCE_INVALID');
     const writers=state.writers.get(p.cycleId);
     if (e.type === 'WRITER_BEGIN') {
-      if (!validId(p.writerId) || writers.has(p.writerId) || state.closing.has(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
+      if (!validId(p.writerId) || writers.has(p.writerId) || state.closing.has(m.cycleId) || state.observationTerminals.get(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       writers.add(p.writerId);
     } else if (e.type === 'WRITER_END') {
       if (!writers.has(p.writerId) || [...state.operations.values()].some(o=>!o.committed && o.payload.writerId===p.writerId && o.payload.cycleId===m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       writers.delete(p.writerId);
     } else if (e.type === 'RECORD_CREATE_INTENT') {
-      if (!writers.has(p.writerId) || state.closing.has(m.cycleId) || !validId(p.operationId) || !validId(p.recordId) ||
+      if (!writers.has(p.writerId) || state.closing.has(m.cycleId) || state.observationTerminals.get(m.cycleId) || !validId(p.operationId) || !validId(p.recordId) ||
         p.record?.id !== p.recordId || !sameMembership(p.record,m) || p.protocolId !== m.protocolId || p.campaignId !== m.campaignId ||
         state.operations.has(p.operationId) || [...state.operations.values()].some(o=>o.payload.recordId===p.recordId)) fail('WAL_SEQUENCE_INVALID');
       if (p.record.settledAt != null || p.record.outcome != null || p.record.status === 'CLOSED') fail('INITIAL_RECORD_ALREADY_RESOLVED');
@@ -61,7 +61,12 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
         p.protocolId !== m.protocolId || p.campaignId !== m.campaignId || !writers.has(op.payload.writerId)) fail('WAL_SEQUENCE_INVALID');
       op.committed=true; m.recordIds.push(p.recordId); m.expectedRecordCount++; m.inventoryRevision++;
       m.canonicalDigest=canonicalDigest(m);
+    } else if (e.type === 'CYCLE_OBSERVATION_COMMIT') {
+      const validTerminal=p.outcome==='SUCCESS'?(p.reasonCode===null||p.reasonCode===undefined):p.outcome==='OPERATIONAL_FAILURE'&&m.recordIds.length===0&&/^[A-Z][A-Z0-9_]{0,63}$/.test(p.reasonCode??'');
+      if (!validTerminal || state.observationTerminals.get(m.cycleId) || writers.size || [...state.operations.values()].some(o=>o.payload.cycleId===m.cycleId&&!o.committed) || state.closing.has(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
+      state.observationTerminals.set(m.cycleId,Object.freeze({outcome:p.outcome,reasonCode:p.reasonCode??null,sequence:e.sequence}));
     } else if (e.type === 'CYCLE_SEAL_BEGIN') {
+      if (observationTerminalRequired && !state.observationTerminals.get(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       if (state.closing.has(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       state.closing.add(m.cycleId);
     } else if (e.type === 'CYCLE_SEAL_COMMIT') {
@@ -71,7 +76,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
     } else fail('WAL_EVENT_INVALID');
   }
   function replay() {
-    const state={cycles:new Map(),writers:new Map(),operations:new Map(),closing:new Set(),events:[],projections:new Set()};
+    const state={cycles:new Map(),writers:new Map(),operations:new Map(),closing:new Set(),observationTerminals:new Map(),events:[],projections:new Set()};
     if (!fs.existsSync(walPath)) {
       if (fs.readdirSync(directory).some(name=>name.endsWith('.manifest.json'))) { quarantine(); fail('WAL_MISSING'); }
       return state;
@@ -137,7 +142,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
     },
     beginWriter({cycleId,writerGeneration,writerId}) {
       return withState(state=>{const m=get(state,cycleId); generation(state,m,writerGeneration);
-        if (!validId(writerId) || state.writers.get(cycleId).has(writerId) || state.closing.has(cycleId)) fail('WRITER_BLOCKED');
+        if (!validId(writerId) || state.writers.get(cycleId).has(writerId) || state.closing.has(cycleId) || state.observationTerminals.get(cycleId)) fail('WRITER_BLOCKED');
         append(state,'WRITER_BEGIN',{cycleId,writerGeneration,writerId}); });
     },
     endWriter({cycleId,writerGeneration,writerId}) {
@@ -153,7 +158,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
         const old=state.operations.get(operationId);
         if (old) { if (canonical(old.payload)!==canonical(payload)) { invalidate(state,m); fail('INCOMPATIBLE_DUPLICATE'); } return; }
         if ([...state.operations.values()].some(o=>o.payload.recordId===record.id)) { invalidate(state,m); fail('INCOMPATIBLE_DUPLICATE'); }
-        if (!state.writers.get(cycleId).has(writerId) || state.closing.has(cycleId)) fail('WRITER_BLOCKED');
+        if (!state.writers.get(cycleId).has(writerId) || state.closing.has(cycleId) || state.observationTerminals.get(cycleId)) fail('WRITER_BLOCKED');
         append(state,'RECORD_CREATE_INTENT',payload);
       });
     },
@@ -165,10 +170,20 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
         return clone(op.payload.record);
       });
     },
+    commitObservationTerminal({cycleId,writerGeneration,outcome,reasonCode=null}) {
+      return withState(state=>{
+        const m=get(state,cycleId); generation(state,m,writerGeneration);
+        if (state.observationTerminals.get(cycleId)) fail('OBSERVATION_TERMINAL_EXISTS');
+        if (state.writers.get(cycleId).size || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId&&!o.committed)) fail('OBSERVATION_TERMINAL_PENDING');
+        append(state,'CYCLE_OBSERVATION_COMMIT',{cycleId,writerGeneration,outcome,reasonCode});
+        return clone(state.observationTerminals.get(cycleId));
+      });
+    },
     sealCycle({cycleId,writerGeneration,sealedAt}) {
       return withState(state=>{
         const m=get(state,cycleId); generation(state,m,writerGeneration);
         if (!validTime(sealedAt) || Date.parse(sealedAt)<Date.parse(m.openedAt)) fail('INVALID_SEAL_TIME');
+        if (observationTerminalRequired && !state.observationTerminals.get(cycleId)) fail('OBSERVATION_TERMINAL_REQUIRED');
         if (!state.closing.has(cycleId)) append(state,'CYCLE_SEAL_BEGIN',{cycleId,writerGeneration});
         if (state.writers.get(cycleId).size || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId&&!o.committed)) fail('SEAL_PENDING');
         validateManifest(m); append(state,'CYCLE_SEAL_COMMIT',{cycleId,writerGeneration,sealedAt,canonicalDigest:m.canonicalDigest}); return clone(m);
@@ -206,7 +221,8 @@ export function createCycleEvidenceJournal({ directory, fault = () => {} } = {})
         // A future integration may materialize scheduler termination ONLY from these seal commits.
         const sealedCycleIds=[...state.cycles.values()].filter(m=>m.state==='SEALED').map(m=>m.cycleId);
         const unresolvedCycleIds=[...state.cycles.values()].filter(m=>m.state!=='SEALED').map(m=>m.cycleId);
-        return {records,materializedRecordIds,sealedCycleIds,unresolvedCycleIds};
+        const observationTerminals=Object.fromEntries([...state.observationTerminals].filter(([,v])=>v).map(([k,v])=>[k,clone(v)]));
+        return {records,materializedRecordIds,sealedCycleIds,unresolvedCycleIds,observationTerminals};
       });
     },
     verifyManifestAgainstHistory

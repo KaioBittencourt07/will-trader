@@ -31,6 +31,20 @@ export function sanitizeCycleError(error) {
   });
 }
 
+export function sanitizeObservationFailure(error) {
+  const allowed=new Set(['REQUEST_TIMEOUT','NETWORK_FAILURE','PROVIDER_FAILURE','PROVIDER_UNAVAILABLE','MARKET_DATA_UNAVAILABLE','MARKET_DATA_INVALID','HTTP_FAILURE','CYCLE_ERROR','EVIDENCE_TARGET_INVALID']);
+  if(typeof error==='string'&&allowed.has(error.trim().toUpperCase()))return error.trim().toUpperCase();
+  const diagnostic=sanitizeCycleError(error);
+  if(diagnostic.errorCode==='REQUEST_TIMEOUT')return 'REQUEST_TIMEOUT';
+  if(/^NETWORK_(ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED)$/.test(diagnostic.errorCode))return 'NETWORK_FAILURE';
+  if(/^HTTP_\d{3}$/.test(diagnostic.errorCode))return 'HTTP_FAILURE';
+  return 'CYCLE_ERROR';
+}
+
+function isEvidenceIntegrityFailure(error) {
+  return /^(EVIDENCE_|JOURNAL_|WAL_|PROJECTION_|GENERATION_|WRITER_|OBSERVATION_TERMINAL_|CYCLE_NOT_|HISTORY_INVENTORY_|INCOMPATIBLE_DUPLICATE|ACTIVE_)/.test(String(error?.message??error??''));
+}
+
 function loadCompleted(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return [];
   const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -84,16 +98,24 @@ export function createAutonomousPaperMonitor({
         const capability=cycleEvidence.issueRequestCapability(id);
         result = await runCycle({cycleId:id,mode:'PAPER',capability});
       }
-      catch {
-        if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
+      catch (error) {
+        if (cycleEvidence.health().paused || isEvidenceIntegrityFailure(error)) throw new Error('EVIDENCE_PAUSED');
+        if (cycleEvidence.health().observationTerminalRequired) {
+          cycleEvidence.commitObservationTerminal(id,{outcome:'OPERATIONAL_FAILURE',reasonCode:sanitizeObservationFailure(error)});
+          cycleEvidence.sealMonitorCycle(id); terminate();
+          return event({ran:false,status:'OBSERVATION_OPERATIONAL_FAILURE',reason:'CYCLE_FAILURE',cycleId:id,mode:'PAPER'});
+        }
         cycleEvidence.invalidateMonitorCycle(id); terminate();
         return event({ran:false,status:'SKIPPED_INVALID_CYCLE',reason:'CYCLE_FAILURE',cycleId:id,mode:'PAPER'});
       }
       if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
-      if (result?.ok === true) cycleEvidence.sealMonitorCycle(id);
+      if (cycleEvidence.health().observationTerminalRequired) {
+        cycleEvidence.commitObservationTerminal(id,result?.ok===true?{outcome:'SUCCESS'}:{outcome:'OPERATIONAL_FAILURE',reasonCode:sanitizeObservationFailure(result?.status??'CYCLE_ERROR')});
+        cycleEvidence.sealMonitorCycle(id);
+      } else if (result?.ok === true) cycleEvidence.sealMonitorCycle(id);
       else cycleEvidence.invalidateMonitorCycle(id);
       terminate();
-      return event({ran:true,status:result?.ok === true?'COMPLETED':'SKIPPED_INVALID_CYCLE',cycleId:id,mode:'PAPER'});
+      return event({ran:result?.ok===true,status:result?.ok === true?'COMPLETED':cycleEvidence.health().observationTerminalRequired?'OBSERVATION_OPERATIONAL_FAILURE':'SKIPPED_INVALID_CYCLE',cycleId:id,mode:'PAPER'});
     } catch {
       evidencePaused = true; cycleEvidence.pause();
       return event({ran:false,status:'PAUSED',reason:'STORAGE_FAILURE',cycleId:id,mode:'PAPER'});
