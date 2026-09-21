@@ -1,0 +1,35 @@
+{
+    "schemaVersion":  "edge-gate-oos2s-retirement-v1",
+    "classification":  "OPERATOR_CAPTURED_PROVENANCE",
+    "reason":  "OPERATIONAL_CYCLE_FAILURES_COLLAPSED_TO_INVALID_WITHOUT_CAUSE_PROVENANCE",
+    "performanceStopping":  false,
+    "formalAnalysisAllowed":  false,
+    "sourceHead":  "410263ab91e1b72a54bafef396056e6344325c80",
+    "historyCount":  1184,
+    "historyFileSha256":  "6e226078078dd1196e03a47d8723c68d3cb73b0dd6c800a88762061c921d57f6",
+    "oos2sJournalSha256":  "b84675c9006795ee6e26ec3eb344e9e3650af6f2568cdb57179b00ed45308d92",
+    "freezeSha256":  "414ebdaec6ce6c1eac344d78e14d4141caef8f4b1b94d5e8401dcfe1d7b4d66c",
+    "monitorStateSha256":  "c880f6ea8cb51df4174d25b76ff450c8796715f043a66ef6b146606d1e5cc9a4",
+    "cycles":  32,
+    "sealed":  26,
+    "invalid":  6,
+    "openManifests":  0,
+    "inventoryRecords":  75,
+    "recordSnapshot":  {
+                           "closedWin":  14,
+                           "closedLoss":  14,
+                           "closedTie":  3,
+                           "closedDataInvalid":  10,
+                           "skipped":  34,
+                           "open":  0
+                       },
+    "defect":  {
+                   "description":  "Operational cycle failure is represented as manifest INVALID, but the durable evidence does not preserve a bounded cause code.",
+                   "invalidProjectionValid":  true,
+                   "invalidExpectedRecordCount":  0,
+                   "repairAttempted":  false,
+                   "replacementSlotsAllowed":  false
+               },
+    "noRetuning":  true,
+    "note":  "OOS-2S remains immutable. No INVALID slot is repaired, deleted or replaced. Performance was not used as the stopping criterion."
+}
