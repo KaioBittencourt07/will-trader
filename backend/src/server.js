@@ -23,6 +23,8 @@ import { prepareOos2sEnvironment, createPreparedOos2sRuntime } from './oos2sActi
 import { inspectOos2sStatus } from './oos2sStatus.js';
 import { prepareOos2tEnvironment, createPreparedOos2tRuntime } from './oos2tActivation.js';
 import { inspectOos2tDirectoryStatus } from './oos2tStatus.js';
+import { prepareOos2uEnvironment, createPreparedOos2uRuntime } from './oos2uActivation.js';
+import { inspectOos2uDirectoryStatus } from './oos2uStatus.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
 import { createBlsCalendarAdapter } from '../../context/src/adapters/blsCalendarAdapter.js';
@@ -42,8 +44,9 @@ import { fileURLToPath } from 'node:url';
 const oos2rPrepared = prepareOos2rEnvironment();
 const oos2sPrepared = prepareOos2sEnvironment();
 const oos2tPrepared = prepareOos2tEnvironment();
-if([oos2rPrepared,oos2sPrepared,oos2tPrepared].filter(Boolean).length>1)throw new Error('MULTIPLE_EVIDENCE_CAMPAIGNS_CONFIGURED');
-const exactSettlementScope=oos2tPrepared?Object.freeze({mode:'EXACT_PROTOCOL_CAMPAIGN',protocolId:oos2tPrepared.freeze.protocolId,campaignId:oos2tPrepared.freeze.campaignId}):oos2sPrepared?Object.freeze({mode:'EXACT_PROTOCOL_CAMPAIGN',protocolId:'will-edge-gate-oos2s-v1',campaignId:'will-edge-gate-oos2s-20260919-v1'}):null;
+const oos2uPrepared = prepareOos2uEnvironment();
+if([oos2rPrepared,oos2sPrepared,oos2tPrepared,oos2uPrepared].filter(Boolean).length>1)throw new Error('MULTIPLE_EVIDENCE_CAMPAIGNS_CONFIGURED');
+const exactSettlementScope=oos2uPrepared?Object.freeze({mode:'EXACT_PROTOCOL_CAMPAIGN',protocolId:oos2uPrepared.freeze.protocolId,campaignId:oos2uPrepared.freeze.campaignId}):oos2tPrepared?Object.freeze({mode:'EXACT_PROTOCOL_CAMPAIGN',protocolId:oos2tPrepared.freeze.protocolId,campaignId:oos2tPrepared.freeze.campaignId}):oos2sPrepared?Object.freeze({mode:'EXACT_PROTOCOL_CAMPAIGN',protocolId:'will-edge-gate-oos2s-v1',campaignId:'will-edge-gate-oos2s-20260919-v1'}):null;
 const runtimeSecrets = await hydrateRuntimeSecrets();
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 const paperMonitorEnabled = process.env.WILL_PAPER_MONITOR_ENABLED === 'true';
@@ -138,7 +141,9 @@ function runPaperOutcomeSettlementPass() {
   }
 }
 
-app.locals.cycleEvidenceRuntime = oos2tPrepared
+app.locals.cycleEvidenceRuntime = oos2uPrepared
+  ? createPreparedOos2uRuntime({prepared:oos2uPrepared,historyStore:app.locals.historyStore})
+  : oos2tPrepared
   ? createPreparedOos2tRuntime({prepared:oos2tPrepared,historyStore:app.locals.historyStore})
   : oos2sPrepared
   ? createPreparedOos2sRuntime({prepared:oos2sPrepared,historyStore:app.locals.historyStore})
@@ -270,6 +275,10 @@ app.get('/api/oos2s/status', (_req,res)=>{
 });
 app.get('/api/oos2t/status', (_req,res)=>{
   const status=oos2tPrepared?inspectOos2tDirectoryStatus({evidenceDirectory:oos2tPrepared.report.evidenceDirectory,history:app.locals.historyStore.list(),freeze:oos2tPrepared.freeze}):{schemaVersion:'will-oos2t-status-v1',ok:false,state:'OOS2T_FAIL_CLOSED',error:'OOS2T_NOT_CONFIGURED',formalAnalysisAllowed:false};
+  res.status(status.ok?200:503).json(status);
+});
+app.get('/api/oos2u/status', (_req,res)=>{
+  const status=oos2uPrepared?inspectOos2uDirectoryStatus({evidenceDirectory:oos2uPrepared.report.evidenceDirectory,history:app.locals.historyStore.list(),freeze:oos2uPrepared.freeze,baselineAudit:oos2uPrepared.report.baselineAudit}):{schemaVersion:'will-oos2u-status-v1',ok:false,status:'OOS2U_FAIL_CLOSED',error:'OOS2U_NOT_CONFIGURED',formalAnalysisAllowed:false,automatedBrokerExecution:false};
   res.status(status.ok?200:503).json(status);
 });
 app.get('/api/paper-monitor', (_req, res) => {
