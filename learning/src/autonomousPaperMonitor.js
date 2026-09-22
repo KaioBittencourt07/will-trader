@@ -153,6 +153,7 @@ export function createAutonomousPaperMonitor({
           return event({ran:false,status:'PAUSED',reason:'STORAGE_FAILURE',mode:'PAPER'});
         }
       }
+      if (cycleEvidence.health().collectionClosed) return event({ran:false,status:'COLLECTION_CLOSED',reason:'CANDIDATE_LIMIT_REACHED',mode:'PAPER'});
     }
     const id = cycleId(at);
     if (!id) return event({ ran: false, status: 'PAUSED', reason: 'CLOCK_FAILURE', mode: 'PAPER' });

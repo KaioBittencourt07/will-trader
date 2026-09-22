@@ -8,6 +8,7 @@ import { assessDecisionRobustness } from '../../engine/src/robustness.js';
 import { runFeatureAblation } from './featureAblation.js';
 import { createProspectiveEvidenceRecord } from './prospectiveEvidence.js';
 import { canonical, MEMBERSHIP_FIELDS } from './cycleEvidenceManifest.js';
+import { assertManualMutationAllowed } from './prospectiveMutationPolicy.js';
 
 const OUTCOMES = new Set(['WIN', 'LOSS', 'VOID', 'TIE', 'DATA_INVALID']);
 const PAPER_ENTRY_MAX_LAG_MS = 30_000;
@@ -189,10 +190,12 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     const record = prepareDecisionRecord(input);
     records.push(record); persist(); return structuredClone(record);
   }
-  function settle(idValue, outcome, metadata = {}) {
+  const paperAuthority = Symbol('history-store-paper-authority');
+  function settleWithAuthority(idValue, outcome, metadata = {}, authority = null) {
     if (!OUTCOMES.has(outcome)) throw new Error('Outcome inválido.');
     const index = records.findIndex((record) => record.id === idValue);
     if (index < 0) throw new Error('Sinal não encontrado.');
+    if (authority !== paperAuthority) assertManualMutationAllowed(records[index]);
     if (records[index].status === 'CLOSED' && records[index].outcome === outcome) return { ...structuredClone(records[index]), idempotent: true };
     if (records[index].status !== 'OPEN') throw new Error('Somente sinais abertos podem receber outcome.');
     if (records[index].outcome) throw new Error('Outcome já registrado.');
@@ -215,9 +218,12 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     persist();
     return structuredClone(records[index]);
   }
+  function settle(idValue, outcome, metadata = {}) { return settleWithAuthority(idValue, outcome, metadata, null); }
+  function settlePaperOutcome(idValue, outcome, metadata = {}) { return settleWithAuthority(idValue, outcome, metadata, paperAuthority); }
   function confirmExecution(idValue, { actualClickTime, actualEntryPrice = null, notes = null } = {}) {
     const index = records.findIndex((record) => record.id === idValue);
     if (index < 0) throw new Error('Sinal não encontrado.');
+    assertManualMutationAllowed(records[index]);
     if (records[index].status !== 'OPEN') throw new Error('Somente sinais abertos podem confirmar execução.');
     const clickMs = Date.parse(actualClickTime ?? '');
     if (!Number.isFinite(clickMs)) throw new Error('Horário real do clique inválido.');
@@ -295,5 +301,5 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     persist();
     return structuredClone(records[index]);
   }
-  return { recordDecision, prepareDecisionRecord, insertPreparedRecord, insertPreparedRecords, settle, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
+  return { recordDecision, prepareDecisionRecord, insertPreparedRecord, insertPreparedRecords, settle, settlePaperOutcome, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
 }

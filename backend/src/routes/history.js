@@ -5,6 +5,7 @@ import { buildLearningLab } from '../../../learning/src/learningEngine.js';
 import { prospectiveOutcomeDue, resolveProspectiveOutcome } from '../../../learning/src/outcomeResolver.js';
 import { getLocalRelaySnapshot, getLocalRelayStatus, getMarketDataEngine } from './market.js';
 import { isValidEvidenceRecord } from '../evidenceAdmission.js';
+import { isProtectedProspectiveRecord, PROTECTED_PROSPECTIVE_MUTATION_ERROR } from '../../../learning/src/prospectiveMutationPolicy.js';
 
 const router = Router();
 
@@ -18,8 +19,13 @@ function evidenceRecords(store) {
   return store.list().filter((record) => isValidEvidenceRecord(record, { requireMarketAdmission: true }));
 }
 
+function manualRecords(store) { return evidenceRecords(store).filter((record) => !isProtectedProspectiveRecord(record)); }
+function assertManualRecord(record) {
+  if (isProtectedProspectiveRecord(record)) throw new Error(PROTECTED_PROSPECTIVE_MUTATION_ERROR);
+}
+
 function learningSnapshot(store) {
-  const records = evidenceRecords(store);
+  const records = manualRecords(store);
   const minimumSamples = Number(process.env.WILL_CALIBRATION_MINIMUM_SAMPLES || 30);
   return {
     metrics: summarize(records),
@@ -32,7 +38,7 @@ function learningSnapshot(store) {
 router.get('/history', (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit || 100), 1), 1_000);
-    const records = evidenceRecords(storeFor(req));
+    const records = manualRecords(storeFor(req));
     return res.json({ ok: true, total: records.length, records: records.slice(-limit).reverse() });
   } catch (error) {
     return res.status(503).json({ ok: false, error: error.message });
@@ -44,6 +50,7 @@ router.post('/history/:id/outcome', (req, res) => {
     const { outcome, exitPrice = null, ...metadata } = req.body ?? {};
     const current = storeFor(req).list().find((item) => item.id === req.params.id);
     if (!current) throw new Error('Sinal não encontrado.');
+    assertManualRecord(current);
     if (!isValidEvidenceRecord(current, { requireMarketAdmission: true })) throw new Error('Registro técnico/inválido não pode receber resultado operacional.');
     if (current.execution?.status !== 'CONFIRMED') {
       throw new Error('Confirme a entrada realmente executada antes de registrar WIN ou LOSS.');
@@ -63,6 +70,7 @@ router.post('/history/:id/executed', (req, res) => {
   try {
     const current = storeFor(req).list().find((item) => item.id === req.params.id);
     if (!current) throw new Error('Sinal não encontrado.');
+    assertManualRecord(current);
     if (!isValidEvidenceRecord(current, { requireMarketAdmission: true })) throw new Error('Registro técnico/inválido não pode ser confirmado como execução.');
     const record = storeFor(req).confirmExecution(req.params.id, req.body ?? {});
     return res.json({ ok: true, record });
@@ -74,7 +82,7 @@ router.post('/history/:id/executed', (req, res) => {
 router.post('/history/resolve', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.body?.limit || 1), 1), 3);
-    const open = evidenceRecords(storeFor(req)).filter((record) => record.status === 'OPEN').slice(0, limit);
+    const open = manualRecords(storeFor(req)).filter((record) => record.status === 'OPEN').slice(0, limit);
     const resolved = [];
     const pending = [];
     for (const record of open) {
@@ -102,7 +110,7 @@ router.post('/history/resolve', async (req, res) => {
 
 router.get('/metrics', (req, res) => {
   try {
-    const records = evidenceRecords(storeFor(req));
+    const records = manualRecords(storeFor(req));
     const withHour = records.map((record) => ({
       ...record,
       hour: record.signalTimestamp ? new Date(record.signalTimestamp).getUTCHours() : 'UNKNOWN'

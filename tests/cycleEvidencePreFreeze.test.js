@@ -125,7 +125,7 @@ test('pre-freeze disk-only settled recovery preserves history bytes',t=>{
   assert.equal(child(s,`
     const runtime=createCycleEvidenceRuntime(options);runtime.recover();runtime.openMonitorCycle(cycleId);
     const writer=runtime.beginCycleWriter(cycleId),record=runtime.commitRecord(writer,input);runtime.endCycleWriter(writer);runtime.sealMonitorCycle(cycleId);
-    store.confirmPaperExecution(record.id,{referenceTimestamp:at,referencePrice:1.1});store.settle(record.id,'WIN');
+    store.confirmPaperExecution(record.id,{referenceTimestamp:at,referencePrice:1.1});store.settlePaperOutcome(record.id,'WIN');
   `).status,0);
   const bytes=fs.readFileSync(s.historyPath);s.runtime(s.store()).recover();assert.deepEqual(fs.readFileSync(s.historyPath),bytes);
 });

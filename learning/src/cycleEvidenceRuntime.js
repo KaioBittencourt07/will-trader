@@ -4,11 +4,12 @@ import { MEMBERSHIP_FIELDS, validId } from './cycleEvidenceManifest.js';
 
 // No defaults for campaign/protocol: enabling without explicit configuration fails closed.
 export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, historyStore,
-  journal = null, now = () => new Date().toISOString(), fault = () => {}, capabilityNow = () => performance.now(), observationTerminalRequired = false } = {}) {
+  journal = null, now = () => new Date().toISOString(), fault = () => {}, capabilityNow = () => performance.now(), observationTerminalRequired = false, maxCandidateCycles = null } = {}) {
   if (!validId(protocolId) || !validId(campaignId) || !historyStore?.prepareDecisionRecord || !historyStore?.insertPreparedRecord) {
     throw new Error('EVIDENCE_CONFIGURATION_REQUIRED');
   }
   const wal = journal ?? createCycleEvidenceJournal({ directory,observationTerminalRequired });
+  if (maxCandidateCycles !== null && (!Number.isInteger(maxCandidateCycles) || maxCandidateCycles < 1)) throw new Error('EVIDENCE_CANDIDATE_LIMIT_INVALID');
   const active = new Set(), known = new Set(), writers = new Map();
   const capabilities = new Map();
   const revoke = cycleId => { for (const [token,value] of capabilities) if (value.cycleId === cycleId) capabilities.delete(token); };
@@ -28,7 +29,7 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
   }
   return {
     pause,
-    health: () => ({ ready, paused, observationTerminalRequired }),
+    health: () => ({ ready, paused, observationTerminalRequired, candidateCyclesObserved:known.size, candidateCycleLimit:maxCandidateCycles, collectionClosed:maxCandidateCycles!==null&&known.size>=maxCandidateCycles, newCandidateAdmissionAllowed:ready&&!paused&&(maxCandidateCycles===null||known.size<maxCandidateCycles) }),
     issueRequestCapability(cycleId) {
       return durable(() => {
         membership(cycleId);
@@ -62,8 +63,9 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
       });
     },
     openMonitorCycle(cycleId) {
+      guard();
+      if (maxCandidateCycles !== null && known.size >= maxCandidateCycles) throw new Error('EVIDENCE_CANDIDATE_LIMIT_REACHED');
       return durable(() => {
-        guard();
         const m = wal.openCycle({ protocolId,campaignId,cycleId,openedAt:now(),history:historyStore.list() });
         active.add(cycleId); known.add(cycleId); return m;
       });

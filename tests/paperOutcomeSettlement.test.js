@@ -36,7 +36,7 @@ function store(initial) {
       };
       return structuredClone(records[index]);
     },
-    settle(id, outcome, metadata = {}) {
+    settlePaperOutcome(id, outcome, metadata = {}) {
       const index = records.findIndex((record) => record.id === id);
       if (index < 0) throw new Error('missing');
       records[index] = { ...records[index], status: 'CLOSED', outcome, outcomeMetadata: metadata };

@@ -34,7 +34,7 @@ function referenceFor(record, targetTimestamp, { coinbaseTemporalFeeds, biquoteF
 }
 
 function invalidSettlement(historyStore, record, reason, metadata = {}) {
-  return historyStore.settle(record.id, 'DATA_INVALID', {
+  return historyStore.settlePaperOutcome(record.id, 'DATA_INVALID', {
     settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
     reason,
     source: 'PAPER_AUTOMATIC_SETTLEMENT',
@@ -54,7 +54,7 @@ export function settleDuePaperCampaignOutcomes({
 } = {}) {
   if (!historyStore
     || typeof historyStore.list !== 'function'
-    || typeof historyStore.settle !== 'function'
+    || typeof historyStore.settlePaperOutcome !== 'function'
     || typeof historyStore.confirmPaperExecution !== 'function') {
     throw new Error('PAPER_OUTCOME_HISTORY_STORE_REQUIRED');
   }
@@ -170,7 +170,7 @@ export function settleDuePaperCampaignOutcomes({
       continue;
     }
 
-    const value = historyStore.settle(record.id, resolution.outcome, {
+    const value = historyStore.settlePaperOutcome(record.id, resolution.outcome, {
       settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
       source: 'paper-live-temporal-reference-v1',
       referenceProvider: exitReference.provider ?? null,
