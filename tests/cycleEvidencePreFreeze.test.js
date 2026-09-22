@@ -39,7 +39,7 @@ function child(s, action) {
   return result;
 }
 
-for(const point of ['BEFORE_INTENT','AFTER_INTENT','AFTER_COMMIT','AFTER_INSERT']) {
+for(const point of ['BEFORE_INTENT','AFTER_INTENT','AFTER_READY','AFTER_INSERT','AFTER_COMMIT']) {
   test(`pre-freeze abrupt process exit ${point}: disk-only restart remains fail-closed`,t=>{
     const s=setup(t);
     const result=child(s,`
@@ -48,12 +48,12 @@ for(const point of ['BEFORE_INTENT','AFTER_INTENT','AFTER_COMMIT','AFTER_INSERT'
       runtime.commitRecord(runtime.beginCycleWriter(cycleId),input);
     `);
     assert.equal(result.status,73);
-    const committed=['AFTER_COMMIT','AFTER_INSERT'].includes(point);
-    assert.equal(s.store().list().length,point==='AFTER_INSERT'?1:0);
+    const committed=['AFTER_READY','AFTER_COMMIT','AFTER_INSERT'].includes(point);
+    assert.equal(s.store().list().length,['AFTER_INSERT','AFTER_COMMIT'].includes(point)?1:0);
     const history=s.store(), next=s.runtime(history);
     assert.throws(()=>next.recover(),/EVIDENCE_STORAGE_FAILURE/);
     assert.equal(next.health().paused,true); assert.equal(history.list().length,committed?1:0);
-    assert.equal(s.store().list().length,committed?1:0);
+    assert.equal(s.store().list().length,['AFTER_READY','AFTER_COMMIT','AFTER_INSERT'].includes(point)?1:0);
     assert.throws(()=>next.openMonitorCycle('autonomous-paper-monitor-v1:new'));
     assert.equal(createCycleEvidenceJournal({directory:s.journalDir}).readManifest(cycleId).state,'OPEN');
   });

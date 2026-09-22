@@ -55,6 +55,15 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
         state.operations.has(p.operationId) || [...state.operations.values()].some(o=>o.payload.recordId===p.recordId)) fail('WAL_SEQUENCE_INVALID');
       if (p.record.settledAt != null || p.record.outcome != null || p.record.status === 'CLOSED') fail('INITIAL_RECORD_ALREADY_RESOLVED');
       state.operations.set(p.operationId,{payload:p,committed:false});
+    } else if (e.type === 'RECORD_BATCH_READY') {
+      if (!writers.has(p.writerId) || !validId(p.batchId) || !Array.isArray(p.operationIds) || !p.operationIds.length ||
+        new Set(p.operationIds).size!==p.operationIds.length || state.batches.has(p.batchId)) fail('WAL_SEQUENCE_INVALID');
+      for (const id of p.operationIds) {
+        const op=state.operations.get(id);
+        if (!op || op.committed || op.batchId || op.payload.cycleId!==m.cycleId || op.payload.writerId!==p.writerId) fail('WAL_SEQUENCE_INVALID');
+        op.batchId=p.batchId;
+      }
+      state.batches.set(p.batchId,{payload:p});
     } else if (e.type === 'RECORD_CREATE_COMMIT') {
       const op=state.operations.get(p.operationId);
       if (!op || op.committed || op.payload.cycleId !== m.cycleId || op.payload.recordId !== p.recordId ||
@@ -76,7 +85,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
     } else fail('WAL_EVENT_INVALID');
   }
   function replay() {
-    const state={cycles:new Map(),writers:new Map(),operations:new Map(),closing:new Set(),observationTerminals:new Map(),events:[],projections:new Set()};
+    const state={cycles:new Map(),writers:new Map(),operations:new Map(),batches:new Map(),closing:new Set(),observationTerminals:new Map(),events:[],projections:new Set()};
     if (!fs.existsSync(walPath)) {
       if (fs.readdirSync(directory).some(name=>name.endsWith('.manifest.json'))) { quarantine(); fail('WAL_MISSING'); }
       return state;
@@ -162,6 +171,13 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
         append(state,'RECORD_CREATE_INTENT',payload);
       });
     },
+    readyRecordBatch({cycleId,writerGeneration,writerId,batchId,operationIds}) {
+      return withState(state=>{
+        const m=get(state,cycleId); generation(state,m,writerGeneration);
+        if (!validId(batchId) || !Array.isArray(operationIds) || !operationIds.length) fail('INVALID_BATCH');
+        append(state,'RECORD_BATCH_READY',{cycleId,writerGeneration,writerId,batchId,operationIds});
+      });
+    },
     commitRecordCreation({cycleId,writerGeneration,operationId}) {
       return withState(state=>{
         const m=get(state,cycleId); generation(state,m,writerGeneration);
@@ -197,6 +213,26 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
         return clone(m);
       });
     },
+    recoveryBatches({history}) {
+      return withState(state=>{
+        if (!Array.isArray(history)) fail('HISTORY_REQUIRED');
+        const batches=[];
+        for (const {payload} of state.batches.values()) {
+          const m=get(state,payload.cycleId);
+          if (m.state!=='OPEN') continue;
+          const operations=payload.operationIds.map(id=>state.operations.get(id));
+          const records=operations.map(op=>clone(op.payload.record));
+          const present=records.map(record=>history.filter(row=>row?.id===record.id));
+          if (present.some(rows=>rows.length>1) || present.some((rows,i)=>rows.length && !operations[i].committed && canonical(rows[0])!==canonical(records[i])) ||
+              present.some((rows,i)=>!rows.length && history.some(row=>records[i].decisionId && row?.decisionId===records[i].decisionId))) fail('HISTORY_IDENTITY_CONFLICT');
+          if (present.some(rows=>rows.length) && present.some(rows=>!rows.length)) fail('HISTORY_BATCH_PARTIAL');
+          batches.push({cycleId:payload.cycleId,writerGeneration:payload.writerGeneration,
+            operationIds:[...payload.operationIds],records,materialized:present.every(rows=>rows.length===1),
+            committed:operations.map(op=>op.committed)});
+        }
+        return batches;
+      });
+    },
     recover({history}) {
       return withState(state=>{
         if (!Array.isArray(history)) fail('HISTORY_REQUIRED');
@@ -206,7 +242,11 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
           if (!op.committed) continue;
           const m=get(state,op.payload.cycleId); if (m.state==='INVALID') continue;
           const existing=records.filter(r=>r?.id===op.payload.recordId);
-          if (existing.length>1 || existing.some(r=>!sameMembership(r,m))) { invalidate(state,m); fail('HISTORY_IDENTITY_CONFLICT'); }
+          if (existing.length>1 || existing.some(r=>!sameMembership(r,m) ||
+            ['decisionId','asset','direction'].some(key=>r[key]!==op.payload.record[key]) ||
+            (r.status==='OPEN' && r.outcome==null && canonical(r)!==canonical(op.payload.record)))) {
+            invalidate(state,m); fail('HISTORY_IDENTITY_CONFLICT');
+          }
           if (!existing.length) { records.push(clone(op.payload.record)); materializedRecordIds.push(op.payload.recordId); }
         }
         for (const m of state.cycles.values()) {

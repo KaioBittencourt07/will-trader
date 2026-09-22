@@ -36,17 +36,17 @@ test('prepared records are invisible until inserted; exact replay only and decis
   assert.throws(()=>s.store.insertPreparedRecord({...r,id:'different'}),/DUPLICATE/);
   assert.equal(s.store.list().length,1);
 });
-for(const point of ['BEFORE_INTENT','AFTER_INTENT','AFTER_COMMIT','AFTER_INSERT']) {
-  test(`fault ${point}: no history before WAL commit; recovery inserts only confirmed missing record`,t=>{
+for(const point of ['BEFORE_INTENT','AFTER_INTENT','AFTER_READY','AFTER_INSERT','AFTER_COMMIT']) {
+  test(`fault ${point}: history precedes commit and recovery replays only ready records`,t=>{
     const s=setup(t), c=s.runtime({fault:p=>{if(p===point) throw new Error('crash');}});
     c.recover(); c.openMonitorCycle(cycleId); const token=c.beginCycleWriter(cycleId);
     assert.throws(()=>c.commitRecord(token,input),/STORAGE_FAILURE/);
-    assert.equal(s.store.list().length,point==='AFTER_INSERT'?1:0);
+    assert.equal(s.store.list().length,['AFTER_INSERT','AFTER_COMMIT'].includes(point)?1:0);
     const next=s.runtime(); assert.throws(()=>next.recover(),/STORAGE_FAILURE/);
-    assert.equal(s.store.list().length,['AFTER_COMMIT','AFTER_INSERT'].includes(point)?1:0);
+    assert.equal(s.store.list().length,['AFTER_READY','AFTER_COMMIT','AFTER_INSERT'].includes(point)?1:0);
     assert.equal(next.health().paused,true);
     const again=s.runtime(); assert.throws(()=>again.recover());
-    assert.equal(s.store.list().length,['AFTER_COMMIT','AFTER_INSERT'].includes(point)?1:0);
+    assert.equal(s.store.list().length,['AFTER_READY','AFTER_COMMIT','AFTER_INSERT'].includes(point)?1:0);
     assert.equal(s.journal.readManifest(cycleId).state,'OPEN');
   });
 }
@@ -161,9 +161,9 @@ test('failed durable INVALID cannot publish scheduler termination',async t=>{
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(s.directory,'monitor.json'),'utf8')).completedCycleIds,[]);
 });
 test('recovery insertion failure blocks new cycles',t=>{
-  const s=setup(t),c=s.runtime({fault:p=>{if(p==='AFTER_COMMIT')throw new Error('crash');}});
+  const s=setup(t),c=s.runtime({fault:p=>{if(p==='AFTER_READY')throw new Error('crash');}});
   c.recover();c.openMonitorCycle(cycleId);assert.throws(()=>create(c));
-  const next=s.runtime({historyStore:{...s.store,insertPreparedRecord:()=>{throw new Error('disk');}}});
+  const next=s.runtime({historyStore:{...s.store,insertPreparedRecords:()=>{throw new Error('disk');}}});
   assert.throws(()=>next.recover());assert.equal(next.health().paused,true);
   assert.throws(()=>next.openMonitorCycle('autonomous-paper-monitor-v1:next'));assert.equal(s.store.list().length,0);
 });
@@ -171,4 +171,61 @@ test('recovery identity conflict blocks new cycles without changing existing rec
   const s=setup(t),c=s.runtime();c.recover();c.openMonitorCycle(cycleId);const r=create(c);
   const conflicting={...r,campaignId:'other'},next=s.runtime({historyStore:{...s.store,list:()=>[conflicting]}});
   assert.throws(()=>next.recover());assert.equal(next.health().paused,true);assert.equal(conflicting.campaignId,'other');
+});
+for (const point of ['AFTER_INTENT','AFTER_READY','AFTER_INSERT','AFTER_COMMIT']) {
+  test(`four-record transaction ${point} is deterministic across restarts`,t=>{
+    const s=setup(t),c=s.runtime({fault:p=>{if(p===point)throw new Error('injected');}});
+    c.recover();c.openMonitorCycle(cycleId);
+    const writer=c.beginCycleWriter(cycleId);
+    for(let i=0;i<4;i++)c.stageRecord(writer,{...input,context:{...input.context,decisionId:`batch-${i}`}});
+    assert.throws(()=>c.commitStagedRecords(writer),/STORAGE_FAILURE/);
+    const before=s.store.list().length;
+    assert.equal(before,['AFTER_INSERT','AFTER_COMMIT'].includes(point)?4:0);
+    for(let i=0;i<2;i++){
+      const restart=s.runtime();assert.throws(()=>restart.recover(),/STORAGE_FAILURE/);
+      assert.equal(restart.health().paused,true);
+    }
+    const recovered=s.store.list();
+    assert.equal(recovered.length,point==='AFTER_INTENT'?0:4);
+    assert.equal(new Set(recovered.map(r=>r.id)).size,recovered.length);
+    const manifest=s.journal.readManifest(cycleId);
+    assert.equal(manifest.recordIds.length,point==='AFTER_INTENT'?0:4);
+    assert.deepEqual([...manifest.recordIds].sort(),recovered.map(r=>r.id).sort());
+  });
+}
+test('ready batch rejects a conflicting history record rather than adopting it',t=>{
+  const s=setup(t),c=s.runtime({fault:p=>{if(p==='AFTER_READY')throw new Error('injected');}});
+  c.recover();c.openMonitorCycle(cycleId);const writer=c.beginCycleWriter(cycleId);
+  for(let i=0;i<4;i++)c.stageRecord(writer,{...input,context:{...input.context,decisionId:`conflict-${i}`}});
+  assert.throws(()=>c.commitStagedRecords(writer));
+  const batches=s.journal.recoveryBatches({history:[]});
+  const forged={...batches[0].records[0],asset:'FORGED'};
+  assert.throws(()=>s.runtime({historyStore:{...s.store,list:()=>[forged]}}).recover(),/STORAGE_FAILURE/);
+  assert.equal(s.store.list().length,0);
+});
+for (const [point,limit] of [['AFTER_INTENT',2],['AFTER_COMMIT',2]]) {
+  test(`four-record batch fails closed after second ${point} boundary`,t=>{
+    const s=setup(t);let seen=0;
+    const c=s.runtime({fault:p=>{if(p===point&&++seen===limit)throw new Error('injected');}});
+    c.recover();c.openMonitorCycle(cycleId);const writer=c.beginCycleWriter(cycleId);
+    for(let i=0;i<4;i++)c.stageRecord(writer,{...input,context:{...input.context,decisionId:`boundary-${i}`}});
+    assert.throws(()=>c.commitStagedRecords(writer),/STORAGE_FAILURE/);
+    assert.equal(s.store.list().length,point==='AFTER_INTENT'?0:4);
+    assert.throws(()=>s.runtime().recover(),/STORAGE_FAILURE/);
+    assert.equal(s.store.list().length,point==='AFTER_INTENT'?0:4);
+    assert.equal(s.journal.readManifest(cycleId).recordIds.length,point==='AFTER_INTENT'?0:4);
+  });
+}
+test('four-record history persistence failure is replayed only from durable ready intents',t=>{
+  const s=setup(t),disk=path.join(s.directory,'history.json'),c=s.runtime();
+  c.recover();c.openMonitorCycle(cycleId);const writer=c.beginCycleWriter(cycleId);
+  for(let i=0;i<4;i++)c.stageRecord(writer,{...input,context:{...input.context,decisionId:`persistence-${i}`}});
+  fs.mkdirSync(`${disk}.tmp`);
+  assert.throws(()=>c.commitStagedRecords(writer),/STORAGE_FAILURE/);
+  assert.equal(s.store.list().length,0);
+  assert.equal(s.journal.readManifest(cycleId).recordIds.length,0);
+  fs.rmdirSync(`${disk}.tmp`);
+  assert.throws(()=>s.runtime().recover(),/STORAGE_FAILURE/);
+  assert.equal(s.store.list().length,4);
+  assert.equal(s.journal.readManifest(cycleId).recordIds.length,4);
 });

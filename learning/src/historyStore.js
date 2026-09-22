@@ -65,7 +65,9 @@ function createHistoryStoreBundle({ filePath = null, now = () => new Date().toIS
     if (!filePath) return;
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const temporary = `${filePath}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify(records, null, 2));
+    const fd=fs.openSync(temporary,'w');
+    try { fs.writeFileSync(fd, JSON.stringify(records, null, 2)); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
     fs.renameSync(temporary, filePath);
   }
   function prepareDecisionRecord({ decision = {}, data = {}, audit = {}, context = {} } = {}, membership = null) {
