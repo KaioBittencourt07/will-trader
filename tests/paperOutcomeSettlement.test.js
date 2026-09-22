@@ -18,8 +18,8 @@ function campaignRecord({ id, asset, direction, entryPrice, clickTime, execution
 
 function store(initial) {
   let records = structuredClone(initial);
-  return {
-    list: () => structuredClone(records),
+  const historyStore = { list: () => structuredClone(records) };
+  const paperMutationPort = {
     confirmPaperExecution(id, { referenceTimestamp, referencePrice, source }) {
       const index = records.findIndex((record) => record.id === id);
       if (index < 0) throw new Error('missing');
@@ -43,6 +43,7 @@ function store(initial) {
       return structuredClone(records[index]);
     }
   };
+  return { historyStore, paperMutationPort };
 }
 
 test('captures prospective PAPER entries first, then settles BUY and SELL from post-expiry references', () => {
@@ -50,7 +51,7 @@ test('captures prospective PAPER entries first, then settles BUY and SELL from p
     campaignRecord({ id: 'buy', asset: 'BTC/USD', direction: 'BUY', entryPrice: 99, clickTime: '2026-09-14T12:00:00.000Z' }),
     campaignRecord({ id: 'sell', asset: 'EUR/USD', direction: 'SELL', entryPrice: 1.21, clickTime: '2026-09-14T12:00:00.000Z' })
   ];
-  const historyStore = store(records);
+  const { historyStore, paperMutationPort } = store(records);
   const coinbaseTemporalFeeds = new Map([['BTC/USD', {
     referenceAtOrAfter: (target) => {
       const ms = Number(target);
@@ -70,6 +71,7 @@ test('captures prospective PAPER entries first, then settles BUY and SELL from p
 
   const result = settleDuePaperCampaignOutcomes({
     historyStore,
+    paperMutationPort,
     coinbaseTemporalFeeds,
     biquoteForexFeed,
     now: Date.parse('2026-09-14T12:01:10.000Z')
@@ -84,11 +86,12 @@ test('captures prospective PAPER entries first, then settles BUY and SELL from p
 });
 
 test('keeps a campaign signal pending before its planned PAPER entry time', () => {
-  const historyStore = store([
+  const { historyStore, paperMutationPort } = store([
     campaignRecord({ id: 'early', asset: 'BTC/USD', direction: 'BUY', entryPrice: 100, clickTime: '2026-09-14T12:01:00.000Z' })
   ]);
   const result = settleDuePaperCampaignOutcomes({
     historyStore,
+    paperMutationPort,
     coinbaseTemporalFeeds: new Map(),
     biquoteForexFeed: null,
     now: Date.parse('2026-09-14T12:00:30.000Z')
@@ -100,11 +103,12 @@ test('keeps a campaign signal pending before its planned PAPER entry time', () =
 });
 
 test('records DATA_INVALID when the frozen 30-second PAPER entry reference window is missed', () => {
-  const historyStore = store([
+  const { historyStore, paperMutationPort } = store([
     campaignRecord({ id: 'missed-entry', asset: 'EUR/USD', direction: 'BUY', entryPrice: 1.1, clickTime: '2026-09-14T12:00:00.000Z' })
   ]);
   const result = settleDuePaperCampaignOutcomes({
     historyStore,
+    paperMutationPort,
     coinbaseTemporalFeeds: new Map(),
     biquoteForexFeed: { referenceAtOrAfter: () => null },
     now: Date.parse('2026-09-14T12:00:31.000Z')
@@ -116,7 +120,7 @@ test('records DATA_INVALID when the frozen 30-second PAPER entry reference windo
 });
 
 test('records DATA_INVALID when a confirmed PAPER entry lacks a bounded post-expiry reference', () => {
-  const historyStore = store([
+  const { historyStore, paperMutationPort } = store([
     campaignRecord({
       id: 'missed-exit',
       asset: 'EUR/USD',
@@ -134,6 +138,7 @@ test('records DATA_INVALID when a confirmed PAPER entry lacks a bounded post-exp
   ]);
   const result = settleDuePaperCampaignOutcomes({
     historyStore,
+    paperMutationPort,
     coinbaseTemporalFeeds: new Map(),
     biquoteForexFeed: { referenceAtOrAfter: () => null },
     now: Date.parse('2026-09-14T12:01:33.000Z')
@@ -149,9 +154,10 @@ test('ignores OPEN records outside the autonomous PAPER campaign and operator-co
   const operator = campaignRecord({ id: 'operator', asset: 'EUR/USD', direction: 'BUY', entryPrice: 1.1, clickTime: '2026-09-14T12:00:00.000Z' });
   operator.execution.status = 'CONFIRMED';
   operator.execution.actualClickTime = '2026-09-14T12:00:01.000Z';
-  const historyStore = store([legacy, operator]);
+  const { historyStore, paperMutationPort } = store([legacy, operator]);
   const result = settleDuePaperCampaignOutcomes({
     historyStore,
+    paperMutationPort,
     coinbaseTemporalFeeds: new Map(),
     biquoteForexFeed: null,
     now: Date.parse('2026-09-14T12:10:00.000Z')

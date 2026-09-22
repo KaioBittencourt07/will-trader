@@ -33,8 +33,8 @@ function referenceFor(record, targetTimestamp, { coinbaseTemporalFeeds, biquoteF
   return biquoteForexFeed?.referenceAtOrAfter?.(asset, targetTimestamp, PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) ?? null;
 }
 
-function invalidSettlement(historyStore, record, reason, metadata = {}) {
-  return historyStore.settlePaperOutcome(record.id, 'DATA_INVALID', {
+function invalidSettlement(paperMutationPort, record, reason, metadata = {}) {
+  return paperMutationPort.settlePaperOutcome(record.id, 'DATA_INVALID', {
     settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
     reason,
     source: 'PAPER_AUTOMATIC_SETTLEMENT',
@@ -46,6 +46,7 @@ function invalidSettlement(historyStore, record, reason, metadata = {}) {
 
 export function settleDuePaperCampaignOutcomes({
   historyStore,
+  paperMutationPort,
   coinbaseTemporalFeeds,
   biquoteForexFeed,
   scope = null,
@@ -54,8 +55,9 @@ export function settleDuePaperCampaignOutcomes({
 } = {}) {
   if (!historyStore
     || typeof historyStore.list !== 'function'
-    || typeof historyStore.settlePaperOutcome !== 'function'
-    || typeof historyStore.confirmPaperExecution !== 'function') {
+    || !paperMutationPort
+    || typeof paperMutationPort.settlePaperOutcome !== 'function'
+    || typeof paperMutationPort.confirmPaperExecution !== 'function') {
     throw new Error('PAPER_OUTCOME_HISTORY_STORE_REQUIRED');
   }
   if (Number(maxReferenceLagMs) !== PAPER_OUTCOME_REFERENCE_MAX_LAG_MS) {
@@ -84,7 +86,7 @@ export function settleDuePaperCampaignOutcomes({
     if (record.execution?.status !== 'PAPER_CONFIRMED') {
       const plannedMs = Date.parse(record.execution?.plannedClickTime ?? record.clickTime ?? '');
       if (!Number.isFinite(plannedMs)) {
-        const value = invalidSettlement(historyStore, record, 'PAPER_ENTRY_TIME_INVALID');
+        const value = invalidSettlement(paperMutationPort, record, 'PAPER_ENTRY_TIME_INVALID');
         settled += 1;
         dataInvalid += 1;
         results.push({ id: record.id, asset: record.asset, outcome: value.outcome, reason: 'PAPER_ENTRY_TIME_INVALID' });
@@ -105,7 +107,7 @@ export function settleDuePaperCampaignOutcomes({
           continue;
         }
 
-        const value = invalidSettlement(historyStore, record, 'PAPER_ENTRY_REFERENCE_WINDOW_MISSED', {
+        const value = invalidSettlement(paperMutationPort, record, 'PAPER_ENTRY_REFERENCE_WINDOW_MISSED', {
           entryDueAt: new Date(plannedMs).toISOString(),
           maximumReferenceLagMs: PAPER_OUTCOME_REFERENCE_MAX_LAG_MS
         });
@@ -115,7 +117,7 @@ export function settleDuePaperCampaignOutcomes({
         continue;
       }
 
-      record = historyStore.confirmPaperExecution(record.id, {
+      record = paperMutationPort.confirmPaperExecution(record.id, {
         referenceTimestamp: entryReference.timestamp,
         referencePrice: entryReference.price,
         source: entryReference.provider ?? 'PAPER_TEMPORAL_ENTRY_REFERENCE'
@@ -126,7 +128,7 @@ export function settleDuePaperCampaignOutcomes({
     const due = prospectiveOutcomeDue(record, checkedAt);
     const dueMs = expiryAt(record);
     if (!Number.isFinite(dueMs)) {
-      const value = invalidSettlement(historyStore, record, 'EXPIRY_NOT_RESOLVABLE');
+      const value = invalidSettlement(paperMutationPort, record, 'EXPIRY_NOT_RESOLVABLE');
       settled += 1;
       dataInvalid += 1;
       results.push({ id: record.id, asset: record.asset, outcome: value.outcome, reason: 'EXPIRY_NOT_RESOLVABLE' });
@@ -147,7 +149,7 @@ export function settleDuePaperCampaignOutcomes({
         continue;
       }
 
-      const value = invalidSettlement(historyStore, record, 'PAPER_EXIT_REFERENCE_WINDOW_MISSED', {
+      const value = invalidSettlement(paperMutationPort, record, 'PAPER_EXIT_REFERENCE_WINDOW_MISSED', {
         dueAt: due.dueAt,
         maximumReferenceLagMs: PAPER_OUTCOME_REFERENCE_MAX_LAG_MS
       });
@@ -170,7 +172,7 @@ export function settleDuePaperCampaignOutcomes({
       continue;
     }
 
-    const value = historyStore.settlePaperOutcome(record.id, resolution.outcome, {
+    const value = paperMutationPort.settlePaperOutcome(record.id, resolution.outcome, {
       settlementVersion: PAPER_OUTCOME_SETTLEMENT_VERSION,
       source: 'paper-live-temporal-reference-v1',
       referenceProvider: exitReference.provider ?? null,

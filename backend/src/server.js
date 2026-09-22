@@ -13,7 +13,7 @@ import oos2CollectionRouter from './routes/oos2Collection.js';
 import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
 import { hydrateRuntimeSecrets } from './runtimeSecrets.js';
-import { createHistoryStore } from '../../learning/src/historyStore.js';
+import { createHistoryStoreWithPaperAuthority } from '../../learning/src/historyStore.js';
 import { createProspectiveManifest } from '../../learning/src/prospectiveEvidence.js';
 import { createAutonomousPaperMonitor } from '../../learning/src/autonomousPaperMonitor.js';
 import { createCycleEvidenceRuntime } from '../../learning/src/cycleEvidenceRuntime.js';
@@ -91,7 +91,9 @@ app.locals.biquoteForexFeed = createBiquoteForexRuntimeFeed({
 app.locals.prospectiveManifest = createProspectiveManifest({
   startTime: process.env.WILL_PROSPECTIVE_START_TIME || '2026-09-03T02:15:00.000Z'
 });
-app.locals.historyStore = createHistoryStore({ filePath: historyFilePath });
+const historyStorage = createHistoryStoreWithPaperAuthority({ filePath: historyFilePath });
+app.locals.historyStore = historyStorage.historyStore;
+const paperMutationPort = historyStorage.paperMutationPort;
 app.locals.historyContinuity = historyContinuity;
 app.locals.scannerStudyRegistryHydration = scannerStudyRegistry.hydrate(app.locals.historyStore.list());
 app.locals.paperOutcomeSettlement = Object.freeze({
@@ -115,6 +117,7 @@ function runPaperOutcomeSettlementPass() {
   try {
     const settlement = settleDuePaperCampaignOutcomes({
       historyStore: app.locals.historyStore,
+      paperMutationPort,
       coinbaseTemporalFeeds: app.locals.coinbaseTemporalFeeds,
       biquoteForexFeed: app.locals.biquoteForexFeed,
       now: Date.now(),

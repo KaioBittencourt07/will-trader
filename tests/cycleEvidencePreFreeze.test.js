@@ -23,12 +23,12 @@ function child(s, action) {
     import fs from 'node:fs';
     import path from 'node:path';
     import assert from 'node:assert/strict';
-    import { createHistoryStore } from ${JSON.stringify(modules.historyStore)};
+    import { createHistoryStoreWithPaperAuthority } from ${JSON.stringify(modules.historyStore)};
     import { createCycleEvidenceRuntime } from ${JSON.stringify(modules.cycleEvidenceRuntime)};
     import { createCycleEvidenceJournal } from ${JSON.stringify(modules.cycleEvidenceJournal)};
     const directory=${JSON.stringify(s.journalDir)}, historyPath=${JSON.stringify(s.historyPath)};
     const cycleId=${JSON.stringify(cycleId)}, at=${JSON.stringify(at)};
-    const store=createHistoryStore({filePath:historyPath,id:()=> 'fixture-record',now:()=>at});
+    const {historyStore:store,paperMutationPort}=createHistoryStoreWithPaperAuthority({filePath:historyPath,id:()=> 'fixture-record',now:()=>at});
     const options={directory,protocolId:'test-only',campaignId:'synthetic-only',historyStore:store,now:()=>at};
     const input={decision:{direction:'BUY',releaseEligible:true,clickTime:at},data:{asset:'EUR/USD',price:1.1},context:{decisionId:'fixture-decision',monitorCycleId:cycleId}};
     ${action}
@@ -125,7 +125,7 @@ test('pre-freeze disk-only settled recovery preserves history bytes',t=>{
   assert.equal(child(s,`
     const runtime=createCycleEvidenceRuntime(options);runtime.recover();runtime.openMonitorCycle(cycleId);
     const writer=runtime.beginCycleWriter(cycleId),record=runtime.commitRecord(writer,input);runtime.endCycleWriter(writer);runtime.sealMonitorCycle(cycleId);
-    store.confirmPaperExecution(record.id,{referenceTimestamp:at,referencePrice:1.1});store.settlePaperOutcome(record.id,'WIN');
+    paperMutationPort.confirmPaperExecution(record.id,{referenceTimestamp:at,referencePrice:1.1});paperMutationPort.settlePaperOutcome(record.id,'WIN');
   `).status,0);
   const bytes=fs.readFileSync(s.historyPath);s.runtime(s.store()).recover();assert.deepEqual(fs.readFileSync(s.historyPath),bytes);
 });

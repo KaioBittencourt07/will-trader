@@ -23,11 +23,14 @@ export const OOS2U_STRUCTURAL_CONTRACT = Object.freeze({
   activationAuthorized: false
 });
 
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
 export function validateOos2uDraft(value) {
-  if (!value || value.protocolId !== OOS2U_PROTOCOL || value.campaignId != null || value.edgeCut != null || value.evidenceDirectory != null) throw new Error('OOS2U_PRODUCTION_IDENTITY_NOT_ALLOWED_IN_DRAFT');
-  for (const [key, expected] of Object.entries(OOS2U_STRUCTURAL_CONTRACT)) {
-    if (typeof expected !== 'object' && value[key] !== expected) throw new Error(`OOS2U_CONTRACT_${key.toUpperCase()}_INVALID`);
-  }
-  if (value.activationAuthorized !== false) throw new Error('OOS2U_ACTIVATION_FORBIDDEN');
+  if (!value || ['campaignId','edgeCut','evidenceDirectory'].some(key=>Object.hasOwn(value,key))) throw new Error('OOS2U_PRODUCTION_IDENTITY_NOT_ALLOWED_IN_DRAFT');
+  if (canonical(value) !== canonical(OOS2U_STRUCTURAL_CONTRACT)) throw new Error('OOS2U_STRUCTURAL_CONTRACT_INVALID');
   return true;
 }

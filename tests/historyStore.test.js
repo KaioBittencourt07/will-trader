@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createHistoryStore } from '../learning/src/historyStore.js';
+import { createHistoryStore, createHistoryStoreWithPaperAuthority } from '../learning/src/historyStore.js';
 import { summarize } from '../learning/src/statistics.js';
 
 test('records complete prospective signal context and settles only open trades', () => {
@@ -56,13 +56,14 @@ test('stores the operator actual click and price separately from the planned sig
 });
 
 test('stores automatic PAPER entry evidence without pretending it was an operator execution', () => {
-  const store = createHistoryStore({ now: () => '2026-09-14T12:00:10.000Z', id: () => 'paper-entry-1' });
+  const bundle = createHistoryStoreWithPaperAuthority({ now: () => '2026-09-14T12:00:10.000Z', id: () => 'paper-entry-1' });
+  const store = bundle.historyStore;
   const record = store.recordDecision({
     decision: { direction: 'BUY', releaseEligible: true, blocked: false, clickTime: '2026-09-14T12:00:00.000Z' },
     data: { asset: 'BTC/USD', timeframe: '1min', price: 100 },
     context: { expirySeconds: 60, monitorCycleId: 'autonomous-paper-monitor-v1:1' }
   });
-  const paper = store.confirmPaperExecution(record.id, {
+  const paper = bundle.paperMutationPort.confirmPaperExecution(record.id, {
     referenceTimestamp: '2026-09-14T12:00:03.000Z',
     referencePrice: 101,
     source: 'coinbase-exchange-ticker'
@@ -72,13 +73,14 @@ test('stores automatic PAPER entry evidence without pretending it was an operato
   assert.equal(paper.execution.referenceLagMs, 3_000);
   assert.equal(paper.execution.paperOnly, true);
 
-  const lateStore = createHistoryStore({ id: () => 'paper-entry-late' });
+  const lateBundle = createHistoryStoreWithPaperAuthority({ id: () => 'paper-entry-late' });
+  const lateStore = lateBundle.historyStore;
   const late = lateStore.recordDecision({
     decision: { direction: 'BUY', releaseEligible: true, blocked: false, clickTime: '2026-09-14T12:00:00.000Z' },
     data: { asset: 'BTC/USD', timeframe: '1min', price: 100 },
     context: { expirySeconds: 60, monitorCycleId: 'autonomous-paper-monitor-v1:2' }
   });
-  assert.throws(() => lateStore.confirmPaperExecution(late.id, {
+  assert.throws(() => lateBundle.paperMutationPort.confirmPaperExecution(late.id, {
     referenceTimestamp: '2026-09-14T12:00:31.000Z', referencePrice: 102
   }), /janela congelada/);
 });

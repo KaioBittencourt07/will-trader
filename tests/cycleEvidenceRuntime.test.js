@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createHistoryStore } from '../learning/src/historyStore.js';
+import { createHistoryStoreWithPaperAuthority } from '../learning/src/historyStore.js';
 import { createCycleEvidenceJournal } from '../learning/src/cycleEvidenceJournal.js';
 import { createCycleEvidenceRuntime } from '../learning/src/cycleEvidenceRuntime.js';
 import { createAutonomousPaperMonitor } from '../learning/src/autonomousPaperMonitor.js';
@@ -16,12 +16,12 @@ function setup(t) {
   const directory=fs.mkdtempSync(path.join(tmpdir(),'will-evidence-runtime-'));
   t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
   let n=0;
-  const store=createHistoryStore({filePath:path.join(directory,'history.json'),id:()=>`r${++n}`,now:()=>at});
+  const bundle=createHistoryStoreWithPaperAuthority({filePath:path.join(directory,'history.json'),id:()=>`r${++n}`,now:()=>at}),store=bundle.historyStore;
   const journalDir=path.join(directory,'wal');
   const journal=createCycleEvidenceJournal({directory:journalDir});
   const runtime=(extra={})=>createCycleEvidenceRuntime({directory:journalDir,protocolId:'synthetic-protocol',campaignId:'synthetic-campaign',historyStore:store,now:()=>at,...extra});
   const monitor=(controller,runCycle,extra={})=>createAutonomousPaperMonitor({enabled:true,filePath:path.join(directory,'monitor.json'),now:()=>ms,runCycle,cycleEvidence:controller,...extra});
-  return {directory,store,journal,runtime,monitor};
+  return {directory,store,paperMutationPort:bundle.paperMutationPort,journal,runtime,monitor};
 }
 function create(controller) {
   const token=controller.beginCycleWriter(cycleId);
@@ -94,7 +94,7 @@ test('history durable write failure does not leave an in-memory phantom',t=>{
 test('settlement preserves membership and inventory; restart never overwrites newer record',async t=>{
   const s=setup(t), c=s.runtime(); await s.monitor(c,async()=>{create(c);return {ok:true};}).runOnce();
   const m=s.journal.readManifest(cycleId), r=s.store.list()[0];
-  s.store.confirmPaperExecution(r.id,{referenceTimestamp:at,referencePrice:1.1,protocolId:'forged',campaignId:'forged',cycleId:'forged',writerGeneration:99,id:'forged'});
+  s.paperMutationPort.confirmPaperExecution(r.id,{referenceTimestamp:at,referencePrice:1.1,protocolId:'forged',campaignId:'forged',cycleId:'forged',writerGeneration:99,id:'forged'});
   s.store.settle(r.id,'WIN',{protocolId:'forged',campaignId:'forged',cycleId:'forged',writerGeneration:99,id:'forged'});
   const settled=s.store.list()[0];
   for(const k of ['id','protocolId','campaignId','cycleId','writerGeneration']) assert.equal(settled[k],r[k]);

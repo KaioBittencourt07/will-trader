@@ -54,7 +54,7 @@ function provenance(data = {}, context = {}) {
   };
 }
 
-export function createHistoryStore({ filePath = null, now = () => new Date().toISOString(), id = () => crypto.randomUUID() } = {}) {
+function createHistoryStoreBundle({ filePath = null, now = () => new Date().toISOString(), id = () => crypto.randomUUID() } = {}) {
   let records = [];
   if (filePath && fs.existsSync(filePath)) {
     const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -301,5 +301,10 @@ export function createHistoryStore({ filePath = null, now = () => new Date().toI
     persist();
     return structuredClone(records[index]);
   }
-  return { recordDecision, prepareDecisionRecord, insertPreparedRecord, insertPreparedRecords, settle, settlePaperOutcome, confirmExecution, confirmPaperExecution, list: () => records.map((record) => structuredClone(record)) };
+  const historyStore = Object.freeze({ recordDecision, prepareDecisionRecord, insertPreparedRecord, insertPreparedRecords, settle, confirmExecution, list: () => records.map((record) => structuredClone(record)) });
+  const paperMutationPort = Object.freeze({ settlePaperOutcome, confirmPaperExecution });
+  return Object.freeze({ historyStore, paperMutationPort });
 }
+
+export function createHistoryStore(options = {}) { return createHistoryStoreBundle(options).historyStore; }
+export function createHistoryStoreWithPaperAuthority(options = {}) { return createHistoryStoreBundle(options); }
