@@ -23,7 +23,7 @@ import { prepareOos2sEnvironment, createPreparedOos2sRuntime } from './oos2sActi
 import { inspectOos2sStatus } from './oos2sStatus.js';
 import { prepareOos2tEnvironment, createPreparedOos2tRuntime } from './oos2tActivation.js';
 import { inspectOos2tDirectoryStatus } from './oos2tStatus.js';
-import { prepareOos2uEnvironment, createPreparedOos2uRuntime } from './oos2uActivation.js';
+import { prepareOos2uEnvironment, createPreparedOos2uRuntime, createRecoveredOos2uRuntime } from './oos2uActivation.js';
 import { inspectOos2uDirectoryStatus } from './oos2uStatus.js';
 import { createResearchMemory } from '../../learning/src/researchMemory.js';
 import { createMarketContextProvider } from '../../context/src/marketContext.js';
@@ -142,7 +142,9 @@ function runPaperOutcomeSettlementPass() {
 }
 
 app.locals.cycleEvidenceRuntime = oos2uPrepared
-  ? createPreparedOos2uRuntime({prepared:oos2uPrepared,historyStore:app.locals.historyStore})
+  ? oos2uPrepared.mode==='RESTART'
+    ? createRecoveredOos2uRuntime({prepared:oos2uPrepared,historyStore:app.locals.historyStore})
+    : createPreparedOos2uRuntime({prepared:oos2uPrepared,historyStore:app.locals.historyStore})
   : oos2tPrepared
   ? createPreparedOos2tRuntime({prepared:oos2tPrepared,historyStore:app.locals.historyStore})
   : oos2sPrepared
