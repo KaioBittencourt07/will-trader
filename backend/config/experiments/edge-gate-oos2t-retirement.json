@@ -1,0 +1,61 @@
+{
+    "schemaVersion":  "edge-gate-oos2t-retirement-v1",
+    "classification":  "STRUCTURAL_RETIREMENT",
+    "reason":  "PAPER_READ_ONLY_PROVENANCE_CONTAMINATED_BY_MANUAL_HISTORY_MUTATION_PATH",
+    "performanceStopping":  false,
+    "formalAnalysisAllowed":  false,
+    "sourceHead":  "0db704312e7bdd48b0c46d795bab44f09c5e5d85",
+    "historyCount":  1424,
+    "historyFileSha256":  "ea4610525ba4c206e69375868363e48f72b913083495fe8aba45a88cbe724051",
+    "manifestCount":  82,
+    "oos2tJournalSha256":  "6be539ba2fcc3dca50585bf447e65883f01dff276a77422d4ea4227ce7211502",
+    "monitorStateSha256":  "c3bb4a62d7427b194f38b34eb6554d01009c96405491e8db173d3697cf2dcd8f",
+    "freezeSha256":  "a8397d0f77050c478fb0b688aed2bd67c80340830ed844e599a361916d9b4629",
+    "first50":  {
+                    "candidateCycles":  50,
+                    "verifierValid":  50,
+                    "verifierInvalid":  0,
+                    "complete":  48,
+                    "incomplete":  2,
+                    "successfulObservationCycles":  48,
+                    "operationalFailureCycles":  2,
+                    "observationFailureReasonCounts":  {
+                                                           "CYCLE_ERROR":  2
+                                                       },
+                    "replacementSlotsAllowed":  false,
+                    "postFirst50CyclesIgnored":  true
+                },
+    "blockedSlots":  [
+                         {
+                             "slot":  11,
+                             "cycleId":  "autonomous-paper-monitor-v1:29834095",
+                             "recordId":  "b0e3d5fd-b7d1-4ac3-848d-d6e00cbbd3f6",
+                             "asset":  "NZD/USD",
+                             "persistedExecutionStatus":  "CONFIRMED",
+                             "verifierReason":  "TRADE_PROVENANCE_INVALID"
+                         },
+                         {
+                             "slot":  13,
+                             "cycleId":  "autonomous-paper-monitor-v1:29834097",
+                             "recordId":  "1d705ad9-56fe-40e7-b413-17e4a2450963",
+                             "asset":  "GBP/JPY",
+                             "persistedExecutionStatus":  "CONFIRMED",
+                             "verifierReason":  "TRADE_PROVENANCE_INVALID"
+                         }
+                     ],
+    "defect":  {
+                   "description":  "Generic manual history mutation surfaces were able to mutate records belonging to the exact OOS-2T PAPER_READ_ONLY campaign, creating non-official execution provenance inside the frozen First-50.",
+                   "affectedSurfaces":  [
+                                            "/api/history/:id/executed",
+                                            "/api/history/:id/outcome",
+                                            "/api/history/resolve"
+                                        ],
+                   "repairAttempted":  false,
+                   "replacementSlotsAllowed":  false,
+                   "historicalRecordsWillRemainImmutable":  true
+               },
+    "noRetuning":  true,
+    "noEarlyStopping":  true,
+    "noAutomaticLivePromotion":  true,
+    "note":  "OOS-2T is retired for structural provenance isolation failure. First-50 performance is not formally analyzed. No affected record is repaired, deleted, reclassified or replaced."
+}
