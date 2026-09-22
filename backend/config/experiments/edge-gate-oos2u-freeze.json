@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "edge-gate-oos2u-freeze-v1",
+  "policy": "IMMUTABLE_AFTER_FREEZE",
+  "experiment": "WILL Edge Gate OOS-2U",
+  "protocolId": "will-edge-gate-oos2u-v1",
+  "campaignId": "will-edge-gate-oos2u-20260922-v1",
+  "edgeCut": "2026-09-22T19:35:26.899Z",
+  "createdAt": "2026-09-22T19:38:03.421Z",
+  "sourceHead": "51535dd019ff016cd7972d92b9f377a4d2ddb1a9",
+  "mode": "PAPER_READ_ONLY",
+  "metric": "MeanAbsMomentum",
+  "frozenThreshold": 0.599936,
+  "operator": "<=",
+  "baselineCount": 1424,
+  "baselineIdsSha256": "df47bd0a6a476c851240be6fe8ccf3b4527deffdef42f1997bc4f9fa75a19999",
+  "baselineRecordsSha256": "0bfcf24c2fc36ef98d8159540bf818c2cf741e68afd4593076b1463ee977245b",
+  "historyFileSha256": "ea4610525ba4c206e69375868363e48f72b913083495fe8aba45a88cbe724051",
+  "checkpoint": {
+    "candidateCycles": 50,
+    "selection": "first 50 exact campaign cycles ordered by openedAt then cycleId",
+    "replacement": "NONE"
+  },
+  "bootstrap": {
+    "unit": "cycle",
+    "replications": 10000,
+    "seed": 20260915,
+    "rng": "xorshift32"
+  },
+  "protectedProspectiveMutationIsolation": true,
+  "automatedBrokerExecution": false,
+  "noRetuning": true,
+  "noEarlyStopping": true,
+  "noAutomaticLivePromotion": true,
+  "activationAuthorized": false
+}
