@@ -43,7 +43,7 @@ export function sanitizeObservationFailure(error) {
 
 export function classifyObservationFailure(value) {
   const code=String(value?.status??value?.message??value??'').trim().toUpperCase();
-  const integrity=/^(EVIDENCE_|JOURNAL_|WAL_|PROJECTION_|GENERATION_|WRITER_|OBSERVATION_TERMINAL_|CYCLE_NOT_|HISTORY_INVENTORY_|INCOMPATIBLE_DUPLICATE|ACTIVE_|CAPABILITY_|MEMBERSHIP_|INVALID_CREATION|INTENT_REQUIRED)/.test(code);
+  const integrity=code==='PAPER_OUTCOME_SETTLEMENT_ERROR'||/^(EVIDENCE_|JOURNAL_|WAL_|PROJECTION_|GENERATION_|WRITER_|OBSERVATION_TERMINAL_|CYCLE_NOT_|HISTORY_INVENTORY_|INCOMPATIBLE_DUPLICATE|ACTIVE_|CAPABILITY_|MEMBERSHIP_|INVALID_CREATION|INTENT_REQUIRED)/.test(code);
   return Object.freeze({classification:integrity?'EVIDENCE_INTEGRITY_FAILURE':'OPERATIONAL_FAILURE',reasonCode:integrity?null:sanitizeObservationFailure(value?.status??value)});
 }
 

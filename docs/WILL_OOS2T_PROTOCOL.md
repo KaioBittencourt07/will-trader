@@ -16,6 +16,8 @@ Candidates are ordered by `openedAt`, then `cycleId`; the exact first 50 are fix
 
 Formal analysis requires baseline integrity, evidence integrity, exactly 50 candidates, and all 50 structurally complete. The statistical contract stays frozen at `MeanAbsMomentum <= 0.599936`; cluster bootstrap, no-retuning, PAPER/read-only operation, unavailable financial expectancy, and no automatic LIVE promotion remain unchanged.
 
+Every exact-campaign manifest must have `openedAt > edgeCut`. Equality, an earlier timestamp, or an invalid timestamp is structural temporal-membership failure in status, evaluation, and restart inspection; such cycles are never filtered away.
+
 The evaluator accepts neither caller booleans nor textual `PASS` assertions. A future freeze must be loaded from exact bytes verified by a SHA-256 sidecar, and a baseline audit must independently match the frozen count, canonical ID digest, and complete history-file digest. The generic validator pins protocol, campaign, edge cut, metric, threshold, operator, 50-cycle checkpoint, bootstrap contract, and governance flags without inventing production values.
 
 ## Security and recovery
@@ -23,3 +25,7 @@ The evaluator accepts neither caller booleans nor textual `PASS` assertions. A f
 Only bounded codes are durable. Tokens, headers, API keys, passwords, secrets, credential-bearing URLs, stack traces, arbitrary provider text, and multiline errors are prohibited. Recovery replays the hash chain and terminal deterministically. A missing/duplicate terminal, post-terminal writer, truncated/corrupt WAL, corrupt projection, membership mismatch, or true `INVALID` blocks formal analysis.
 
 The status surface is read-only and exposes only structural counts and sanitized reason-code counts. Starting backend collection, PAPER, providers, broker execution, or a real OOS-2T campaign is outside this implementation.
+
+A thrown PAPER settlement pass is an integrity/runtime failure and pauses evidence. It is not a normal provider observation failure and cannot create an `OPERATIONAL_FAILURE` terminal. Ordinary bounded settlement states and terminal `DATA_INVALID` retain their separate meanings.
+
+`backend/scripts/finalizeOos2tFreeze.mjs` is dry-run by default. A future operator must supply absolute history/output paths, campaign ID and edge cut; optional historical evidence roots extend the temporal boundary proof. Writing additionally requires both `--write` and `--confirm-backend-stopped`. The tool derives commitments from the original bytes, pins the current Git HEAD, writes freeze plus SHA-256 sidecar atomically, then rereads and audits both.

@@ -13,7 +13,7 @@ export function readOos2tFreeze(file,hashFile) {
   if(v.schemaVersion!=='edge-gate-oos2t-freeze-v1'||v.policy!=='IMMUTABLE_AFTER_FREEZE'||v.protocolId!==OOS2T_PROTOCOL||typeof v.campaignId!=='string'||!v.campaignId||
     !Number.isFinite(Date.parse(v.edgeCut))||v.metric!=='MeanAbsMomentum'||v.frozenThreshold!==0.599936||v.operator!=='<='||!Number.isSafeInteger(v.baselineCount)||v.baselineCount<0||
     !/^[a-f0-9]{64}$/i.test(v.baselineIdsSha256??'')||!/^[a-f0-9]{64}$/i.test(v.historyFileSha256??'')||v.checkpoint?.candidateCycles!==50||
-    v.bootstrap?.replications!==10000||v.bootstrap?.seed!==20260915||v.bootstrap?.rng!=='xorshift32'||v.noRetuning!==true||v.noEarlyStopping!==true||v.noAutomaticLivePromotion!==true||v.activationAuthorized!==false)throw new Error('OOS2T_FREEZE_INVALID');
+    v.bootstrap?.unit!=='cycle'||v.bootstrap?.replications!==10000||v.bootstrap?.seed!==20260915||v.bootstrap?.rng!=='xorshift32'||!/^[a-f0-9]{40}$/i.test(v.sourceHead??'')||!Number.isFinite(Date.parse(v.createdAt))||Date.parse(v.createdAt)<Date.parse(v.edgeCut)||v.noRetuning!==true||v.noEarlyStopping!==true||v.noAutomaticLivePromotion!==true||v.activationAuthorized!==false)throw new Error('OOS2T_FREEZE_INVALID');
   const result=deepFreeze({...v,freezeSha256:expected});verifiedFreezes.add(result);return result;
 }
 export function auditOos2tBaselineBytes(bytes,freeze) {

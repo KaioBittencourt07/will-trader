@@ -14,6 +14,7 @@ export function evaluateOos2t({history=[],walBytes=Buffer.alloc(0),manifests=[],
   let entries;try{entries=replayEvidence(walBytes,manifests);}catch{report.reasonCodes.push('WAL_UNVERIFIABLE');return report;}
   if(entries.some(e=>e.manifest.protocolId!==freeze.protocolId||e.manifest.campaignId!==freeze.campaignId)){report.reasonCodes.push('EVIDENCE_IDENTITY_MISMATCH');return report;}
   const cut=Date.parse(freeze.edgeCut),campaign=entries;
+  if(campaign.some(e=>!Number.isFinite(Date.parse(e.manifest.openedAt))||Date.parse(e.manifest.openedAt)<=cut)){report.evidenceIntegrity='FAIL';report.reasonCodes.push('OOS2T_TEMPORAL_MEMBERSHIP_INVALID');return report;}
   const candidates=campaign.filter(e=>Date.parse(e.manifest.openedAt)>cut).sort((a,b)=>Date.parse(a.manifest.openedAt)-Date.parse(b.manifest.openedAt)||a.manifest.cycleId.localeCompare(b.manifest.cycleId)),selected=candidates.slice(0,50);
   report.candidateCyclesObserved=candidates.length;report.selectedCycleIds=selected.map(e=>e.manifest.cycleId);
   const ambiguity=history.some(r=>(r.protocolId===freeze.protocolId||r.campaignId===freeze.campaignId)&&!campaign.some(e=>sameMembership(r,e.manifest)&&e.manifest.recordIds.includes(r.id)&&r.metadata?.context?.monitorCycleId===e.manifest.cycleId));
