@@ -25,7 +25,7 @@ export function auditBaselineBytes(bytes,freeze) {
 // Pure replay: never instantiate the writable journal, recover projections or create locks.
 export function replayEvidence(bytes,projections) {
   if (!Buffer.isBuffer(bytes) || !Array.isArray(projections)) throw new Error('INVALID_WAL_INPUT');
-  const text=bytes.toString('utf8'), cycles=new Map(), operations=new Map();
+  const text=bytes.toString('utf8'), cycles=new Map(), operations=new Map(), batches=new Map();
   if (text && !text.endsWith('\n')) throw new Error('TRUNCATED_WAL');
   let previousHash=null,sequence=0;
   const require = condition => {if(!condition)throw new Error('INVALID_WAL_EVIDENCE');};
@@ -40,7 +40,7 @@ export function replayEvidence(bytes,projections) {
     const c=cycles.get(p.cycleId);require(c && c.manifest.state!=='INVALID');const m=c.manifest;
     if(e.type==='CYCLE_INVALID_COMMIT'){m.state='INVALID';continue;}
     require(m.state==='OPEN' && m.writerGeneration===p.writerGeneration);
-    const pending=()=>[...operations.values()].filter(o=>o.p.cycleId===p.cycleId&&!o.committed);
+    const pending=()=>[...operations.values()].filter(o=>o.p.cycleId===p.cycleId&&!o.committed&&!o.aborted);
     switch(e.type) {
       case 'WRITER_BEGIN':require(validId(p.writerId)&&!c.writers.has(p.writerId)&&!c.closing);c.writers.add(p.writerId);break;
       case 'WRITER_END':require(c.writers.has(p.writerId)&&!pending().some(o=>o.p.writerId===p.writerId));c.writers.delete(p.writerId);break;
@@ -48,6 +48,10 @@ export function replayEvidence(bytes,projections) {
         require(!c.closing&&c.writers.has(p.writerId)&&validId(p.operationId)&&validId(p.recordId)&&p.record?.id===p.recordId&&sameMembership(p.record,m)&&p.protocolId===m.protocolId&&p.campaignId===m.campaignId);
         require(!operations.has(p.operationId)&&![...operations.values()].some(o=>o.p.recordId===p.recordId)&&p.record.status!=='CLOSED'&&p.record.outcome==null&&p.record.settledAt==null);
         operations.set(p.operationId,{p,committed:false});break;
+      case 'RECORD_BATCH_READY':
+        require(!c.closing&&c.writers.has(p.writerId)&&validId(p.batchId)&&!batches.has(p.batchId)&&Array.isArray(p.operationIds)&&p.operationIds.length>0&&new Set(p.operationIds).size===p.operationIds.length);
+        for(const id of p.operationIds){const o=operations.get(id);require(o&&!o.committed&&!o.batchId&&o.p.cycleId===p.cycleId&&o.p.writerId===p.writerId);o.batchId=p.batchId;}
+        batches.set(p.batchId,p);break;
       case 'RECORD_CREATE_COMMIT': {
         const o=operations.get(p.operationId);require(o&&!o.committed&&o.p.cycleId===p.cycleId&&o.p.recordId===p.recordId&&c.writers.has(o.p.writerId)&&p.protocolId===m.protocolId&&p.campaignId===m.campaignId);
         o.committed=true;m.recordIds.push(p.recordId);m.expectedRecordCount++;m.inventoryRevision++;m.canonicalDigest=canonicalDigest(m);break;
@@ -56,6 +60,10 @@ export function replayEvidence(bytes,projections) {
         require(!c.closing&&!c.observationTerminal&&!c.writers.size&&!pending().length&&
           (p.outcome==='SUCCESS'&&(p.reasonCode===null||p.reasonCode===undefined)||p.outcome==='OPERATIONAL_FAILURE'&&!m.recordIds.length&&/^[A-Z][A-Z0-9_]{0,63}$/.test(p.reasonCode??'')));
         c.observationTerminal={outcome:p.outcome,reasonCode:p.reasonCode??null,sequence:e.sequence};break;
+      case 'CYCLE_RECOVERY_TERMINAL':
+        require(!c.observationTerminal&&p.reasonCode==='PROCESS_INTERRUPTION'&&![...batches.values()].some(b=>b.cycleId===p.cycleId&&b.operationIds.some(id=>!operations.get(id).committed)));
+        for(const o of operations.values())if(o.p.cycleId===p.cycleId&&!o.committed)o.aborted=true;
+        c.writers.clear();c.observationTerminal={outcome:'RECOVERY_INTERRUPTED',reasonCode:'PROCESS_INTERRUPTION',sequence:e.sequence,replacementAllowed:false,performanceEligible:false};break;
       case 'CYCLE_SEAL_BEGIN':require(!c.closing);c.closing=true;break;
       case 'CYCLE_SEAL_COMMIT':
         require(c.closing&&!c.writers.size&&!pending().length&&p.canonicalDigest===canonicalDigest(m)&&validTime(p.sealedAt)&&Date.parse(p.sealedAt)>=Date.parse(m.openedAt));
@@ -72,4 +80,17 @@ export function replayEvidence(bytes,projections) {
     const creations=[...operations.values()].filter(o=>o.committed&&o.p.cycleId===manifest.cycleId).map(o=>o.p.record);
     return {...(observationTerminal?{observationTerminal}:{}),manifest,projectionValid,creations};
   });
+}
+
+// A recovery-interrupted slot is structurally consumed, never a performance sample.
+export function verifyRecoveryInterruptedCycle(entry,history=[]) {
+  const m=entry?.manifest,t=entry?.observationTerminal;
+  try{validateManifest(m);}catch{return {valid:false,performanceEligible:false,replacementAllowed:false};}
+  const rows=history.filter(r=>r?.cycleId===m.cycleId||r?.metadata?.context?.monitorCycleId===m.cycleId);
+  const ids=rows.map(r=>r?.id),inventory=new Set(m.recordIds);
+  const valid=entry.projectionValid===true&&m.state==='SEALED'&&t?.outcome==='RECOVERY_INTERRUPTED'&&
+    t.reasonCode==='PROCESS_INTERRUPTION'&&t.replacementAllowed===false&&t.performanceEligible===false&&
+    new Set(ids).size===ids.length&&ids.length===inventory.size&&ids.every(id=>inventory.has(id))&&
+    rows.every(r=>sameMembership(r,m))&&entry.creations?.length===rows.length;
+  return {valid,performanceEligible:false,replacementAllowed:false,slotConsumed:valid};
 }

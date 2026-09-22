@@ -50,6 +50,7 @@ export function settleDuePaperCampaignOutcomes({
   coinbaseTemporalFeeds,
   biquoteForexFeed,
   scope = null,
+  recordAdmission = () => true,
   now = Date.now(),
   maxReferenceLagMs = PAPER_OUTCOME_REFERENCE_MAX_LAG_MS
 } = {}) {
@@ -68,7 +69,8 @@ export function settleDuePaperCampaignOutcomes({
   if (!Number.isFinite(checkedAt)) throw new Error('PAPER_OUTCOME_CLOCK_INVALID');
   const exactScope = settlementScope(scope);
 
-  const records = historyStore.list().filter(record => eligibleOpenRecord(record, exactScope));
+  if(typeof recordAdmission!=='function')throw new Error('PAPER_RECORD_ADMISSION_REQUIRED');
+  const records = historyStore.list().filter(record => eligibleOpenRecord(record, exactScope)&&recordAdmission(record));
   const results = [];
   let entriesCaptured = 0;
   let settled = 0;

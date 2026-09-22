@@ -49,7 +49,7 @@ for(const point of ['BEFORE_INTENT','AFTER_INTENT','AFTER_READY','AFTER_INSERT',
     `);
     assert.equal(result.status,73);
     const committed=['AFTER_READY','AFTER_COMMIT','AFTER_INSERT'].includes(point);
-    assert.equal(s.store().list().length,['AFTER_INSERT','AFTER_COMMIT'].includes(point)?1:0);
+    assert.equal(s.store().list().length,point==='AFTER_INSERT'?1:0);
     const history=s.store(), next=s.runtime(history);
     assert.throws(()=>next.recover(),/EVIDENCE_STORAGE_FAILURE/);
     assert.equal(next.health().paused,true); assert.equal(history.list().length,committed?1:0);
@@ -90,15 +90,15 @@ for(const state of ['SEALED','OPEN','INVALID']) {
   });
 }
 
-test('pre-freeze actual history temporary-file collision after WAL commit is recoverable without phantom records',t=>{
+test('pre-freeze history publication failure after WAL commit is recoverable without phantom records',t=>{
   const s=setup(t);
   assert.equal(child(s,`
     const runtime=createCycleEvidenceRuntime(options);runtime.recover();runtime.openMonitorCycle(cycleId);
-    fs.mkdirSync(historyPath+'.tmp');
-    assert.throws(()=>runtime.commitRecord(runtime.beginCycleWriter(cycleId),input));
+    const rename=fs.renameSync;
+    fs.renameSync=function(from,to){if(to===historyPath&&String(from).includes('.evidence-'))throw new Error('injected publish failure');return rename.apply(this,arguments);};
+    try{assert.throws(()=>runtime.commitRecord(runtime.beginCycleWriter(cycleId),input));}finally{fs.renameSync=rename;}
     assert.equal(store.list().length,0);assert.equal(runtime.health().paused,true);
   `).status,0);
-  fs.rmdirSync(s.historyPath+'.tmp'); // Test-owned obstacle only, not production recovery.
   const history=s.store();assert.throws(()=>s.runtime(history).recover());
   assert.equal(s.store().list().length,1);
 });

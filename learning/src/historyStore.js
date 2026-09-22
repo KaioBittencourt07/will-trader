@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { attributeOutcome } from './errorAttribution.js';
 import { assessFamiliarity, createStateFingerprint } from './stateFingerprint.js';
 import { assessSignalLifecycle } from '../../engine/src/signalLifecycle.js';
@@ -56,6 +57,7 @@ function provenance(data = {}, context = {}) {
 
 function createHistoryStoreBundle({ filePath = null, now = () => new Date().toISOString(), id = () => crypto.randomUUID() } = {}) {
   let records = [];
+  const evidenceProjections=new Map();
   if (filePath && fs.existsSync(filePath)) {
     const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     if (!Array.isArray(saved)) throw new Error('Histórico persistido inválido.');
@@ -182,6 +184,42 @@ function createHistoryStoreBundle({ filePath = null, now = () => new Date().toIS
     try{persist();}catch(error){records=before;throw error;}
     return inserted.map(record=>structuredClone(record));
   }
+  // A prepared projection is private: list(), settlement and every other
+  // history consumer continue to see only the previously published file.
+  function prepareEvidenceBatch(preparedRecords) {
+    if (!Array.isArray(preparedRecords) || !preparedRecords.length) throw new Error('EVIDENCE_BATCH_REQUIRED');
+    const before=canonical(records),next=records.map(record=>structuredClone(record));
+    for(const prepared of preparedRecords){
+      if (!prepared || typeof prepared.id!=='string' || !prepared.id) throw new Error('PREPARED_ID_REQUIRED');
+      const record=JSON.parse(JSON.stringify(prepared));
+      const matches=next.filter(r=>r.id===record.id||(record.decisionId&&r.decisionId===record.decisionId));
+      if(matches.length>1||(matches[0]&&canonical(matches[0])!==canonical(record)))throw new Error('INCOMPATIBLE_PREPARED_DUPLICATE');
+      if(!matches.length)next.push(record);
+    }
+    const token=randomUUID(),temporary=filePath?`${filePath}.evidence-${token}.tmp`:null;
+    const diskBefore=filePath&&fs.existsSync(filePath)?fs.readFileSync(filePath):null;
+    if(filePath){
+      fs.mkdirSync(path.dirname(filePath),{recursive:true});
+      const fd=fs.openSync(temporary,'wx');
+      try{fs.writeFileSync(fd,JSON.stringify(next,null,2));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+    }
+    evidenceProjections.set(token,{before,next,temporary,diskBefore});
+    return token;
+  }
+  function publishEvidenceBatch(token) {
+    const projection=evidenceProjections.get(token);
+    if(!projection)throw new Error('EVIDENCE_PROJECTION_REQUIRED');
+    if(canonical(records)!==projection.before)throw new Error('EVIDENCE_HISTORY_CHANGED');
+    if(filePath){
+      const diskNow=fs.existsSync(filePath)?fs.readFileSync(filePath):null;
+      if((diskNow===null)!==(projection.diskBefore===null)||
+        (diskNow!==null&&!diskNow.equals(projection.diskBefore)))throw new Error('EVIDENCE_HISTORY_CHANGED');
+      fs.renameSync(projection.temporary,filePath);
+    }
+    records=projection.next;
+    evidenceProjections.delete(token);
+    return structuredClone(records);
+  }
   function recordDecision(input = {}) {
     const decisionId = input.context?.decisionId ?? input.decision?.decisionId ?? input.audit?.id ?? null;
     if (decisionId) {
@@ -303,7 +341,10 @@ function createHistoryStoreBundle({ filePath = null, now = () => new Date().toIS
     persist();
     return structuredClone(records[index]);
   }
-  const historyStore = Object.freeze({ recordDecision, prepareDecisionRecord, insertPreparedRecord, insertPreparedRecords, settle, confirmExecution, list: () => records.map((record) => structuredClone(record)) });
+  const historyStore = Object.freeze(Object.defineProperties({ recordDecision, prepareDecisionRecord, insertPreparedRecord, insertPreparedRecords,
+    settle,confirmExecution,list: () => records.map((record) => structuredClone(record)) },{
+      prepareEvidenceBatch:{value:prepareEvidenceBatch},publishEvidenceBatch:{value:publishEvidenceBatch}
+    }));
   const paperMutationPort = Object.freeze({ settlePaperOutcome, confirmPaperExecution });
   return Object.freeze({ historyStore, paperMutationPort });
 }

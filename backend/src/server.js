@@ -124,6 +124,7 @@ function runPaperOutcomeSettlementPass() {
       coinbaseTemporalFeeds: app.locals.coinbaseTemporalFeeds,
       biquoteForexFeed: app.locals.biquoteForexFeed,
       now: Date.now(),
+      recordAdmission: record => app.locals.cycleEvidenceRuntime?.isPaperSettlementAllowed(record) ?? true,
       scope:exactSettlementScope?{protocolId:exactSettlementScope.protocolId,campaignId:exactSettlementScope.campaignId}:null
     });
     app.locals.paperOutcomeSettlement = settlement;

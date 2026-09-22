@@ -47,7 +47,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
       if (!validId(p.writerId) || writers.has(p.writerId) || state.closing.has(m.cycleId) || state.observationTerminals.get(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       writers.add(p.writerId);
     } else if (e.type === 'WRITER_END') {
-      if (!writers.has(p.writerId) || [...state.operations.values()].some(o=>!o.committed && o.payload.writerId===p.writerId && o.payload.cycleId===m.cycleId)) fail('WAL_SEQUENCE_INVALID');
+      if (!writers.has(p.writerId) || [...state.operations.values()].some(o=>!o.committed&&!o.aborted && o.payload.writerId===p.writerId && o.payload.cycleId===m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       writers.delete(p.writerId);
     } else if (e.type === 'RECORD_CREATE_INTENT') {
       if (!writers.has(p.writerId) || state.closing.has(m.cycleId) || state.observationTerminals.get(m.cycleId) || !validId(p.operationId) || !validId(p.recordId) ||
@@ -70,16 +70,23 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
         p.protocolId !== m.protocolId || p.campaignId !== m.campaignId || !writers.has(op.payload.writerId)) fail('WAL_SEQUENCE_INVALID');
       op.committed=true; m.recordIds.push(p.recordId); m.expectedRecordCount++; m.inventoryRevision++;
       m.canonicalDigest=canonicalDigest(m);
+    } else if (e.type === 'CYCLE_RECOVERY_TERMINAL') {
+      if (state.observationTerminals.get(m.cycleId) || p.reasonCode!=='PROCESS_INTERRUPTION' ||
+        [...state.batches.values()].some(b=>b.payload.cycleId===m.cycleId&&b.payload.operationIds.some(id=>!state.operations.get(id).committed))) fail('WAL_SEQUENCE_INVALID');
+      for(const op of state.operations.values())if(op.payload.cycleId===m.cycleId&&!op.committed)op.aborted=true;
+      writers.clear();
+      state.observationTerminals.set(m.cycleId,Object.freeze({outcome:'RECOVERY_INTERRUPTED',reasonCode:'PROCESS_INTERRUPTION',sequence:e.sequence,
+        replacementAllowed:false,performanceEligible:false}));
     } else if (e.type === 'CYCLE_OBSERVATION_COMMIT') {
       const validTerminal=p.outcome==='SUCCESS'?(p.reasonCode===null||p.reasonCode===undefined):p.outcome==='OPERATIONAL_FAILURE'&&m.recordIds.length===0&&/^[A-Z][A-Z0-9_]{0,63}$/.test(p.reasonCode??'');
-      if (!validTerminal || state.observationTerminals.get(m.cycleId) || writers.size || [...state.operations.values()].some(o=>o.payload.cycleId===m.cycleId&&!o.committed) || state.closing.has(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
+      if (!validTerminal || state.observationTerminals.get(m.cycleId) || writers.size || [...state.operations.values()].some(o=>o.payload.cycleId===m.cycleId&&!o.committed&&!o.aborted) || state.closing.has(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       state.observationTerminals.set(m.cycleId,Object.freeze({outcome:p.outcome,reasonCode:p.reasonCode??null,sequence:e.sequence}));
     } else if (e.type === 'CYCLE_SEAL_BEGIN') {
       if (observationTerminalRequired && !state.observationTerminals.get(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       if (state.closing.has(m.cycleId)) fail('WAL_SEQUENCE_INVALID');
       state.closing.add(m.cycleId);
     } else if (e.type === 'CYCLE_SEAL_COMMIT') {
-      if (!state.closing.has(m.cycleId) || writers.size || [...state.operations.values()].some(o=>o.payload.cycleId===m.cycleId && !o.committed) ||
+      if (!state.closing.has(m.cycleId) || writers.size || [...state.operations.values()].some(o=>o.payload.cycleId===m.cycleId && !o.committed&&!o.aborted) ||
         p.canonicalDigest !== canonicalDigest(m) || !validTime(p.sealedAt)) fail('WAL_SEQUENCE_INVALID');
       validateManifest(m); m.state='SEALED'; m.sealedAt=p.sealedAt; m.sealSequence=e.sequence;
     } else fail('WAL_EVENT_INVALID');
@@ -156,7 +163,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
     },
     endWriter({cycleId,writerGeneration,writerId}) {
       return withState(state=>{const m=get(state,cycleId); generation(state,m,writerGeneration);
-        if (!state.writers.get(cycleId).has(writerId) || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId && o.payload.writerId===writerId && !o.committed)) fail('WRITER_PENDING');
+        if (!state.writers.get(cycleId).has(writerId) || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId && o.payload.writerId===writerId && !o.committed&&!o.aborted)) fail('WRITER_PENDING');
         append(state,'WRITER_END',{cycleId,writerGeneration,writerId}); });
     },
     beginRecordCreation({cycleId,writerGeneration,writerId,operationId,record}) {
@@ -190,7 +197,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
       return withState(state=>{
         const m=get(state,cycleId); generation(state,m,writerGeneration);
         if (state.observationTerminals.get(cycleId)) fail('OBSERVATION_TERMINAL_EXISTS');
-        if (state.writers.get(cycleId).size || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId&&!o.committed)) fail('OBSERVATION_TERMINAL_PENDING');
+        if (state.writers.get(cycleId).size || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId&&!o.committed&&!o.aborted)) fail('OBSERVATION_TERMINAL_PENDING');
         append(state,'CYCLE_OBSERVATION_COMMIT',{cycleId,writerGeneration,outcome,reasonCode});
         return clone(state.observationTerminals.get(cycleId));
       });
@@ -201,7 +208,7 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
         if (!validTime(sealedAt) || Date.parse(sealedAt)<Date.parse(m.openedAt)) fail('INVALID_SEAL_TIME');
         if (observationTerminalRequired && !state.observationTerminals.get(cycleId)) fail('OBSERVATION_TERMINAL_REQUIRED');
         if (!state.closing.has(cycleId)) append(state,'CYCLE_SEAL_BEGIN',{cycleId,writerGeneration});
-        if (state.writers.get(cycleId).size || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId&&!o.committed)) fail('SEAL_PENDING');
+        if (state.writers.get(cycleId).size || [...state.operations.values()].some(o=>o.payload.cycleId===cycleId&&!o.committed&&!o.aborted)) fail('SEAL_PENDING');
         validateManifest(m); append(state,'CYCLE_SEAL_COMMIT',{cycleId,writerGeneration,sealedAt,canonicalDigest:m.canonicalDigest}); return clone(m);
       });
     },
@@ -210,6 +217,22 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
       return withState(state=>{
         const m=get(state,cycleId), projection=checkProjection(state,m);
         if (!projection || canonical(projection)!==canonical(m)) fail('PROJECTION_REQUIRES_RECOVERY');
+        return clone(m);
+      });
+    },
+    recoverInterruptedCycle({cycleId,sealedAt,history}) {
+      return withState(state=>{
+        const m=get(state,cycleId);
+        if(m.state==='SEALED')return clone(m);
+        if(m.state!=='OPEN'||!Array.isArray(history)||!validTime(sealedAt)||Date.parse(sealedAt)<Date.parse(m.openedAt))fail('RECOVERY_TERMINAL_INVALID');
+        const checked=verifyManifestAgainstHistory(m,history);
+        if(checked.reasons.some(reason=>['EXTRA_RECORD','MISSING_RECORD','DUPLICATE_RECORD','MEMBERSHIP_MISMATCH','MANIFEST_INVALID'].includes(reason)))fail('RECOVERY_HISTORY_CONFLICT');
+        if([...state.batches.values()].some(b=>b.payload.cycleId===cycleId&&b.payload.operationIds.some(id=>!state.operations.get(id).committed)))fail('RECOVERY_BATCH_PENDING');
+        if(!state.observationTerminals.get(cycleId))append(state,'CYCLE_RECOVERY_TERMINAL',{cycleId,writerGeneration:m.writerGeneration,reasonCode:'PROCESS_INTERRUPTION'});
+        // A terminal already committed before the crash retains its identity;
+        // recovery only finishes the missing seal, never reclassifies it.
+        if(!state.closing.has(cycleId))append(state,'CYCLE_SEAL_BEGIN',{cycleId,writerGeneration:m.writerGeneration});
+        append(state,'CYCLE_SEAL_COMMIT',{cycleId,writerGeneration:m.writerGeneration,sealedAt,canonicalDigest:m.canonicalDigest});
         return clone(m);
       });
     },

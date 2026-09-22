@@ -4,7 +4,8 @@ import { MEMBERSHIP_FIELDS, validId } from './cycleEvidenceManifest.js';
 
 // No defaults for campaign/protocol: enabling without explicit configuration fails closed.
 export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, historyStore,
-  journal = null, now = () => new Date().toISOString(), fault = () => {}, capabilityNow = () => performance.now(), observationTerminalRequired = false, maxCandidateCycles = null } = {}) {
+  journal = null, now = () => new Date().toISOString(), fault = () => {}, capabilityNow = () => performance.now(), observationTerminalRequired = false, maxCandidateCycles = null,
+  recoverInterruptedOpenCycles = false } = {}) {
   if (!validId(protocolId) || !validId(campaignId) || !historyStore?.prepareDecisionRecord || !historyStore?.insertPreparedRecord) {
     throw new Error('EVIDENCE_CONFIGURATION_REQUIRED');
   }
@@ -14,6 +15,7 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
   const capabilities = new Map();
   const revoke = cycleId => { for (const [token,value] of capabilities) if (value.cycleId === cycleId) capabilities.delete(token); };
   let ready = false, paused = false;
+  const recoveryInterrupted=new Set();
   const pause = () => { paused = true; capabilities.clear(); };
   function guard() { if (!ready || paused) throw new Error('EVIDENCE_PAUSED'); }
   function durable(fn) {
@@ -29,6 +31,10 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
   }
   return {
     pause,
+    isPaperSettlementAllowed(record) {
+      if(record?.protocolId!==protocolId||record?.campaignId!==campaignId)return true;
+      return ready&&!paused&&!recoveryInterrupted.has(record.cycleId);
+    },
     health: () => ({ ready, paused, observationTerminalRequired, candidateCyclesObserved:known.size, candidateCycleLimit:maxCandidateCycles, collectionClosed:maxCandidateCycles!==null&&known.size>=maxCandidateCycles, newCandidateAdmissionAllowed:ready&&!paused&&(maxCandidateCycles===null||known.size<maxCandidateCycles) }),
     issueRequestCapability(cycleId) {
       return durable(() => {
@@ -51,22 +57,33 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
     recover() {
       return durable(() => {
         if (active.size || writers.size) throw new Error('ACTIVE_RECOVERY_FORBIDDEN');
-        // Only a durable READY batch authorizes replay of its immutable WAL intents.
-        // The history write is atomic for the whole batch; a partial batch is corrupt.
+        // Recovery never publishes an uncommitted record. READY permits a
+        // private projection; WAL commits make it authoritative before publish.
         for (const batch of wal.recoveryBatches({history:historyStore.list()})) {
-          if (!batch.materialized) historyStore.insertPreparedRecords(batch.records);
+          if(!historyStore.prepareEvidenceBatch||!historyStore.publishEvidenceBatch)throw new Error('EVIDENCE_TRANSACTION_STORE_REQUIRED');
+          const projection=batch.materialized?null:historyStore.prepareEvidenceBatch(batch.records);
           for (const operationId of batch.operationIds) {
             wal.commitRecordCreation({cycleId:batch.cycleId,writerGeneration:batch.writerGeneration,operationId});
           }
+          if(projection)historyStore.publishEvidenceBatch(projection);
         }
-        const recovery = wal.recover({ history: historyStore.list() });
+        let recovery = wal.recover({ history: historyStore.list() });
         for (const id of [...recovery.sealedCycleIds,...recovery.unresolvedCycleIds]) known.add(id);
         // Legacy WALs predating READY may have COMMIT before history. Reconcile
         // only their immutable durable intents; never synthesize an observation.
         for (const id of recovery.materializedRecordIds) {
           historyStore.insertPreparedRecord(recovery.records.find(r => r.id === id));
         }
-        // OPEN/INVALID after restart requires operator recovery, never inferred closure.
+        if(recoverInterruptedOpenCycles){
+          for(const id of recovery.unresolvedCycleIds){
+            wal.recoverInterruptedCycle({cycleId:id,sealedAt:now(),history:historyStore.list()});
+          }
+          recovery=wal.recover({history:historyStore.list()});
+        }
+        for(const [id,terminal] of Object.entries(recovery.observationTerminals)){
+          if(terminal.outcome==='RECOVERY_INTERRUPTED')recoveryInterrupted.add(id);
+        }
+        // Default remains fail-closed for retired/legacy campaigns.
         if (recovery.unresolvedCycleIds.length) throw new Error('UNRESOLVED_CYCLE');
         ready = true; paused = false;
         return { sealedCycleIds: [...recovery.sealedCycleIds] };
@@ -106,21 +123,22 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
       return durable(()=>{
         guard();const ctx=writers.get(token);if(!ctx)throw new Error('WRITER_REQUIRED');
         const prepared=ctx.staged.map(record=>structuredClone(record)),operations=[];
+        if(prepared.length&&(!historyStore.prepareEvidenceBatch||!historyStore.publishEvidenceBatch))throw new Error('EVIDENCE_TRANSACTION_STORE_REQUIRED');
         for(const record of prepared){const operationId=randomUUID();fault('BEFORE_INTENT');wal.beginRecordCreation({...ctx,operationId,record});fault('AFTER_INTENT');operations.push({operationId,record});}
         if (operations.length) wal.readyRecordBatch({...ctx,batchId:randomUUID(),operationIds:operations.map(o=>o.operationId)});
         fault('AFTER_READY');
-        let result;
-        if(typeof historyStore.insertPreparedRecords==='function')result=historyStore.insertPreparedRecords(prepared);
-        else if(prepared.length<=1)result=prepared.map(record=>historyStore.insertPreparedRecord(record));
-        else throw new Error('EVIDENCE_BATCH_STORE_REQUIRED');
-        fault('AFTER_INSERT');
+        if(!operations.length){ctx.staged.length=0;return [];}
+        const projection=historyStore.prepareEvidenceBatch(prepared);
+        fault('AFTER_PREPARE');
         for(const {operationId} of operations){wal.commitRecordCreation({...ctx,operationId});fault('AFTER_COMMIT');}
-        ctx.staged.length=0;return result;
+        const result=historyStore.publishEvidenceBatch(projection);
+        fault('AFTER_INSERT');ctx.staged.length=0;return result.filter(r=>prepared.some(p=>p.id===r.id));
       });
     },
     commitRecord(token,input) {
       return durable(() => {
         guard(); const ctx=writers.get(token); if (!ctx) throw new Error('WRITER_REQUIRED');
+        if(!historyStore.prepareEvidenceBatch||!historyStore.publishEvidenceBatch)throw new Error('EVIDENCE_TRANSACTION_STORE_REQUIRED');
         const m=membership(ctx.cycleId);
         const prepared=JSON.parse(JSON.stringify(historyStore.prepareDecisionRecord({ ...input,
           context:{ ...input.context,monitorCycleId:m.cycleId } },m)));
@@ -130,10 +148,12 @@ export function createCycleEvidenceRuntime({ directory, protocolId, campaignId, 
         fault('AFTER_INTENT');
         wal.readyRecordBatch({...ctx,batchId:randomUUID(),operationIds:[operationId]});
         fault('AFTER_READY');
-        const record=historyStore.insertPreparedRecord(prepared);
-        fault('AFTER_INSERT');
+        const projection=historyStore.prepareEvidenceBatch([prepared]);
+        fault('AFTER_PREPARE');
         wal.commitRecordCreation({ ...ctx,operationId });
-        fault('AFTER_COMMIT'); return record;
+        fault('AFTER_COMMIT');
+        historyStore.publishEvidenceBatch(projection);
+        fault('AFTER_INSERT'); return prepared;
       });
     },
     endCycleWriter(token) {
