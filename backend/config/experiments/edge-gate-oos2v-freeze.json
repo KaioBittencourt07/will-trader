@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "edge-gate-oos2v-freeze-v1",
+  "policy": "IMMUTABLE_AFTER_FREEZE",
+  "experiment": "WILL Edge Gate OOS-2V",
+  "protocolId": "will-edge-gate-oos2v-v1",
+  "campaignId": "will-edge-gate-oos2v-20260923-v1",
+  "edgeCut": "2026-09-23T17:19:18.626Z",
+  "createdAt": "2026-09-23T17:19:18.626Z",
+  "sourceHead": "d6a742b23e16e3f580003bee8faf916a186af4ca",
+  "mode": "PAPER_READ_ONLY",
+  "metric": "MeanAbsMomentum",
+  "frozenThreshold": 0.599936,
+  "operator": "<=",
+  "baselineCount": 1464,
+  "baselineIdsSha256": "8d14c418976d4f1f0f188dd48088bfe5620998291dd6eecccae23438a3c6887b",
+  "baselineRecordsSha256": "e648b44cc57169d290034db1fd1d52c83b2e12ac9b9527ad2c44a9326847a68e",
+  "historyFileSha256": "fa32148af1a03d5be2666ed8467131218bd416e5e8e09a1c9f62f095fda8291f",
+  "checkpoint": {
+    "candidateCycles": 50,
+    "selection": "first 50 exact campaign cycles ordered by openedAt then cycleId",
+    "replacement": "NONE"
+  },
+  "bootstrap": {
+    "unit": "cycle",
+    "replications": 10000,
+    "seed": 20260915,
+    "rng": "xorshift32"
+  },
+  "recoveryInterrupted": {
+    "outcome": "RECOVERY_INTERRUPTED",
+    "reasonCode": "PROCESS_INTERRUPTION",
+    "replacementAllowed": false,
+    "performanceEligible": false
+  },
+  "expectancy": "NOT_AVAILABLE",
+  "noRetuning": true,
+  "noEarlyStopping": true,
+  "noAutomaticLivePromotion": true,
+  "automatedBrokerExecution": false,
+  "activationAuthorized": false
+}
