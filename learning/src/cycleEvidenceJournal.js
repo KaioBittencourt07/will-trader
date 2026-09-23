@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { withEvidenceLock, inspectProcessInstance } from './cycleEvidenceLock.js';
 import { canonical, digest, validId, validTime, newManifest, canonicalDigest, validateManifest,
   sameMembership, verifyManifestAgainstHistory } from './cycleEvidenceManifest.js';
 
@@ -9,10 +10,11 @@ const fail = code => { throw new Error(code); };
 const clone = value => JSON.parse(canonical(value));
 
 // Explicit opt-in storage directory. No imports of runtime, historyStore, or providers.
-export function createCycleEvidenceJournal({ directory, fault = () => {}, observationTerminalRequired = false } = {}) {
+export function createCycleEvidenceJournal({ directory, fault = () => {}, observationTerminalRequired = false,
+  inspectLockProcess = inspectProcessInstance } = {}) {
   if (typeof directory !== 'string' || !path.isAbsolute(directory)) fail('ABSOLUTE_JOURNAL_DIRECTORY_REQUIRED');
   fs.mkdirSync(directory, { recursive: true });
-  const walPath = path.join(directory,'journal.jsonl'), lockPath = path.join(directory,'writer.lock');
+  const walPath = path.join(directory,'journal.jsonl');
   const quarantinePath = path.join(directory,'INVALID');
   function flushWrite(file, data, flags = 'w') {
     const fd = fs.openSync(file,flags);
@@ -24,12 +26,10 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
   }
   const manifestPath = id => path.join(directory,`${digest(id)}.manifest.json`);
   function locked(fn) {
-    let fd;
-    try { fd=fs.openSync(lockPath,'wx'); } catch { fail('JOURNAL_LOCKED'); }
-    try {
+    return withEvidenceLock({directory,inspectProcess:inspectLockProcess},()=>{
       if (fs.existsSync(quarantinePath)) fail('JOURNAL_INVALID');
       return fn();
-    } finally { fs.closeSync(fd); fs.unlinkSync(lockPath); }
+    });
   }
   function quarantine() { flushWrite(quarantinePath,'JOURNAL_INVALID'); }
   function apply(state, e) {
@@ -71,7 +71,9 @@ export function createCycleEvidenceJournal({ directory, fault = () => {}, observ
       op.committed=true; m.recordIds.push(p.recordId); m.expectedRecordCount++; m.inventoryRevision++;
       m.canonicalDigest=canonicalDigest(m);
     } else if (e.type === 'CYCLE_RECOVERY_TERMINAL') {
-      if (state.observationTerminals.get(m.cycleId) || p.reasonCode!=='PROCESS_INTERRUPTION' ||
+      if (state.observationTerminals.get(m.cycleId) ||
+        canonical(Object.keys(p).sort())!==canonical(['cycleId','reasonCode','writerGeneration'].sort())||
+        p.reasonCode!=='PROCESS_INTERRUPTION' ||
         [...state.batches.values()].some(b=>b.payload.cycleId===m.cycleId&&b.payload.operationIds.some(id=>!state.operations.get(id).committed))) fail('WAL_SEQUENCE_INVALID');
       for(const op of state.operations.values())if(op.payload.cycleId===m.cycleId&&!op.committed)op.aborted=true;
       writers.clear();

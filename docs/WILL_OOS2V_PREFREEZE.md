@@ -1,0 +1,11 @@
+# OOS-2V pre-freeze contract
+
+This is scaffolding only. There is no production OOS-2V freeze, campaign ID, edge cut, evidence directory, or collection authorization in the repository. The reader requires exact future freeze bytes and a SHA-256 sidecar; production activation additionally requires a literal start or restart authorization, exact protocol/campaign configuration, baseline continuity, and exclusive campaign selection. Tests use only synthetic temporary fixtures.
+
+The inherited hypothesis is fixed: MeanAbsMomentum `<= 0.599936`, cluster bootstrap by cycle with 10,000 xorshift32 replications and seed 20260915. The first 50 exact campaign cycles, ordered by `openedAt` then `cycleId`, consume the checkpoint. Replacement is `NONE`; no tuning, early stopping, or automatic LIVE promotion is permitted. Mode is PAPER_READ_ONLY, automated broker execution is false, and financial expectancy is NOT_AVAILABLE without a separately frozen payout/cost contract.
+
+`RECOVERY_INTERRUPTED / PROCESS_INTERRUPTION` is a sealed, structurally valid candidate only after WAL, projection, immutable creation fields, manifest inventory, and history membership agree. It consumes its original slot with `replacementAllowed=false` and `performanceEligible=false`. Its records never contribute to gate metrics, outcomes, or bootstrap, even if later presented with performance-looking fields. A malformed terminal or contradictory history blocks formal analysis. Fifty complete slots may include such a slot; a 51st cycle is an integrity failure, not a replacement.
+
+Only OOS-2V activation opts into `recoverInterruptedOpenCycles=true`. OOS-2R/S/T/U activation modules and evidence remain unchanged. The future freeze must be produced and reviewed in a separate authorized phase before any real runtime or PAPER collection begins.
+
+The persistent journal lock contains a synced process instance identity (PID plus OS process birth identity) and random nonce. A second process can reclaim it only under an exclusive recovery guard and only when the OS verifies the exact owner PID is absent. Live, reused, malformed, or ambiguous identity stays fail-closed. A crash inside the recovery guard itself may leave that guard behind; this is an intentional false fail-closed state, never permission to steal an active lock.

@@ -59,7 +59,7 @@ for(const point of ['BEFORE_INTENT','AFTER_INTENT','AFTER_READY','AFTER_INSERT',
   });
 }
 
-test('pre-freeze abrupt exit inside seal commit preserves WAL but leaves stale lock; restart cannot steal it',t=>{
+test('pre-freeze abrupt exit inside seal commit reclaims verified-dead lock without changing WAL',t=>{
   const s=setup(t);
   assert.equal(child(s,`
     const journal=createCycleEvidenceJournal({directory,fault:(p,type)=>{if(p==='AFTER_WAL_COMMIT'&&type==='CYCLE_SEAL_COMMIT')process.exit(73);}});
@@ -70,7 +70,8 @@ test('pre-freeze abrupt exit inside seal commit preserves WAL but leaves stale l
   const bytes=fs.readFileSync(path.join(s.journalDir,'journal.jsonl'));
   assert.equal(JSON.parse(bytes.toString().trim().split('\n').at(-1)).type,'CYCLE_SEAL_COMMIT');
   assert.equal(fs.existsSync(path.join(s.journalDir,'writer.lock')),true);
-  const next=s.runtime(s.store()); assert.throws(()=>next.recover()); assert.equal(next.health().paused,true);
+  const next=s.runtime(s.store()); assert.deepEqual(next.recover().sealedCycleIds,[cycleId]);
+  assert.equal(fs.existsSync(path.join(s.journalDir,'writer.lock')),false);
   assert.deepEqual(fs.readFileSync(path.join(s.journalDir,'journal.jsonl')),bytes);
 });
 

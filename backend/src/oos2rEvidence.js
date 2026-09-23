@@ -61,7 +61,8 @@ export function replayEvidence(bytes,projections) {
           (p.outcome==='SUCCESS'&&(p.reasonCode===null||p.reasonCode===undefined)||p.outcome==='OPERATIONAL_FAILURE'&&!m.recordIds.length&&/^[A-Z][A-Z0-9_]{0,63}$/.test(p.reasonCode??'')));
         c.observationTerminal={outcome:p.outcome,reasonCode:p.reasonCode??null,sequence:e.sequence};break;
       case 'CYCLE_RECOVERY_TERMINAL':
-        require(!c.observationTerminal&&p.reasonCode==='PROCESS_INTERRUPTION'&&![...batches.values()].some(b=>b.cycleId===p.cycleId&&b.operationIds.some(id=>!operations.get(id).committed)));
+        require(!c.observationTerminal&&canonical(Object.keys(p).sort())===canonical(['cycleId','reasonCode','writerGeneration'].sort())&&
+          p.reasonCode==='PROCESS_INTERRUPTION'&&![...batches.values()].some(b=>b.cycleId===p.cycleId&&b.operationIds.some(id=>!operations.get(id).committed)));
         for(const o of operations.values())if(o.p.cycleId===p.cycleId&&!o.committed)o.aborted=true;
         c.writers.clear();c.observationTerminal={outcome:'RECOVERY_INTERRUPTED',reasonCode:'PROCESS_INTERRUPTION',sequence:e.sequence,replacementAllowed:false,performanceEligible:false};break;
       case 'CYCLE_SEAL_BEGIN':require(!c.closing);c.closing=true;break;
