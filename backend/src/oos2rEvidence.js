@@ -23,9 +23,9 @@ export function auditBaselineBytes(bytes,freeze) {
 }
 
 // Pure replay: never instantiate the writable journal, recover projections or create locks.
-export function replayEvidence(bytes,projections) {
+export function replayEvidence(bytes,projections,{classifyRestartProjection=false}={}) {
   if (!Buffer.isBuffer(bytes) || !Array.isArray(projections)) throw new Error('INVALID_WAL_INPUT');
-  const text=bytes.toString('utf8'), cycles=new Map(), operations=new Map(), batches=new Map();
+  const text=bytes.toString('utf8'), cycles=new Map(), operations=new Map(), batches=new Map(), priorStates=new Map();
   if (text && !text.endsWith('\n')) throw new Error('TRUNCATED_WAL');
   let previousHash=null,sequence=0;
   const require = condition => {if(!condition)throw new Error('INVALID_WAL_EVIDENCE');};
@@ -35,7 +35,8 @@ export function replayEvidence(bytes,projections) {
     previousHash=hash;
     if(e.type==='CYCLE_OPEN_COMMIT') {
       require(!cycles.has(p.cycleId) && ![...cycles.values()].some(c=>c.manifest.writerGeneration===p.writerGeneration));
-      cycles.set(p.cycleId,{manifest:newManifest(p),writers:new Set(),closing:false,observationTerminal:null});continue;
+      cycles.set(p.cycleId,{manifest:newManifest(p),writers:new Set(),closing:false,observationTerminal:null});
+      priorStates.set(p.cycleId,new Set([canonical(cycles.get(p.cycleId).manifest)]));continue;
     }
     const c=cycles.get(p.cycleId);require(c && c.manifest.state!=='INVALID');const m=c.manifest;
     if(e.type==='CYCLE_INVALID_COMMIT'){m.state='INVALID';continue;}
@@ -71,6 +72,7 @@ export function replayEvidence(bytes,projections) {
         m.state='SEALED';m.sealedAt=p.sealedAt;m.sealSequence=e.sequence;break;
       default:require(false);
     }
+    priorStates.get(p.cycleId).add(canonical(m));
   }
   // Projections are checked, never repaired. A corrupt projection retains its WAL-open slot.
   const projectedIds=projections.map(p=>p?.cycleId);
@@ -78,8 +80,19 @@ export function replayEvidence(bytes,projections) {
   return [...cycles.values()].map(({manifest,observationTerminal})=>{
     const projection=projections.find(p=>p?.cycleId===manifest.cycleId);let projectionValid=false;
     try{validateManifest(projection);projectionValid=canonical(projection)===canonical(manifest);}catch{}
+    let restartProjection='INVALID';
+    if(projectionValid)restartProjection='CURRENT';
+    else if(classifyRestartProjection){
+      if(projection===undefined){
+        const cycleEvents=text.split('\n').slice(0,-1).map(line=>JSON.parse(line)).filter(e=>e.payload?.cycleId===manifest.cycleId);
+        if(cycleEvents.length===1&&cycleEvents[0].type==='CYCLE_OPEN_COMMIT')restartProjection='RECOVERABLY_STALE';
+      }else{
+        try{validateManifest(projection);if(priorStates.get(manifest.cycleId).has(canonical(projection)))restartProjection='RECOVERABLY_STALE';}catch{}
+      }
+    }
     const creations=[...operations.values()].filter(o=>o.committed&&o.p.cycleId===manifest.cycleId).map(o=>o.p.record);
-    return {...(observationTerminal?{observationTerminal}:{}),manifest,projectionValid,creations};
+    return {...(observationTerminal?{observationTerminal}:{}),manifest,projectionValid,
+      ...(classifyRestartProjection?{restartProjection}:{}),creations};
   });
 }
 

@@ -48,8 +48,8 @@ export function inspectOos2vRestart(options={}){
   const wal=fs.readFileSync(path.join(value.evidencePath,'journal.jsonl'));
   const manifests=fs.readdirSync(value.evidencePath).filter(name=>name.endsWith('.manifest.json'))
     .map(name=>JSON.parse(fs.readFileSync(path.join(value.evidencePath,name),'utf8')));
-  const entries=replayEvidence(wal,manifests);
-  if(entries.length>50||entries.some(e=>!e.projectionValid||e.manifest.protocolId!==value.freeze.protocolId||
+  const entries=replayEvidence(wal,manifests,{classifyRestartProjection:true});
+  if(entries.length>50||entries.some(e=>e.restartProjection==='INVALID'||e.manifest.protocolId!==value.freeze.protocolId||
     e.manifest.campaignId!==value.freeze.campaignId||e.manifest.state==='INVALID'||
     Date.parse(e.manifest.openedAt)<=Date.parse(value.freeze.edgeCut)))fail('OOS2V_RESTART_EVIDENCE_INVALID');
   const generations=entries.map(e=>e.manifest.writerGeneration).sort((a,b)=>a-b);

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {spawnSync} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
+import {once} from 'node:events';
 import {withEvidenceLock} from '../learning/src/cycleEvidenceLock.js';
 
 const moduleUrl=new URL('../learning/src/cycleEvidenceLock.js',import.meta.url).href;
@@ -32,8 +33,26 @@ test('malformed lock, ambiguous owner, reused PID and competing reaper fail clos
   }
   const reused=directory(t);lock(reused,owner(999999));
   assert.throws(()=>withEvidenceLock({directory:reused,inspectProcess:pid=>({state:'ALIVE',birthId:pid===process.pid?'current-birth':'new-birth'})},()=>{}),/JOURNAL_LOCKED/);
-  const guarded=directory(t);lock(guarded,owner(999999));fs.mkdirSync(path.join(guarded,'writer.lock.recovery'));
-  assert.throws(()=>withEvidenceLock({directory:guarded,inspectProcess:pid=>pid===process.pid?{state:'ALIVE',birthId:'current-birth'}:{state:'DEAD'}},()=>{}),/JOURNAL_LOCKED/);
+  const guarded=directory(t);lock(guarded,owner(999999));
+  assert.equal(withEvidenceLock({directory:guarded,inspectProcess:pid=>pid===process.pid?{state:'ALIVE',birthId:'current-birth'}:{state:'DEAD'}},()=>true),true);
+});
+for(const boundary of ['BEFORE_STALE_LOCK_REMOVAL','AFTER_STALE_LOCK_REMOVAL']){
+  test(`reaper hard exit ${boundary} releases OS mutex and next restart is safe`,t=>{
+    const dir=directory(t);lock(dir,owner(999999));
+    const code=`import {withEvidenceLock} from ${JSON.stringify(moduleUrl)};withEvidenceLock({directory:${JSON.stringify(dir)},reaperFault:p=>{if(p===${JSON.stringify(boundary)})process.exit(73);}},()=>{});`;
+    const child=spawnSync(process.execPath,['--input-type=module','--eval',code],{encoding:'utf8',timeout:15000,env:{...process.env,NODE_OPTIONS:''}});
+    assert.equal(child.status,73);assert.equal(child.stderr,'');
+    assert.equal(fs.existsSync(path.join(dir,'writer.lock')),true);
+    assert.equal(withEvidenceLock({directory:dir},()=>42),42);
+    assert.equal(withEvidenceLock({directory:dir},()=>43),43);
+    assert.equal(fs.existsSync(path.join(dir,'writer.lock')),false);
+  });
+}
+test('OS reaper helper death after unlink leaves no authoritative lock or guard',t=>{
+  const dir=directory(t);lock(dir,owner(999999));
+  assert.throws(()=>withEvidenceLock({directory:dir,helperFaultPoint:'AFTER_STALE_LOCK_REMOVAL'},()=>{}),/JOURNAL_LOCKED/);
+  assert.equal(fs.existsSync(path.join(dir,'writer.lock')),false);
+  assert.equal(withEvidenceLock({directory:dir},()=>true),true);
 });
 test('abrupt process exit leaves a verifiably dead lock that a restart reclaims',t=>{
   const dir=directory(t);
@@ -53,4 +72,21 @@ test('two real processes cannot simultaneously own one journal directory',t=>{
     assert.equal(child.status,73);assert.equal(child.stderr,'');
   });
   assert.equal(spawnSync(process.execPath,['--input-type=module','--eval',code],{encoding:'utf8',timeout:15000,env:{...process.env,NODE_OPTIONS:''}}).status,0);
+});
+test('competing stale-lock reapers cannot both own the journal',async t=>{
+  const dir=directory(t),marker=path.join(dir,'first-acquired');lock(dir,owner(999999));
+  const code=`import fs from 'node:fs';import {withEvidenceLock} from ${JSON.stringify(moduleUrl)};
+    try{withEvidenceLock({directory:${JSON.stringify(dir)}},()=>{fs.writeFileSync(${JSON.stringify(marker)},'READY');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,8000)});process.exit(0)}
+    catch(e){process.exit(e.message==='JOURNAL_LOCKED'?73:74)}`;
+  const first=spawn(process.execPath,['--input-type=module','--eval',code],{stdio:'ignore',env:{...process.env,NODE_OPTIONS:''}});
+  const until=Date.now()+10000;
+  while(!fs.existsSync(marker)&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(fs.existsSync(marker),true);
+  const second=spawnSync(process.execPath,['--input-type=module','--eval',
+    `import {withEvidenceLock} from ${JSON.stringify(moduleUrl)};try{withEvidenceLock({directory:${JSON.stringify(dir)}},()=>{});process.exit(0)}catch(e){process.exit(e.message==='JOURNAL_LOCKED'?73:74)}`],
+    {encoding:'utf8',timeout:15000,env:{...process.env,NODE_OPTIONS:''}});
+  assert.equal(second.status,73);
+  assert.equal(first.exitCode??(await once(first,'exit'))[0],0);
+  assert.equal(withEvidenceLock({directory:dir},()=>true),true);
 });

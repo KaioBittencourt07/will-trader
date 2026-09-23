@@ -3,15 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
+import {spawnSync} from 'node:child_process';
 import {createHistoryStore} from '../learning/src/historyStore.js';
 import {createCycleEvidenceRuntime} from '../learning/src/cycleEvidenceRuntime.js';
+import {createCycleEvidenceJournal} from '../learning/src/cycleEvidenceJournal.js';
 import {baselineCommitment,sha256} from '../backend/src/oos2rEvidence.js';
 import {baselineRecordsDigest} from '../backend/src/oos2uFreeze.js';
 import {OOS2V_CONTRACT,OOS2V_PROTOCOL,OOS2V_START_AUTHORIZATION,OOS2V_RESTART_AUTHORIZATION,validateOos2vDraft} from '../backend/src/oos2vProtocol.js';
 import {readOos2vFreeze} from '../backend/src/oos2vFreeze.js';
 import {evaluateOos2v} from '../backend/src/evaluateOos2v.js';
 import {inspectOos2vDirectoryStatus} from '../backend/src/oos2vStatus.js';
-import {prepareOos2vEnvironment,createPreparedOos2vRuntime,createRecoveredOos2vRuntime} from '../backend/src/oos2vActivation.js';
+import {prepareOos2vEnvironment,inspectOos2vRestart,createPreparedOos2vRuntime,createRecoveredOos2vRuntime} from '../backend/src/oos2vActivation.js';
 
 const cut='2026-09-23T00:00:00.000Z',later=()=>Date.parse(cut)+60000;
 function setup(t){
@@ -144,4 +146,73 @@ test('baseline prefix mutation blocks every new OOS-2V admission',t=>{
   fs.writeFileSync(s.historyFile,JSON.stringify([{id:'unexpected-baseline'}]));
   assert.throws(()=>runtime.openMonitorCycle('autonomous-paper-monitor-v1:1'),/BASELINE_CHANGED/);
   assert.equal(runtime.health().paused,true);
+});
+
+const crashEvents=['CYCLE_OPEN_COMMIT','WRITER_BEGIN','RECORD_CREATE_INTENT','RECORD_BATCH_READY',
+  'RECORD_CREATE_COMMIT','CYCLE_RECOVERY_TERMINAL','CYCLE_SEAL_BEGIN','CYCLE_SEAL_COMMIT'];
+for(const event of crashEvents){
+  test(`OOS-2V hard exit after WAL ${event}: exact stale projection recovers once`,t=>{
+    const s=setup(t),cycleId='autonomous-paper-monitor-v1:crash',openedAt=new Date(later()).toISOString();
+    fs.mkdirSync(s.evidenceDirectory);
+    const journal=createCycleEvidenceJournal({directory:s.evidenceDirectory,observationTerminalRequired:true});
+    const open=()=>journal.openCycle({protocolId:OOS2V_PROTOCOL,campaignId:s.freeze.campaignId,cycleId,openedAt,history:s.store.list()});
+    if(event!=='CYCLE_OPEN_COMMIT')open();
+    const ctx={cycleId,writerGeneration:1,writerId:'writer-fixture'};
+    const record={id:'record-fixture',cycleId,writerGeneration:1,protocolId:OOS2V_PROTOCOL,campaignId:s.freeze.campaignId,
+      status:'OPEN',outcome:null,settledAt:null,decisionId:'decision-fixture'};
+    if(['RECORD_CREATE_INTENT','RECORD_BATCH_READY','RECORD_CREATE_COMMIT'].includes(event))journal.beginWriter(ctx);
+    if(['RECORD_BATCH_READY','RECORD_CREATE_COMMIT'].includes(event))
+      journal.beginRecordCreation({...ctx,operationId:'operation-fixture',record});
+    if(event==='RECORD_CREATE_COMMIT')journal.readyRecordBatch({...ctx,batchId:'batch-fixture',operationIds:['operation-fixture']});
+    if(['CYCLE_SEAL_BEGIN','CYCLE_SEAL_COMMIT'].includes(event))
+      journal.commitObservationTerminal({cycleId,writerGeneration:1,outcome:'SUCCESS'});
+    if(event==='CYCLE_SEAL_COMMIT'){
+      const beginOnly=createCycleEvidenceJournal({directory:s.evidenceDirectory,observationTerminalRequired:true,
+        fault:(point,type)=>{if(point==='AFTER_PROJECTION'&&type==='CYCLE_SEAL_BEGIN')throw new Error('STOP_AFTER_BEGIN');}});
+      assert.throws(()=>beginOnly.sealCycle({...ctx,sealedAt:openedAt}),/STOP_AFTER_BEGIN/);
+    }
+    const journalUrl=new URL('../learning/src/cycleEvidenceJournal.js',import.meta.url).href;
+    const action={
+      CYCLE_OPEN_COMMIT:`j.openCycle({protocolId:${JSON.stringify(OOS2V_PROTOCOL)},campaignId:${JSON.stringify(s.freeze.campaignId)},cycleId,openedAt,history:[]})`,
+      WRITER_BEGIN:'j.beginWriter(ctx)',
+      RECORD_CREATE_INTENT:'j.beginRecordCreation({...ctx,operationId:"operation-fixture",record})',
+      RECORD_BATCH_READY:'j.readyRecordBatch({...ctx,batchId:"batch-fixture",operationIds:["operation-fixture"]})',
+      RECORD_CREATE_COMMIT:'j.commitRecordCreation({...ctx,operationId:"operation-fixture"})',
+      CYCLE_RECOVERY_TERMINAL:'j.recoverInterruptedCycle({cycleId,sealedAt:openedAt,history:[]})',
+      CYCLE_SEAL_BEGIN:'j.sealCycle({...ctx,sealedAt:openedAt})',
+      CYCLE_SEAL_COMMIT:'j.sealCycle({...ctx,sealedAt:openedAt})'
+    }[event];
+    const code=`import {createCycleEvidenceJournal} from ${JSON.stringify(journalUrl)};
+      const cycleId=${JSON.stringify(cycleId)},openedAt=${JSON.stringify(openedAt)},ctx=${JSON.stringify(ctx)},record=${JSON.stringify(record)};
+      const j=createCycleEvidenceJournal({directory:${JSON.stringify(s.evidenceDirectory)},observationTerminalRequired:true,
+        fault:(point,type)=>{if(point==='AFTER_WAL_COMMIT'&&type===${JSON.stringify(event)})process.exit(73)}});
+      ${action};`;
+    const child=spawnSync(process.execPath,['--input-type=module','--eval',code],{encoding:'utf8',timeout:15000,env:{...process.env,NODE_OPTIONS:''}});
+    assert.equal(child.status,73,child.stderr);assert.equal(child.stderr,'');
+    const options={historyFile:s.historyFile,evidenceDirectory:s.evidenceDirectory,scanRoots:[s.root],
+      freezeFile:s.freezeFile,freezeHashFile:s.freezeHashFile};
+    assert.equal(inspectOos2vRestart(options).recoverable,true);
+    const prepared={mode:'RESTART',options,freeze:s.freeze,report:{evidenceDirectory:s.evidenceDirectory}};
+    const recovered=createRecoveredOos2vRuntime({prepared,historyStore:s.store,now:later});
+    assert.deepEqual(recovered.recover().sealedCycleIds,[cycleId]);
+    const first=s.evidence(),records=s.store.list().filter(r=>r.cycleId===cycleId);
+    assert.equal(first.manifests.length,1);assert.equal(first.manifests[0].state,'SEALED');
+    assert.deepEqual(first.manifests[0].recordIds,records.map(r=>r.id));
+    assert.equal(recovered.health().candidateCyclesObserved,1);
+    const second=createRecoveredOos2vRuntime({prepared,historyStore:s.store,now:later});
+    assert.deepEqual(second.recover().sealedCycleIds,[cycleId]);
+    assert.deepEqual(s.evidence().walBytes,first.walBytes);
+    assert.deepEqual(s.store.list().filter(r=>r.cycleId===cycleId),records);
+  });
+}
+test('OOS-2V restart rejects a valid-shaped but impossible projection',t=>{
+  const s=setup(t);fs.mkdirSync(s.evidenceDirectory);
+  const journal=createCycleEvidenceJournal({directory:s.evidenceDirectory,observationTerminalRequired:true});
+  journal.openCycle({protocolId:OOS2V_PROTOCOL,campaignId:s.freeze.campaignId,
+    cycleId:'autonomous-paper-monitor-v1:forged',openedAt:new Date(later()).toISOString(),history:s.store.list()});
+  const file=path.join(s.evidenceDirectory,fs.readdirSync(s.evidenceDirectory).find(name=>name.endsWith('.manifest.json')));
+  const projection=JSON.parse(fs.readFileSync(file,'utf8'));projection.openedAt=new Date(later()+1000).toISOString();
+  fs.writeFileSync(file,JSON.stringify(projection));
+  assert.throws(()=>inspectOos2vRestart({historyFile:s.historyFile,evidenceDirectory:s.evidenceDirectory,
+    scanRoots:[s.root],freezeFile:s.freezeFile,freezeHashFile:s.freezeHashFile}),/OOS2V_RESTART_EVIDENCE_INVALID/);
 });
