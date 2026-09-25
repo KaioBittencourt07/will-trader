@@ -38,17 +38,34 @@ const percentile = (items, p) => {
 
 export function classifyCycleReason(value) {
   const code = String(value ?? '').toUpperCase();
+  if (REASON_SET.has(code)) return code;
   if (/\bAI\b|OPENAI|ADVISOR/.test(code)) return 'OTHER_SANITIZED_REASON';
   if (/429|COOLDOWN|RATE_LIMIT/.test(code)) return 'PROVIDER_COOLDOWN';
-  if (/DEDUP|DUPLICATE|FINGERPRINT/.test(code)) return 'DEDUPLICATED';
-  if (/STALE|FRESHNESS|QUOTE_AGE/.test(code)) return 'STALE_DATA';
-  if (/ADMISSION|CANONICAL|AUTHORITY/.test(code)) return 'ADMISSION_REJECTED';
-  if (/PROVIDER|FEED|HTTP_5|NETWORK|DISCONNECT|UNAVAILABLE/.test(code)) return 'PROVIDER_UNAVAILABLE';
-  if (/MALFORMED|INVALID_MARKET|INVALID_DATA|NO_SNAPSHOT|OHLC/.test(code)) return 'MARKET_DATA_INVALID';
+  if (/HTTPS?:\/\//.test(code) && !/^(NETWORK_|HTTP_|PROVIDER_)/.test(code)) return 'OTHER_SANITIZED_REASON';
+  if (/DEDUP|DUPLICATE/.test(code)) return 'DEDUPLICATED';
+  if (/STALE|FRESHNESS_NOT_APPROVED|FRESHNESS_CONTRACT_MISMATCH|EVENT_TIME_OUTSIDE_FROZEN_WINDOW|QUOTE_AGE/.test(code)) return 'STALE_DATA';
+  if (/RUNTIME_NOT_READY|TICK.*MISSING|EVENT_TIME_MISSING|PROVIDER|FEED|HTTP_5|HTTP 5|HTTP 404|NETWORK|DISCONNECT|UNAVAILABLE|NO[_ ]SNAPSHOT|SEM SNAPSHOT|ECONN|ETIMEDOUT|ENOTFOUND/.test(code)) return 'PROVIDER_UNAVAILABLE';
+  if (/^INVALID$|^DATA_INVALID$|MALFORMED|INVALID_MARKET|INVALID_DATA|OHLC|CLOSED_BARS_INSUFFICIENT|FEATURES_NOT_READY|SNAPSHOT_SHAPE_INVALID|PRICE_INVALID|TIMEFRAME_UNSUPPORTED|MARKET_CLOSED|CLOSED_CANDLE_PROOF_MISSING/.test(code)) return 'MARKET_DATA_INVALID';
+  if (/ADMISSION|CANONICAL|AUTHORITY|FINGERPRINT_NOT_ELIGIBLE/.test(code)) return 'ADMISSION_REJECTED';
   if (/WAIT/.test(code)) return 'WAIT_DECISION';
   if (/NO_SIGNAL/.test(code)) return 'NO_SIGNAL';
   if (/NO_EXECUTABLE/.test(code)) return 'NO_EXECUTABLE_CANDIDATE';
   return 'OTHER_SANITIZED_REASON';
+}
+
+export function classifyUnavailableReason(item = {}) {
+  if (item?.duplicate === true) return 'DEDUPLICATED';
+  const codes = [item?.error, item?.reason, ...(Array.isArray(item?.reasons) ? item.reasons : [])]
+    .filter(value => typeof value === 'string').map(value => value.toUpperCase());
+  if (codes.some(code => /429|COOLDOWN|RATE_LIMIT/.test(code))) return 'PROVIDER_COOLDOWN';
+  if (codes.some(code => /DEDUP|DUPLICATE/.test(code))) return 'DEDUPLICATED';
+  if (item?.admission?.checks?.freshnessGate === 'FAIL') return 'STALE_DATA';
+  // Specific nested reason codes take precedence over generic wrapper errors.
+  for (const code of codes.slice(1)) {
+    const category = classifyCycleReason(code);
+    if (category !== 'OTHER_SANITIZED_REASON') return category;
+  }
+  return classifyCycleReason(codes[0] ?? '');
 }
 
 export function summarizeOpportunityCycle(body = {}) {
@@ -57,7 +74,7 @@ export function summarizeOpportunityCycle(body = {}) {
   const reasons = {},skippedReasons={},unavailableReasons={};
   const add = (code,target) => { const safe = classifyCycleReason(code); reasons[safe] = (reasons[safe] ?? 0) + 1;
     target[safe]=(target[safe]??0)+1; };
-  for (const item of unavailable) add(item.error ?? item.reason,unavailableReasons);
+  for (const item of unavailable) add(classifyUnavailableReason(item),unavailableReasons);
   for (const item of candidates) {
     if (item?.stages?.releaseEligible === false) add(item.waitCode ?? 'WAIT_DECISION',skippedReasons);
   }
@@ -123,6 +140,14 @@ export function createFinalCommissioningStore({ filePath, history = [], now = ()
     persist();
   }
   const baseline = new Set(state.baselineIds);
+  const admitsSettlement = record => {
+    if (!record || typeof record.id !== 'string' || baseline.has(record.id)) return false;
+    if (!/^autonomous-paper-monitor-v1:\d+$/.test(record.metadata?.context?.monitorCycleId ?? '')) return false;
+    // Commissioning is not a continuation of any retired OOS campaign.
+    if (typeof record.protocolId === 'string' && record.protocolId.startsWith('will-edge-gate-oos2')) return false;
+    const createdAt = Date.parse(record.createdAt ?? '');
+    return Number.isFinite(createdAt) && createdAt > Date.parse(state.activatedAt);
+  };
   const observeHistory = records => {
     if (!Array.isArray(records)) throw new Error('COMMISSIONING_HISTORY_INVALID');
     const ids=new Set(),decisions=new Set();
@@ -168,7 +193,12 @@ export function createFinalCommissioningStore({ filePath, history = [], now = ()
     persist();
   };
   const snapshot = () => structuredClone(state);
-  return Object.freeze({ observeHistory, observeCycle, snapshot });
+  return Object.freeze({ observeHistory, observeCycle, admitsSettlement, snapshot });
+}
+
+export function allowCommissioningSettlement(record, { commissioningStore = null, evidenceRuntime = null } = {}) {
+  return (commissioningStore?.admitsSettlement(record) ?? true) &&
+    (evidenceRuntime?.isPaperSettlementAllowed(record) ?? true);
 }
 
 export function buildCommissioningStatus({ ledger, monitor = null, providers = {}, evidence = null, settlement = null } = {}) {

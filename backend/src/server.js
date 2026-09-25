@@ -40,7 +40,7 @@ import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
 import { prepareHistoryContinuity } from './historyContinuity.js';
 import { scannerStudyRegistry } from './scannerStudyRegistry.js';
-import { createFinalCommissioningStore, buildCommissioningStatus } from './finalCommissioning.js';
+import { createFinalCommissioningStore, buildCommissioningStatus, allowCommissioningSettlement } from './finalCommissioning.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -141,7 +141,10 @@ function runPaperOutcomeSettlementPass() {
       coinbaseTemporalFeeds: app.locals.coinbaseTemporalFeeds,
       biquoteForexFeed: app.locals.biquoteForexFeed,
       now: Date.now(),
-      recordAdmission: record => app.locals.cycleEvidenceRuntime?.isPaperSettlementAllowed(record) ?? true,
+      recordAdmission: record => allowCommissioningSettlement(record, {
+        commissioningStore: app.locals.finalCommissioningStore,
+        evidenceRuntime: app.locals.cycleEvidenceRuntime
+      }),
       scope:exactSettlementScope?{protocolId:exactSettlementScope.protocolId,campaignId:exactSettlementScope.campaignId}:null
     });
     app.locals.paperOutcomeSettlement = settlement;

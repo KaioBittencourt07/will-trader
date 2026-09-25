@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { createFinalCommissioningStore, buildCommissioningStatus, classifyCycleReason, summarizeOpportunityCycle } from '../backend/src/finalCommissioning.js';
+import { createFinalCommissioningStore, buildCommissioningStatus, classifyCycleReason, classifyUnavailableReason, summarizeOpportunityCycle } from '../backend/src/finalCommissioning.js';
 import { createAutonomousPaperMonitor } from '../learning/src/autonomousPaperMonitor.js';
 import { runPaperMonitorCycle } from '../backend/src/paperMonitorCycle.js';
 
@@ -22,6 +22,29 @@ test('provider unavailable has only a sanitized reason',()=>assert.equal(classif
 test('HTTP 429 and cooldown are provider cooldown',()=>{assert.equal(classifyCycleReason('HTTP 429'),'PROVIDER_COOLDOWN');assert.equal(classifyCycleReason('cooldown active'),'PROVIDER_COOLDOWN');});
 test('stale quote is stale data',()=>assert.equal(classifyCycleReason('QUOTE_AGE_EXCEEDED'),'STALE_DATA'));
 test('malformed provider payload is market data invalid',()=>assert.equal(classifyCycleReason('MALFORMED_OHLC'),'MARKET_DATA_INVALID'));
+test('real /api/opportunities unavailable shapes map to distinct sanitized causes',()=>{
+  const cases=[
+    [{asset:'EUR/USD',error:'BIQUOTE_TEMPORAL_RUNTIME_NOT_READY',reasons:['BIQUOTE_TEMPORAL_RUNTIME_NOT_READY']},'PROVIDER_UNAVAILABLE'],
+    [{asset:'BTC/USD',error:'Sem snapshot.'},'PROVIDER_UNAVAILABLE'],
+    [{asset:'EUR/USD',error:'HTTP 429 cooldown',reasons:['token=secret']},'PROVIDER_COOLDOWN'],
+    [{asset:'EUR/USD',error:'MARKET_ADMISSION_REJECTED',reasons:['AUTHORITATIVE_FRESHNESS_NOT_APPROVED'],
+      admission:{checks:{freshnessGate:'FAIL'}}},'STALE_DATA'],
+    [{asset:'EUR/USD',error:'CANONICAL_SNAPSHOT_REJECTED',reasons:['CANONICAL_CLOSED_BARS_INSUFFICIENT']},'MARKET_DATA_INVALID'],
+    [{asset:'EUR/USD',error:'MARKET_ADMISSION_REJECTED',reasons:['TIMESTAMP_AUTHORITY_NOT_APPROVED']},'ADMISSION_REJECTED'],
+    [{asset:'EUR/USD',error:'DUPLICATE_CANONICAL_STUDY',duplicate:true},'DEDUPLICATED'],
+    [{asset:'EUR/USD',error:'STUDY_FINGERPRINT_NOT_ELIGIBLE'},'ADMISSION_REJECTED'],
+    [{asset:'EUR/USD',error:'https://provider.example/?api_key=secret'},'OTHER_SANITIZED_REASON']
+  ];
+  for(const [item,expected] of cases){
+    assert.equal(classifyUnavailableReason(item),expected);
+    const summary=summarizeOpportunityCycle({scanned:0,unavailable:[item],recommendation:null,
+      roundState:{state:'NO_ADMITTED_MARKET_STUDY'}});
+    assert.equal(summary.unavailableReasons[expected],1);
+    assert.doesNotMatch(JSON.stringify(summary),/secret|api_key|provider\.example/i);
+  }
+  assert.equal(summarizeOpportunityCycle({scanned:0,unavailable:[]}).reasons.NO_SIGNAL,1);
+  assert.equal(summarizeOpportunityCycle({scanned:1,unavailable:[],candidates:[],recommendation:null}).reasons.NO_EXECUTABLE_CANDIDATE,1);
+});
 test('entry reference missing remains a terminal DATA_INVALID without fabricated timestamp',t=>{
   const s=store(t),r=record('entry',{status:'CLOSED',outcome:'DATA_INVALID',outcomeMetadata:{reason:'PAPER_ENTRY_REFERENCE_WINDOW_MISSED'}});
   s.observeHistory([r]);const e=s.snapshot().entries.entry;
