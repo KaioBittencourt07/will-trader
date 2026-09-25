@@ -40,6 +40,7 @@ import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
 import { prepareHistoryContinuity } from './historyContinuity.js';
 import { scannerStudyRegistry } from './scannerStudyRegistry.js';
+import { createFinalCommissioningStore, buildCommissioningStatus } from './finalCommissioning.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -100,6 +101,19 @@ app.locals.prospectiveManifest = createProspectiveManifest({
 const historyStorage = createHistoryStoreWithPaperAuthority({ filePath: historyFilePath });
 app.locals.historyStore = historyStorage.historyStore;
 const paperMutationPort = historyStorage.paperMutationPort;
+const finalCommissioningEnabled = process.env.WILL_FINAL_COMMISSIONING_ENABLED === 'true';
+app.locals.finalCommissioningStore = finalCommissioningEnabled
+  ? createFinalCommissioningStore({
+      filePath: process.env.WILL_FINAL_COMMISSIONING_STATE_FILE || path.join(process.cwd(), 'data', 'will-final-commissioning.json'),
+      history: app.locals.historyStore.list()
+    }) : null;
+app.locals.finalCommissioningError = null;
+function syncFinalCommissioning() {
+  if (!app.locals.finalCommissioningStore) return;
+  try { app.locals.finalCommissioningStore.observeHistory(app.locals.historyStore.list()); app.locals.finalCommissioningError = null; }
+  catch { app.locals.finalCommissioningError = 'COMMISSIONING_TELEMETRY_PERSISTENCE_FAILURE'; }
+}
+syncFinalCommissioning();
 app.locals.historyContinuity = historyContinuity;
 app.locals.scannerStudyRegistryHydration = scannerStudyRegistry.hydrate(app.locals.historyStore.list());
 app.locals.paperOutcomeSettlement = Object.freeze({
@@ -131,6 +145,7 @@ function runPaperOutcomeSettlementPass() {
       scope:exactSettlementScope?{protocolId:exactSettlementScope.protocolId,campaignId:exactSettlementScope.campaignId}:null
     });
     app.locals.paperOutcomeSettlement = settlement;
+    syncFinalCommissioning();
     return settlement;
   } catch (error) {
     const settlement = Object.freeze({
@@ -141,6 +156,7 @@ function runPaperOutcomeSettlementPass() {
       automatedBrokerExecution: false
     });
     app.locals.paperOutcomeSettlement = settlement;
+    syncFinalCommissioning();
     return settlement;
   }
 }
@@ -169,6 +185,8 @@ app.locals.cycleEvidenceRuntime = oos2vPrepared
   : null;
 app.locals.paperMonitor = createAutonomousPaperMonitor({
   cycleEvidence: app.locals.cycleEvidenceRuntime,
+  captureCycleSummary: finalCommissioningEnabled,
+  onEvent: () => { syncFinalCommissioning(); },
   // Opt-in only. This prevents background scans from consuming provider budget
   // unless the operator explicitly enables the paper observation scheduler.
   enabled: paperMonitorEnabled,
@@ -185,6 +203,7 @@ app.locals.paperMonitor = createAutonomousPaperMonitor({
       capability,
       timeout: paperMonitorTimeout,
       multiAsset: true,
+      captureCycleSummary: finalCommissioningEnabled,
       assetClass: paperMonitorAssetClass,
       limit: paperMonitorBatchSize,
       timeframe: process.env.WILL_PAPER_MONITOR_TIMEFRAME || '1min'
@@ -300,6 +319,21 @@ app.get('/api/oos2v/status', (_req,res)=>{
 });
 app.get('/api/paper-monitor', (_req, res) => {
   res.json({ ok: true, monitor: app.locals.paperMonitor.health(), outcomeSettlement: app.locals.paperOutcomeSettlement });
+});
+app.get('/api/commissioning', (_req, res) => {
+  if (app.locals.finalCommissioningError) return res.status(503).json({ok:false,mode:'PAPER_ONLY',
+    automatedBrokerExecution:false,state:'DEGRADED',reason:app.locals.finalCommissioningError});
+  const coinbase = Object.fromEntries([...app.locals.coinbaseTemporalFeeds.entries()].map(([asset, feed]) => {
+    const h = feed.health(); return [asset,{enabled:h.enabled===true,running:h.running===true,ready:h.ready===true}];
+  }));
+  const biquote = app.locals.biquoteForexFeed?.health?.() ?? {};
+  const twelve = app.locals.twelveWebSocketFeed?.health?.() ?? {};
+  const result = buildCommissioningStatus({ledger:app.locals.finalCommissioningStore,
+    monitor:app.locals.paperMonitor.health(),settlement:app.locals.paperOutcomeSettlement,
+    evidence:app.locals.cycleEvidenceRuntime?.health?.()??null,
+    providers:{twelveWebSocket:{enabled:twelve.enabled===true,connected:twelve.connected===true},
+      biquote:{enabled:biquote.enabled===true,running:biquote.running===true,ready:biquote.ready===true},coinbase}});
+  res.status(result.ok?200:503).json(result);
 });
 
 app.use('/api', analyzeRouter);

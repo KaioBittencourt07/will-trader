@@ -4,6 +4,15 @@ import path from 'node:path';
 export const PAPER_MONITOR_VERSION = 'autonomous-paper-monitor-v1';
 const MIN_INTERVAL_MS = 60_000;
 const MAX_ERROR_DETAIL_LENGTH = 240;
+const SUMMARY_REASONS=new Set(['NO_SIGNAL','DEDUPLICATED','PROVIDER_UNAVAILABLE','PROVIDER_COOLDOWN','STALE_DATA',
+  'MARKET_DATA_INVALID','ADMISSION_REJECTED','WAIT_DECISION','NO_EXECUTABLE_CANDIDATE','OTHER_SANITIZED_REASON']);
+function sanitizeCycleSummary(value){
+  if(!value||typeof value!=='object')return null;
+  const number=x=>Number.isSafeInteger(x)&&x>=0?x:0;
+  const reasons=x=>Object.fromEntries(Object.entries(x??{}).filter(([key,n])=>SUMMARY_REASONS.has(key)&&Number.isSafeInteger(n)&&n>=0));
+  return {zeroRecord:value.zeroRecord===true,recordCount:number(value.recordCount),skippedCount:number(value.skippedCount),
+    reasons:reasons(value.reasons),skippedReasons:reasons(value.skippedReasons),unavailableReasons:reasons(value.unavailableReasons)};
+}
 
 /**
  * Exposes enough local operational context to debug a failed cadence without
@@ -48,17 +57,22 @@ export function classifyObservationFailure(value) {
 }
 
 function loadCompleted(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) return [];
+  if (!filePath || !fs.existsSync(filePath)) return {ids:[],summaries:{}};
   const saved = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   if (!Array.isArray(saved?.completedCycleIds)) throw new Error('Estado durável do monitor inválido.');
-  return saved.completedCycleIds.filter((id) => typeof id === 'string');
+  if (saved.cycleSummaries != null && (typeof saved.cycleSummaries !== 'object' || Array.isArray(saved.cycleSummaries))) throw new Error('Estado durável do monitor inválido.');
+  const summaries=Object.fromEntries(Object.entries(saved.cycleSummaries??{}).filter(([id])=>/^autonomous-paper-monitor-v1:\d+$/.test(id))
+    .map(([id,summary])=>[id,sanitizeCycleSummary(summary)]).filter(([,summary])=>summary));
+  return {ids:saved.completedCycleIds.filter((id) => typeof id === 'string'),summaries};
 }
 
-function persistCompleted(filePath, ids) {
+function persistCompleted(filePath, ids, summaries = null) {
   if (!filePath) throw new Error('DURABLE_STATE_REQUIRED');
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify({ monitorVersion: PAPER_MONITOR_VERSION, completedCycleIds: [...ids] }, null, 2));
+  const fd=fs.openSync(temporary,'w');
+  try {fs.writeFileSync(fd, JSON.stringify({ monitorVersion: PAPER_MONITOR_VERSION, completedCycleIds: [...ids],
+    ...(summaries ? {cycleSummaries:summaries} : {}) }, null, 2));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
   fs.renameSync(temporary, filePath);
 }
 
@@ -72,6 +86,7 @@ export function createAutonomousPaperMonitor({
   filePath = null,
   runCycle,
   cycleEvidence = null,
+  captureCycleSummary = false,
   now = () => Date.now(),
   onEvent = () => {},
   logger = () => {},
@@ -80,8 +95,8 @@ export function createAutonomousPaperMonitor({
 } = {}) {
   if (!Number.isFinite(Number(intervalMs)) || Number(intervalMs) < MIN_INTERVAL_MS) throw new Error(`MONITOR_INTERVAL_MIN_${MIN_INTERVAL_MS}`);
   if (typeof runCycle !== 'function') throw new Error('MONITOR_CYCLE_HANDLER_REQUIRED');
-  let completed;
-  try { completed = filePath ? new Set(loadCompleted(filePath)) : null; } catch (error) { completed = null; }
+  let completed,cycleSummaries={};
+  try { const loaded=filePath?loadCompleted(filePath):null;completed=loaded?new Set(loaded.ids):null;cycleSummaries=loaded?.summaries??{}; } catch (error) { completed = null; }
   let running = false;
   let timer = null;
   let last = null;
@@ -89,9 +104,10 @@ export function createAutonomousPaperMonitor({
   let evidencePaused = false;
 
   async function runEvidenceCycle(id) {
-    const terminate = () => {
+    const terminate = (summary = null) => {
       const next = new Set(completed); next.add(id);
-      persistCompleted(filePath, next); completed = next;
+      if(captureCycleSummary&&summary)cycleSummaries[id]=sanitizeCycleSummary(summary);
+      persistCompleted(filePath, next, Object.keys(cycleSummaries).length?cycleSummaries:null); completed = next;
     };
     try {
       cycleEvidence.openMonitorCycle(id);
@@ -112,6 +128,13 @@ export function createAutonomousPaperMonitor({
         return event({ran:false,status:'SKIPPED_INVALID_CYCLE',reason:'CYCLE_FAILURE',cycleId:id,mode:'PAPER'});
       }
       if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
+      if(captureCycleSummary&&result?.ok===true&&!result?.reasonSummary)throw new Error('COMMISSIONING_SUMMARY_REQUIRED');
+      if(captureCycleSummary&&result?.ok===true&&result?.reasonSummary){
+        cycleSummaries[id]=sanitizeCycleSummary(result.reasonSummary);
+        // Durable before seal: recovery can never mark a zero-record SUCCESS
+        // complete without its already-persisted sanitized reason summary.
+        persistCompleted(filePath,completed,cycleSummaries);
+      }
       if (cycleEvidence.health().observationTerminalRequired) {
         const failure=result?.ok===true?null:classifyObservationFailure(result);
         if(failure?.classification==='EVIDENCE_INTEGRITY_FAILURE')throw new Error('EVIDENCE_PAUSED');
@@ -119,7 +142,7 @@ export function createAutonomousPaperMonitor({
         cycleEvidence.sealMonitorCycle(id);
       } else if (result?.ok === true) cycleEvidence.sealMonitorCycle(id);
       else cycleEvidence.invalidateMonitorCycle(id);
-      terminate();
+      terminate(result?.ok===true?result?.reasonSummary:null);
       return event({ran:result?.ok===true,status:result?.ok === true?'COMPLETED':cycleEvidence.health().observationTerminalRequired?'OBSERVATION_OPERATIONAL_FAILURE':'SKIPPED_INVALID_CYCLE',cycleId:id,mode:'PAPER'});
     } catch {
       evidencePaused = true; cycleEvidence.pause();
@@ -147,7 +170,7 @@ export function createAutonomousPaperMonitor({
         try {
           const recovery=cycleEvidence.recover();
           const next=new Set([...completed,...recovery.sealedCycleIds]);
-          persistCompleted(filePath,next); completed=next; evidenceInitialized=true;
+          persistCompleted(filePath,next,Object.keys(cycleSummaries).length?cycleSummaries:null); completed=next; evidenceInitialized=true;
         } catch {
           evidencePaused=true; cycleEvidence.pause();
           return event({ran:false,status:'PAUSED',reason:'STORAGE_FAILURE',mode:'PAPER'});
@@ -165,15 +188,16 @@ export function createAutonomousPaperMonitor({
       const result = await runCycle({ cycleId: id, mode: 'PAPER' });
       // A provider/data failure is a completed invalid observation for this
       // cadence slot; retrying it in a tight loop would violate provider limits.
-      completed.add(id);
-      persistCompleted(filePath, completed);
+      const next=new Set(completed);next.add(id);
+      if(captureCycleSummary&&result?.ok!==false&&result?.reasonSummary)cycleSummaries[id]=sanitizeCycleSummary(result.reasonSummary);
+      persistCompleted(filePath, next, Object.keys(cycleSummaries).length?cycleSummaries:null);completed=next;
       return event({ ran: true, status: result?.ok === false ? 'SKIPPED_INVALID_CYCLE' : 'COMPLETED', cycleId: id, mode: 'PAPER', result: result ?? null });
     } catch (error) {
       // Do not invent a WAIT, quote, or outcome when the observation failed.
       const diagnostic = sanitizeCycleError(error);
       try {
-        completed.add(id);
-        persistCompleted(filePath, completed);
+        const next=new Set(completed);next.add(id);
+        persistCompleted(filePath, next, Object.keys(cycleSummaries).length?cycleSummaries:null);completed=next;
         const failed = event({ ran: false, status: 'SKIPPED_INVALID_CYCLE', reason: 'CYCLE_FAILURE', cycleId: id, mode: 'PAPER', ...diagnostic });
         try { logger(structuredClone(failed)); } catch {}
         return failed;
@@ -208,7 +232,8 @@ export function createAutonomousPaperMonitor({
       scheduled: Boolean(timer),
       durableState: completed ? 'AVAILABLE' : 'UNAVAILABLE',
       completedCycles: completed?.size ?? 0,
-      last: last ? structuredClone(last) : null
+      last: last ? structuredClone(last) : null,
+      ...(captureCycleSummary?{cycleSummaries:structuredClone(Object.fromEntries(Object.entries(cycleSummaries).filter(([id])=>completed?.has(id))))}:{})
     };
   }
 

@@ -133,6 +133,8 @@ function createHistoryStoreBundle({ filePath = null, now = () => new Date().toIS
           expirySeconds: context.expirySeconds ?? null,
           requiredBars: Number.isFinite(Number(context.requiredBars)) ? Number(context.requiredBars) : null,
           decisionLatencyMs: Number.isFinite(Number(context.decisionLatencyMs)) ? Number(context.decisionLatencyMs) : null,
+          providerHealth: ['BIQUOTE_TEMPORAL+TWELVE_CLOSED_OHLC','COINBASE_TEMPORAL+TWELVE_CLOSED_OHLC','LOCAL_RELAY','HEALTHY'].includes(context.providerHealth)
+            ? context.providerHealth : null,
           monitorCycleId: context.monitorCycleId ?? null,
           marketAdmission: context.marketAdmission ? structuredClone(context.marketAdmission) : null,
           canonicalStudy: context.canonicalStudy ? structuredClone(context.canonicalStudy) : null

@@ -2,6 +2,7 @@
  * Bounded, PAPER-only internal orchestration. This module only observes local
  * endpoints; it cannot create an order, click a broker, or manufacture data.
  */
+import { summarizeOpportunityCycle } from './finalCommissioning.js';
 export async function runPaperMonitorCycle({
   baseUrl,
   cycleId,
@@ -11,6 +12,7 @@ export async function runPaperMonitorCycle({
   assetClass = 'FX_CRYPTO',
   limit = 4,
   multiAsset = false,
+  captureCycleSummary = false,
   timeframe = '1min',
   fetchImpl = fetch,
   abortSignalFactory = AbortSignal.timeout
@@ -88,6 +90,7 @@ export async function runPaperMonitorCycle({
     roundState: body?.roundState?.state ?? null,
     coverage: Array.isArray(body?.coverage?.assets) ? [...body.coverage.assets] : [],
     unavailable: Array.isArray(body?.unavailable) ? body.unavailable.length : 0,
+    ...(captureCycleSummary ? {reasonSummary:summarizeOpportunityCycle(body)} : {}),
     providerEfficiency: efficiency
   };
 }
