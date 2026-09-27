@@ -6,13 +6,20 @@ const MIN_INTERVAL_MS = 60_000;
 const MAX_ERROR_DETAIL_LENGTH = 240;
 const SUMMARY_REASONS=new Set(['NO_SIGNAL','DEDUPLICATED','PROVIDER_UNAVAILABLE','PROVIDER_COOLDOWN','STALE_DATA',
   'MARKET_DATA_INVALID','ADMISSION_REJECTED','WAIT_DECISION','NO_EXECUTABLE_CANDIDATE','OTHER_SANITIZED_REASON']);
+const TERMINAL_STATUSES=new Set(['COMPLETED','SKIPPED_INVALID_CYCLE','OBSERVATION_OPERATIONAL_FAILURE']);
+const FAILURE_REASONS=new Set(['REQUEST_TIMEOUT','NETWORK_FAILURE','HTTP_FAILURE','PROVIDER_FAILURE','PROVIDER_UNAVAILABLE',
+  'MARKET_DATA_UNAVAILABLE','MARKET_DATA_INVALID','CYCLE_ERROR']);
 function sanitizeCycleSummary(value){
   if(!value||typeof value!=='object')return null;
   const number=x=>Number.isSafeInteger(x)&&x>=0?x:0;
   const reasons=x=>Object.fromEntries(Object.entries(x??{}).filter(([key,n])=>SUMMARY_REASONS.has(key)&&Number.isSafeInteger(n)&&n>=0));
   return {zeroRecord:value.zeroRecord===true,recordCount:number(value.recordCount),skippedCount:number(value.skippedCount),
-    reasons:reasons(value.reasons),skippedReasons:reasons(value.skippedReasons),unavailableReasons:reasons(value.unavailableReasons)};
+    reasons:reasons(value.reasons),skippedReasons:reasons(value.skippedReasons),unavailableReasons:reasons(value.unavailableReasons),
+    terminalStatus:TERMINAL_STATUSES.has(value.terminalStatus)?value.terminalStatus:'COMPLETED',
+    failureReason:FAILURE_REASONS.has(value.failureReason)?value.failureReason:null};
 }
+function terminalSummary(status,reason,summary){return sanitizeCycleSummary({...summary,
+  terminalStatus:status,failureReason:FAILURE_REASONS.has(reason)?reason:status==='COMPLETED'?null:'CYCLE_ERROR'});}
 
 /**
  * Exposes enough local operational context to debug a failed cadence without
@@ -21,7 +28,7 @@ function sanitizeCycleSummary(value){
  */
 export function sanitizeCycleError(error) {
   const status = Number(error?.status);
-  const rawCode = String(error?.code ?? '').trim().toUpperCase();
+  const rawCode = String(error?.code ?? error?.cause?.code ?? '').trim().toUpperCase();
   const errorCode = error?.name === 'TimeoutError' || /aborted due to timeout|request timeout/i.test(String(error?.message ?? '')) ? 'REQUEST_TIMEOUT'
     : /^E[A-Z0-9_]+$/.test(rawCode) ? `NETWORK_${rawCode}`
     : Number.isFinite(status) ? `HTTP_${status}`
@@ -43,6 +50,7 @@ export function sanitizeCycleError(error) {
 export function sanitizeObservationFailure(error) {
   const allowed=new Set(['REQUEST_TIMEOUT','NETWORK_FAILURE','PROVIDER_FAILURE','PROVIDER_UNAVAILABLE','MARKET_DATA_UNAVAILABLE','MARKET_DATA_INVALID','HTTP_FAILURE','CYCLE_ERROR','EVIDENCE_TARGET_INVALID']);
   if(typeof error==='string'&&allowed.has(error.trim().toUpperCase()))return error.trim().toUpperCase();
+  if(typeof error==='string'&&/^HTTP[_ ]\d{3}$/.test(error.trim().toUpperCase()))return 'HTTP_FAILURE';
   const diagnostic=sanitizeCycleError(error);
   if(diagnostic.errorCode==='REQUEST_TIMEOUT')return 'REQUEST_TIMEOUT';
   if(/^NETWORK_(ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED)$/.test(diagnostic.errorCode))return 'NETWORK_FAILURE';
@@ -109,6 +117,14 @@ export function createAutonomousPaperMonitor({
       if(captureCycleSummary&&summary)cycleSummaries[id]=sanitizeCycleSummary(summary);
       persistCompleted(filePath, next, Object.keys(cycleSummaries).length?cycleSummaries:null); completed = next;
     };
+    const stageSummary=(status,reason,summary)=>{
+      if(!captureCycleSummary)return null;
+      const safe=terminalSummary(status,reason,summary);
+      cycleSummaries[id]=safe;
+      // A recovered seal cannot become a completed cadence without its summary.
+      persistCompleted(filePath,completed,cycleSummaries);
+      return safe;
+    };
     try {
       cycleEvidence.openMonitorCycle(id);
       let result;
@@ -120,29 +136,28 @@ export function createAutonomousPaperMonitor({
         const failure=classifyObservationFailure(error);
         if (cycleEvidence.health().paused || failure.classification==='EVIDENCE_INTEGRITY_FAILURE') throw new Error('EVIDENCE_PAUSED');
         if (cycleEvidence.health().observationTerminalRequired) {
+          const summary=stageSummary('OBSERVATION_OPERATIONAL_FAILURE',failure.reasonCode);
           cycleEvidence.commitObservationTerminal(id,{outcome:'OPERATIONAL_FAILURE',reasonCode:failure.reasonCode});
-          cycleEvidence.sealMonitorCycle(id); terminate();
+          cycleEvidence.sealMonitorCycle(id); terminate(summary);
           return event({ran:false,status:'OBSERVATION_OPERATIONAL_FAILURE',reason:'CYCLE_FAILURE',cycleId:id,mode:'PAPER'});
         }
-        cycleEvidence.invalidateMonitorCycle(id); terminate();
+        const summary=stageSummary('SKIPPED_INVALID_CYCLE',failure.reasonCode);
+        cycleEvidence.invalidateMonitorCycle(id); terminate(summary);
         return event({ran:false,status:'SKIPPED_INVALID_CYCLE',reason:'CYCLE_FAILURE',cycleId:id,mode:'PAPER'});
       }
       if (cycleEvidence.health().paused) throw new Error('EVIDENCE_PAUSED');
       if(captureCycleSummary&&result?.ok===true&&!result?.reasonSummary)throw new Error('COMMISSIONING_SUMMARY_REQUIRED');
-      if(captureCycleSummary&&result?.ok===true&&result?.reasonSummary){
-        cycleSummaries[id]=sanitizeCycleSummary(result.reasonSummary);
-        // Durable before seal: recovery can never mark a zero-record SUCCESS
-        // complete without its already-persisted sanitized reason summary.
-        persistCompleted(filePath,completed,cycleSummaries);
-      }
+      const failure=result?.ok===true?null:classifyObservationFailure(result);
+      if(failure?.classification==='EVIDENCE_INTEGRITY_FAILURE')throw new Error('EVIDENCE_PAUSED');
+      const terminalStatus=result?.ok===true?'COMPLETED':cycleEvidence.health().observationTerminalRequired?
+        'OBSERVATION_OPERATIONAL_FAILURE':'SKIPPED_INVALID_CYCLE';
+      const summary=stageSummary(terminalStatus,failure?.reasonCode,result?.reasonSummary);
       if (cycleEvidence.health().observationTerminalRequired) {
-        const failure=result?.ok===true?null:classifyObservationFailure(result);
-        if(failure?.classification==='EVIDENCE_INTEGRITY_FAILURE')throw new Error('EVIDENCE_PAUSED');
         cycleEvidence.commitObservationTerminal(id,result?.ok===true?{outcome:'SUCCESS'}:{outcome:'OPERATIONAL_FAILURE',reasonCode:failure.reasonCode});
         cycleEvidence.sealMonitorCycle(id);
       } else if (result?.ok === true) cycleEvidence.sealMonitorCycle(id);
       else cycleEvidence.invalidateMonitorCycle(id);
-      terminate(result?.ok===true?result?.reasonSummary:null);
+      terminate(summary);
       return event({ran:result?.ok===true,status:result?.ok === true?'COMPLETED':cycleEvidence.health().observationTerminalRequired?'OBSERVATION_OPERATIONAL_FAILURE':'SKIPPED_INVALID_CYCLE',cycleId:id,mode:'PAPER'});
     } catch {
       evidencePaused = true; cycleEvidence.pause();
@@ -189,7 +204,10 @@ export function createAutonomousPaperMonitor({
       // A provider/data failure is a completed invalid observation for this
       // cadence slot; retrying it in a tight loop would violate provider limits.
       const next=new Set(completed);next.add(id);
-      if(captureCycleSummary&&result?.ok!==false&&result?.reasonSummary)cycleSummaries[id]=sanitizeCycleSummary(result.reasonSummary);
+      if(captureCycleSummary){
+        const failure=result?.ok===false?classifyObservationFailure(result):null;
+        cycleSummaries[id]=terminalSummary(result?.ok===false?'SKIPPED_INVALID_CYCLE':'COMPLETED',failure?.reasonCode,result?.reasonSummary);
+      }
       persistCompleted(filePath, next, Object.keys(cycleSummaries).length?cycleSummaries:null);completed=next;
       return event({ ran: true, status: result?.ok === false ? 'SKIPPED_INVALID_CYCLE' : 'COMPLETED', cycleId: id, mode: 'PAPER', result: result ?? null });
     } catch (error) {
@@ -197,6 +215,7 @@ export function createAutonomousPaperMonitor({
       const diagnostic = sanitizeCycleError(error);
       try {
         const next=new Set(completed);next.add(id);
+        if(captureCycleSummary)cycleSummaries[id]=terminalSummary('SKIPPED_INVALID_CYCLE',sanitizeObservationFailure(error));
         persistCompleted(filePath, next, Object.keys(cycleSummaries).length?cycleSummaries:null);completed=next;
         const failed = event({ ran: false, status: 'SKIPPED_INVALID_CYCLE', reason: 'CYCLE_FAILURE', cycleId: id, mode: 'PAPER', ...diagnostic });
         try { logger(structuredClone(failed)); } catch {}

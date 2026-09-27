@@ -204,12 +204,20 @@ export function allowCommissioningSettlement(record, { commissioningStore = null
 export function buildCommissioningStatus({ ledger, monitor = null, providers = {}, evidence = null, settlement = null } = {}) {
   if (!ledger) return { ok: false, mode: 'PAPER_ONLY', automatedBrokerExecution: false, state: 'UNAVAILABLE' };
   const safeProvider=value=>({enabled:value?.enabled===true,running:value?.running===true,
-    ready:value?.ready===true,connected:value?.connected===true});
+    ready:value?.ready===true,connected:value?.state==='CONNECTED'||(value?.state==null&&value?.connected===true)});
   const providerStatus={twelveWebSocket:safeProvider(providers.twelveWebSocket),biquote:safeProvider(providers.biquote),
     coinbase:Object.fromEntries(Object.entries(providers.coinbase??{}).filter(([asset])=>safeAsset(asset))
       .map(([asset,value])=>[asset,safeProvider(value)]))};
   const state = ledger.snapshot(), entries = Object.values(state.entries),
     summaries = monitor?.cycleSummaries ?? state.cycles, cycles = Object.values(summaries);
+  const monitorCompletedCycles=Number.isSafeInteger(monitor?.completedCycles)?monitor.completedCycles:cycles.length;
+  const summaryCoverageCycles=cycles.length;
+  const successfulObservationCycles=cycles.filter(c=>c.terminalStatus==null||c.terminalStatus==='COMPLETED').length;
+  const operational=cycles.filter(c=>c.terminalStatus==='OBSERVATION_OPERATIONAL_FAILURE'||
+    (c.terminalStatus==='SKIPPED_INVALID_CYCLE'&&c.failureReason!=null));
+  const operationalFailureCycles=operational.length;
+  const nonObservationTerminalCycles=cycles.filter(c=>c.terminalStatus==='SKIPPED_INVALID_CYCLE'&&c.failureReason==null).length;
+  const unclassifiedCompletedCycles=Math.max(0,monitorCompletedCycles-summaryCoverageCycles);
   const planned = entries.length, entryFound = entries.filter(e => e.entryReferenceFound).length;
   const expiryEligible = entries.filter(e => e.entryReferenceFound && e.settlementFinalState !== 'PENDING');
   const expiryFound = expiryEligible.filter(e => e.expiryReferenceFound).length;
@@ -217,12 +225,16 @@ export function buildCommissioningStatus({ ledger, monitor = null, providers = {
   const expiryLags = entries.map(e => e.expiryReferenceLagMs).filter(Number.isFinite);
   const byReason = count(entries.filter(e => e.settlementFinalState === 'DATA_INVALID'), e => e.settlementMissReason ?? 'OTHER_SANITIZED_REASON');
   const zero = cycles.filter(c => c.zeroRecord);
-  const completed = Object.keys(summaries).sort((a,b)=>Number(a.split(':').at(-1))-Number(b.split(':').at(-1))).at(-1) ?? null;
+  const completed = Object.entries(summaries).filter(([,cycle])=>cycle.terminalStatus==null||cycle.terminalStatus==='COMPLETED')
+    .map(([id])=>id).sort((a,b)=>Number(a.split(':').at(-1))-Number(b.split(':').at(-1))).at(-1) ?? null;
   const lastFailure = monitor?.last && !['COMPLETED', 'IDEMPOTENT'].includes(monitor.last.status)
     ? classifyCycleReason(monitor.last.reason ?? monitor.last.status) : null;
   return {
     ok: true, schemaVersion: COMMISSIONING_VERSION, mode: 'PAPER_ONLY', automatedBrokerExecution: false,
     state: monitor?.enabled===true?'OBSERVING':'INACTIVE', providerStatus,
+    monitorCompletedCycles,successfulObservationCycles,operationalFailureCycles,
+    operationalFailuresByReason:count(operational,c=>c.failureReason??'CYCLE_ERROR'),
+    nonObservationTerminalCycles,summaryCoverageCycles,unclassifiedCompletedCycles,
     temporalEntryCoverage: { planned, found: entryFound, missed: entries.filter(e => e.entryReferenceMissReason).length,
       pending: entries.filter(e => !e.entryReferenceFound && !e.entryReferenceMissReason).length },
     temporalExpiryCoverage: { eligible: expiryEligible.length, found: expiryFound,

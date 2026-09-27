@@ -56,6 +56,14 @@ Required report fields, even when zero: total cycles; planned entries; entry ref
 
 ## Known limitations / blockers before claiming commissioning success
 
+### P0-C cadence accounting and read-only miss diagnostics
+
+For newly completed monitor cadences, `cycleSummaries` carries an allowlisted `terminalStatus` and `failureReason` alongside the existing sanitized successful observation summary. The monitor writes the summary durably before an evidence seal and then records the cadence ID; a restart reads both. `/api/commissioning` now reports `monitorCompletedCycles`, `successfulObservationCycles`, `operationalFailureCycles`, `operationalFailuresByReason`, `nonObservationTerminalCycles`, `summaryCoverageCycles`, and `unclassifiedCompletedCycles`. For newly recorded cadences the reconciliation is completed = successful + operational failure + classified non-observation. Old completed IDs without a summary remain explicitly **unclassified**; no historical canary cause is invented or backfilled. Existing legacy success summaries remain readable as success. Overlap/idempotent calls do not consume an additional slot.
+
+Coinbase `connected` is derived from its runtime `state === CONNECTED`, not from an absent boolean. `ready` is reported separately and does not imply a live connection.
+
+To inspect a preserved soak without modifying it, run `node backend/src/analyzeCommissioningMisses.js <soak-directory>`. It reads `commissioning-state.json` and `will-history-soak.json` and emits only reference-miss diagnostics and aggregates. Neighboring provider observations are reported only when a matching persisted reference positively proves them; `UNKNOWN` does not mean no tick existed. Health recorded at decision time is not health at the miss. The frozen 30-second reference window remains unchanged. No WIN/LOSS, outcome quality, score, or financial performance is used.
+
 - No real multi-hour soak has been run in this mission; provider/network behavior, rates and lag distributions remain unknown.
 - The zero-record reason taxonomy is deliberately coarse and reports what the response exposed. It cannot reconstruct a missing request trace or prove why an old cycle had zero records.
 - The telemetry file and monitor state are separate authorities. WAL/history remains authoritative for records; a telemetry persistence failure must be surfaced as degraded and resolved before declaring a soak successful. A crash before history persistence creates no planned entry, while a crash after history persistence can be reconciled on restart.

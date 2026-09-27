@@ -48,7 +48,10 @@ export async function runPaperMonitorCycle({
       options.redirect='error';
     }
     const response = await fetchImpl(url, options);
-    return { response, body: await response.json() };
+    let body;
+    try { body=await response.json(); }
+    catch (error) { if (response.ok) throw error; body=null; }
+    return { response, body };
   };
 
   // Legacy single-asset mode keeps the explicit diagnostic pre-gate for
@@ -84,7 +87,7 @@ export async function runPaperMonitorCycle({
   addEfficiency(body?.providerEfficiency);
   return {
     ok: opportunities.response.ok && body?.ok === true && !body?.status,
-    status: body?.status ?? null,
+    status: body?.status ?? (opportunities.response.ok ? null : 'HTTP_FAILURE'),
     scanned: body?.scanned ?? 0,
     recommendation: body?.recommendation ? body.recommendation.asset : null,
     roundState: body?.roundState?.state ?? null,

@@ -327,7 +327,7 @@ app.get('/api/commissioning', (_req, res) => {
   if (app.locals.finalCommissioningError) return res.status(503).json({ok:false,mode:'PAPER_ONLY',
     automatedBrokerExecution:false,state:'DEGRADED',reason:app.locals.finalCommissioningError});
   const coinbase = Object.fromEntries([...app.locals.coinbaseTemporalFeeds.entries()].map(([asset, feed]) => {
-    const h = feed.health(); return [asset,{enabled:h.enabled===true,running:h.running===true,ready:h.ready===true}];
+    const h = feed.health(); return [asset,{enabled:h.enabled===true,running:h.running===true,ready:h.ready===true,state:h.state}];
   }));
   const biquote = app.locals.biquoteForexFeed?.health?.() ?? {};
   const twelve = app.locals.twelveWebSocketFeed?.health?.() ?? {};
