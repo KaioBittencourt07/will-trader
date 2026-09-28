@@ -40,7 +40,7 @@ import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
 import { prepareHistoryContinuity } from './historyContinuity.js';
 import { scannerStudyRegistry } from './scannerStudyRegistry.js';
-import { createFinalCommissioningStore, buildCommissioningStatus, allowCommissioningSettlement } from './finalCommissioning.js';
+import { createFinalCommissioningStore, buildCommissioningStatus, allowCommissioningSettlement, projectBiquoteCommissioningHealth } from './finalCommissioning.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -335,7 +335,7 @@ app.get('/api/commissioning', (_req, res) => {
     monitor:app.locals.paperMonitor.health(),settlement:app.locals.paperOutcomeSettlement,
     evidence:app.locals.cycleEvidenceRuntime?.health?.()??null,
     providers:{twelveWebSocket:{enabled:twelve.enabled===true,connected:twelve.connected===true},
-      biquote:{enabled:biquote.enabled===true,running:biquote.running===true,ready:biquote.ready===true},coinbase}});
+      biquote:projectBiquoteCommissioningHealth(biquote),coinbase}});
   res.status(result.ok?200:503).json(result);
 });
 

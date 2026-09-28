@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expiryAt } from '../../learning/src/outcomeResolver.js';
+import { BIQUOTE_FOREX_PRODUCTS } from './biquoteForexRuntimeFeed.js';
 
 export const COMMISSIONING_VERSION = 'paper-final-commissioning-v1';
 export const REFERENCE_DEADLINE_MS = 30_000;
@@ -199,6 +200,20 @@ export function createFinalCommissioningStore({ filePath, history = [], now = ()
 export function allowCommissioningSettlement(record, { commissioningStore = null, evidenceRuntime = null } = {}) {
   return (commissioningStore?.admitsSettlement(record) ?? true) &&
     (evidenceRuntime?.isPaperSettlementAllowed(record) ?? true);
+}
+
+/** Project Biquote's actual runtime state and per-asset authority; never infer readiness from a successful poll. */
+export function projectBiquoteCommissioningHealth(health = {}) {
+  const assets = health?.assets && typeof health.assets === 'object' && !Array.isArray(health.assets)
+    ? health.assets : {};
+  const connected = health?.state === 'CONNECTED';
+  return {
+    enabled: health?.enabled === true,
+    running: health?.running === true,
+    state: health?.state,
+    ready: health?.enabled === true && health?.running === true && connected &&
+      Object.keys(BIQUOTE_FOREX_PRODUCTS).every(asset => assets[asset]?.ready === true)
+  };
 }
 
 export function buildCommissioningStatus({ ledger, monitor = null, providers = {}, evidence = null, settlement = null } = {}) {
