@@ -83,6 +83,7 @@ test('offline replay CLI runs the real WILL pipeline from a verified historical 
     const replayExit = runHistoricalWillReplayCli({
       argv: [
         '--dataset-id', dataset.datasetId,
+        '--technical-only-diagnostic',
         '--payout-ratio', '0.8',
         '--stake', '1',
         '--cost-per-trade', '0.01',
@@ -102,6 +103,7 @@ test('offline replay CLI runs the real WILL pipeline from a verified historical 
     assert.equal(replaySummary.barsUsed, 80);
     assert.equal(replaySummary.decisions, 69);
     assert.equal(replaySummary.edgeProven, false);
+    assert.equal(replaySummary.contextMode, 'TECHNICAL_ONLY_DIAGNOSTIC_MACRO_NEWS_OMITTED');
 
     const reportBytes = fs.readFileSync(path.join(directory, replaySummary.reportFile));
     assert.equal(createHash('sha256').update(reportBytes).digest('hex'), replaySummary.reportSha256);
@@ -130,6 +132,7 @@ test('replay CLI refuses invalid archives and never overwrites an existing repor
     const { summary: dataset } = await collectDataset(directory);
     const replayArgs = [
       '--dataset-id', dataset.datasetId,
+      '--technical-only-diagnostic',
       '--payout-ratio', '0.8',
       '--minimum-binary-trades', '1',
       '--minimum-confidence', '1'
