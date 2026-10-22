@@ -36,3 +36,38 @@ Eles **não comprovam edge, rentabilidade nem estabilidade atual**. O histórico
 ## Próxima verificação com artefatos reais
 
 Quando o arquivo de histórico local estiver disponível, validar seu SHA-256, esquema, duplicatas, status e timestamps; reconciliar a contagem com os registros oficiais pré-corte congelados; revisar as entradas e liquidações apenas para a campanha exata; e executar replay temporal com os preços históricos licenciados. Não atualizar hashes/thresholds congelados só para obter PASS: divergências devem ser relatadas como divergências.
+
+## Snapshot exploratório de quartis — transcrição de 15 de setembro de 2026
+
+A transcrição `Texto colado(20260915-025748).txt` contém uma tabela `Show-Quartiles $allCycleResearch`. Ela reporta 103 ciclos divididos em quartis 26/26/26/25 e totaliza 93 WIN, 98 LOSS e 9 TIE (200 rótulos; 191 operações binárias). Os números abaixo são **a reprodução da transcrição**, não um novo cálculo sobre o dataset bruto:
+
+| Métrica agrupadora | Quartil | Média da métrica no grupo | WIN | LOSS | TIE | WR entre WIN/LOSS |
+|---|---:|---:|---:|---:|---:|---:|
+| MeanAbsMomentum | Q1 | 0,220281 | 23 | 21 | 2 | 52,27% |
+| MeanAbsMomentum | Q2 | 0,426042 | 24 | 20 | 3 | 54,55% |
+| MeanAbsMomentum | Q3 | 0,628868 | 27 | 29 | 1 | 48,21% |
+| MeanAbsMomentum | Q4 | 0,892642 | 19 | 28 | 3 | 40,43% |
+| ReversalShare | Q1 | 0 | 21 | 24 | 3 | 46,67% |
+| ReversalShare | Q2 | 0 | 20 | 31 | 2 | 39,22% |
+| ReversalShare | Q3 | 0,025641 | 24 | 23 | 2 | 51,06% |
+| ReversalShare | Q4 | 0,753333 | 28 | 20 | 2 | 58,33% |
+| BreakoutShare | Q1 | 0 | 26 | 21 | 2 | 55,32% |
+| BreakoutShare | Q2 | 0 | 16 | 25 | 2 | 39,02% |
+| BreakoutShare | Q3 | 0,301282 | 25 | 28 | 5 | 47,17% |
+| BreakoutShare | Q4 | 0,856667 | 26 | 24 | 0 | 52,00% |
+
+A WR agregada reportada pode ser refeita aritmeticamente: (93/(93+98)=48,69\%). Um intervalo de Wilson **ingênuo por operação** é aproximadamente 41,70%–55,74%; isso não corrige dependência entre operações do mesmo ciclo, seleção de variáveis nem testes múltiplos. Para MeanAbsMomentum, combinar Q1+Q2 dá 47/88 = 53,41% (Wilson ingênuo 43,06%–63,47%) e Q3+Q4 dá 46/103 = 44,66% (Wilson ingênuo 35,42%–54,28%). Os intervalos se sobrepõem; essa diferença não prova que o filtro é rentável. Para Q4 de ReversalShare a WR é maior na tabela, mas o mesmo problema de seleção/multiplicidade continua.
+
+Essas estatísticas são uma pista de pesquisa, **não uma validação OOS independente**. A transcrição demonstra que um script chamado `Show-Quartiles` rodou contra `$allCycleResearch`, mas não permite confirmar pela saída isolada quais IDs, campanhas, timestamps, estados oficiais ou partições temporais entraram. Não se deve inferir que esse snapshot corresponde ao protocolo posterior OOS2/OOS2T nem usar os quartis para ajustar thresholds congelados.
+
+### Hipótese de trabalho documentada
+
+Uma hipótese a validar — sem promoção automática — é se a magnitude do momentum e a composição de reversões mantêm associação com resultado depois de:
+1. reconstruir os resultados dos 103 ciclos a partir do histórico bruto e dos IDs de ciclo;
+2. verificar que WIN/LOSS/TIE vêm de liquidação temporal válida e que WAIT/UNRESOLVED/bloqueios foram preservados;
+3. separar temporalmente um holdout que não participou da escolha dos fatores;
+4. repetir o exame com bootstrap por ciclo e corrigir/incluir a multiplicidade de fatores investigados;
+5. computar expectativa líquida com payout/custos observados, não só WR.
+
+Enquanto o bruto e sua proveniência não forem verificados, os números acima devem ser apresentados como transcrição exploratória antiga. Não justificam ativação, tuning, Champion ou operação real.
+
