@@ -1,8 +1,10 @@
+import { hasConfiguredValue } from './configuredValue.js';
+
 const TWELVE_PLACEHOLDER = 'COLOQUE_SUA_CHAVE_TWELVEDATA_AQUI';
 
 function usable(value, placeholder = null) {
   const normalized = String(value ?? '').trim();
-  if (!normalized) return null;
+  if (!hasConfiguredValue(normalized)) return null;
   if (placeholder && normalized.toLowerCase() === placeholder.toLowerCase()) return null;
   return normalized;
 }
