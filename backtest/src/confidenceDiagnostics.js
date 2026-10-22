@@ -112,7 +112,7 @@ export function buildConfidenceDiagnostics({
 
     if (direction === 'WAIT') counts.waitDecisions++;
     else if (decision.blocked === true) counts.blockedDecisions++;
-    else if (!isDirectionalCandidate) counts.nonActionableDecisions++;
+    else if (!['BUY', 'SELL'].includes(direction) || decision.executable !== true) counts.nonActionableDecisions++;
 
     if (!isDirectionalCandidate) continue;
     counts.directionalCandidates++;
@@ -149,10 +149,8 @@ export function buildConfidenceDiagnostics({
       if (bucket) bucket.unresolvedTrades++;
     } else if (result.status === 'BLOCKED') {
       counts.blockedDecisions++;
-      counts.nonActionableDecisions++;
     } else if (result.status === 'WAIT') {
       counts.waitDecisions++;
-      counts.nonActionableDecisions++;
     } else {
       throw new Error('CONFIDENCE_RESULT_STATE_INVALID');
     }
