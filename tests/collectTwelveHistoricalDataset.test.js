@@ -178,3 +178,63 @@ test('CLI returns safe errors for provider rejection and cannot print credential
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('concurrent identical collection acquires one credit-consuming provider request', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'will-market-ingest-lock-'));
+  let firstFetchCalls = 0;
+  let secondFetchCalls = 0;
+  let resolveStarted;
+  let releaseFetch;
+  const fetchStarted = new Promise((resolve) => { resolveStarted = resolve; });
+  const fetchGate = new Promise((resolve) => { releaseFetch = resolve; });
+  let firstOutput = '';
+  let secondError = '';
+  const canned = providerResponse();
+
+  const args = [
+    '--asset', 'EUR/USD', '--interval', '1min',
+    '--start', iso(startMs), '--end', iso(startMs + 120_000),
+    '--confirm-provider-credits'
+  ];
+  const first = collectHistoricalDatasetCli({
+    argv: args,
+    env: { TWELVEDATA_API_KEY: key },
+    fetchImpl: async () => {
+      firstFetchCalls++;
+      resolveStarted();
+      await fetchGate;
+      return canned.response;
+    },
+    now: () => startMs + 180_000,
+    outputDirectory: directory,
+    stdout: (value) => { firstOutput += value; },
+    stderr: (value) => { throw new Error(value); }
+  });
+
+  try {
+    await fetchStarted;
+    const secondCode = await collectHistoricalDatasetCli({
+      argv: args,
+      env: { TWELVEDATA_API_KEY: key },
+      fetchImpl: async () => { secondFetchCalls++; return canned.response; },
+      now: () => startMs + 180_000,
+      outputDirectory: directory,
+      stdout: () => {},
+      stderr: (value) => { secondError += value; }
+    });
+
+    assert.equal(secondCode, 1);
+    assert.equal(secondFetchCalls, 0);
+    assert.match(secondError, /already running/);
+
+    releaseFetch();
+    assert.equal(await first, 0);
+    assert.equal(firstFetchCalls, 1);
+    assert.equal(JSON.parse(firstOutput).status, 'HISTORICAL_DATASET_SAVED');
+    assert.equal(fs.readdirSync(directory).filter((name) => name.endsWith('.lock')).length, 0);
+  } finally {
+    releaseFetch();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
