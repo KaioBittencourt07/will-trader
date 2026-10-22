@@ -27,7 +27,7 @@ test('market status remains available and explicitly unconfigured without a prov
     else process.env.TWELVEDATA_API_KEY = previousKey;
   });
 
-  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/market/status');
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/market/status`);
   const body = await response.json();
 
   assert.equal(response.status, 200);
