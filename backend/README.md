@@ -12,6 +12,8 @@ O backend serve o dashboard em `/dashboard/`, a API de análise, telemetria de m
 
 Sem `TWELVEDATA_API_KEY` real, o backend pode iniciar, mas os dados de mercado externos não estarão disponíveis. Erro, atraso ou inconsistência do feed devem produzir bloqueio/WAIT, não cotações inventadas.
 
+O Market Data Engine aplica um limitador seriado, deduplicação/cache e orçamentos estimados de crédito por minuto e por janela móvel de 24 horas. O fallback para Twelve Data é **6 créditos/minuto e 720/24h**; o `.env.example` mostra 8/min e 720/24h como configuração de exemplo para um plano básico, usando `MARKET_MIN_REQUEST_INTERVAL_MS=60000`. Ajuste esses valores ao plano real e mantenha margem para outros usos da mesma chave. O custo é estimado a partir das chamadas quote + time_series por símbolo; cabeçalhos de uso retornados pelo provedor, quando presentes, são evidência melhor que a estimativa local.
+
 ## Proteção da API
 
 - Em `NODE_ENV=production`, `WILL_API_ACCESS_TOKEN` é obrigatório e deve ter no mínimo 32 bytes. O serviço se recusa a iniciar se o token estiver ausente, curto ou for o placeholder de exemplo.
