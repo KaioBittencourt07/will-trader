@@ -1,6 +1,6 @@
 # WILL Trader — Autonomous Engineering & Repair Agent
 
-Status: design proposal (v1)  
+Status: Phase 1 read-only diagnostics started (v1); bounded repair is still design-only.  
 Scope: diagnostics and bounded code repair only. This document does not enable broker execution or production self-deployment.
 
 ## Objective
@@ -63,7 +63,7 @@ Initial release target: L1, with L2 available only when repository permissions a
 9. `reporter/`: concise summary of root cause, patch, test evidence, confidence, unresolved risks, and PR link.
 10. `scheduler/` (later): opt-in, bounded scheduled runs with rate limits, alerting, kill switch, and no production write authority.
 
-These modules are a target architecture, not a claim that the implementation already exists.
+These modules are the target architecture. As of 2026-10-22, only the Phase 1 read-only report generator is implemented at `backend/src/engineering/readOnlyDiagnostics.js`, with targeted tests in `backend/src/engineering/readOnlyDiagnostics.test.js`. It redacts common secret formats, bounds report fields, applies heuristic triage labels, and explicitly records that it did not execute commands, write files, call networks, or contact a broker. The repair loop, workspace guard, patcher, verification runner, diff gate, incident persistence, PR automation, and scheduler are not implemented. CI validation of this branch is still pending.
 
 ## Initial acceptance criteria
 
