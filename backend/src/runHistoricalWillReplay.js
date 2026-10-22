@@ -148,6 +148,7 @@ function verifyAndBuildBars({ datasetId, outputDirectory }) {
 function parseArgs(argv) {
   const options = {
     datasetId: null,
+    technicalOnlyDiagnostic: false,
     payoutRatio: null,
     stake: 1,
     costPerTrade: 0,
@@ -169,6 +170,10 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') return { ...options, help: true };
+    if (arg === '--technical-only-diagnostic') {
+      options.technicalOnlyDiagnostic = true;
+      continue;
+    }
     if (arg !== '--dataset-id' && !numeric.has(arg)) throw new Error('ARGUMENT_NOT_SUPPORTED');
     const value = argv[index + 1];
     if (!value || value.startsWith('--')) throw new Error(`ARGUMENT_VALUE_REQUIRED:${arg}`);
@@ -345,7 +350,8 @@ export function runHistoricalWillReplayCli({
         entryWindowStartSeconds: options.entryWindowStartSeconds,
         entryWindowEndSeconds: options.entryWindowEndSeconds,
         entryDelaySeconds: options.entryDelaySeconds,
-        expirySeconds: options.expirySeconds
+        expirySeconds: options.expirySeconds,
+        technicalOnlyDiagnostic: options.technicalOnlyDiagnostic
       },
       replayOptions: {
         payoutRatio: options.payoutRatio,
@@ -376,6 +382,7 @@ export function runHistoricalWillReplayCli({
     replayOptions: options,
     replayMode: 'WILL_STRATEGY_HISTORICAL_OHLC_REPLAY',
     edgeProven: false,
+    contextMode: report.strategy.contextMode,
     sourceAuthenticity: 'NOT_AUTHENTICATED',
     createdAt: new Date(now()).toISOString()
   };
@@ -400,6 +407,7 @@ export function runHistoricalWillReplayCli({
   stdout(JSON.stringify({
     status: 'HISTORICAL_WILL_REPLAY_SAVED',
     datasetId: options.datasetId,
+    contextMode: report.strategy.contextMode,
     asset: source.asset,
     interval: source.interval,
     barsUsed: source.bars.length,
