@@ -33,6 +33,7 @@ function run(bars, overrides = {}) {
     asOfTimestamp: bars.at(-1).barCloseTimestamp,
     strategyOptions: {
       minimumConfidence: 1,
+      technicalOnlyDiagnostic: true,
       entryWindowStartSeconds: 60,
       entryWindowEndSeconds: 300,
       entryDelaySeconds: 120,
@@ -137,3 +138,22 @@ test('unknown payout keeps financial PnL unavailable; unresolved future entry/ex
   assert.ok(report.unresolvedTrades > 0);
   assert.equal(report.reasonCodes.includes('UNRESOLVED_TRADES_PRESENT'), true);
 });
+
+test('missing historical macro/news context blocks directional decisions by default', () => {
+  const bars = makeBars();
+  const report = runWillStrategyReplay({
+    bars,
+    asset: 'EUR/USD',
+    interval: '1min',
+    asOfTimestamp: bars.at(-1).barCloseTimestamp,
+    strategyOptions: { minimumConfidence: 1 }
+  });
+
+  assert.equal(report.strategy.contextMode, 'MISSING_MACRO_NEWS_FAIL_CLOSED');
+  assert.equal(report.strategy.macroBlocked, true);
+  assert.equal(report.strategy.newsBlocked, true);
+  assert.equal(report.decisions.some((decision) => decision.executable), false);
+  assert.ok(report.blockedCount > 0);
+  assert.equal(report.edgeProven, false);
+});
+
