@@ -1,5 +1,5 @@
 const SECRET_KEY_PATTERN = /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|password|passwd|secret|credential|cookie|session[_-]?id)/i;
-const SECRET_ASSIGNMENT_PATTERN = /\b(api[_-]?key|access[_-]?token|authorization|password|passwd|secret|credential|cookie|session[_-]?id)\b\s*([=:])\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
+const SECRET_ASSIGNMENT_PATTERN = /\b(api[_-]?key|access[_-]?token|token|authorization|password|passwd|secret|credential|cookie|session[_-]?id)\b\s*([=:])\s*(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)/gi;
 const URL_QUERY_SECRET_PATTERN = /([?&](?:api[_-]?key|access[_-]?token|token|key|secret|password)=)[^&#\s]*/gi;
 const MAX_TEXT_LENGTH = 4_000;
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
@@ -26,7 +26,7 @@ function classifyIssue(code, message) {
   if (/timeout|econnreset|enotfound|network|provider unavailable|http_5\d\d/.test(text)) {
     return { category: 'PROVIDER_OR_NETWORK', severity: 'MEDIUM', confidence: 0.8 };
   }
-  if (/assert|test failed|expected|actual|err_assertion/.test(text)) {
+  if (/\bassert(?:ion)?\b|\btest failed\b|\bexpected\b|\bactual\b|err_assertion/.test(text)) {
     return { category: 'TEST_OR_CONTRACT', severity: 'MEDIUM', confidence: 0.75 };
   }
   if (/syntaxerror|err_module_not_found|cannot find module|referenceerror|typeerror/.test(text)) {
