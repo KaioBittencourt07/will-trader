@@ -66,8 +66,8 @@ test('historical ingest hashes original response bytes and emits sorted closed-c
   assert.deepEqual(result.observations.map((item) => item.price), [1.1002, 1.2002, 1.3002]);
   assert.match(requestUrl, /timezone=UTC/);
   assert.match(requestUrl, /include_ohlc=true/);
-  assert.match(requestUrl, /start_date=/);
-  assert.match(requestUrl, /end_date=/);
+  assert.match(requestUrl, /start_date=2026-10-01T12%3A00%3A00/);
+  assert.match(requestUrl, /end_date=2026-10-01T12%3A03%3A00/);
   assert.doesNotMatch(requestUrl, /apikey|synthetic-test-api-key/);
   assert.equal(requestOptions.headers.Authorization, `apikey ${key}`);
   assert.equal(result.requestBudget.apiRequests, 1);
@@ -99,6 +99,9 @@ test('historical ingest validates key, bounded range, timeframe and HTTPS allowl
   await assert.rejects(() => fetchTwelveHistoricalDataset(args({
     endDate: stamp(t0 + 600_000), now: () => t0, fetchImpl
   })), /HISTORICAL_END_MUST_NOT_BE_IN_FUTURE/);
+  await assert.rejects(() => fetchTwelveHistoricalDataset(args({
+    startDate: stamp(t0 + 500), fetchImpl
+  })), /HISTORICAL_WINDOW_MUST_ALIGN_TO_SECONDS/);
   assert.equal(calls, 0);
   assert.equal(TWELVE_HISTORICAL_MAX_POINTS, 5000);
 });
