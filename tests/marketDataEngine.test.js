@@ -243,3 +243,58 @@ test('coalesces a single-symbol diagnostic into an active multi-symbol batch', a
   assert.equal(engine.getMetrics().deduplicated, 1);
 });
 
+test('credits-aware batching respects per-minute provider credit budget', async () => {
+  let time = 0;
+  const starts = [];
+  const waits = [];
+  const provider = {
+    providerId: 'twelvedata',
+    estimateCreditsForAssets: (assets) => assets.length * 2,
+    estimateHttpRequestsForAssets: () => 2,
+    maxSymbolsForCredits: (credits) => Math.floor(credits / 2),
+    getSnapshot: async (asset) => ({ asset, valid: true }),
+    getSnapshots: async (assets) => {
+      starts.push({ assets: [...assets], at: time });
+      return assets.map((asset) => ({ asset, snapshot: { asset, valid: true }, error: null }));
+    }
+  };
+  const engine = createMarketDataEngine({
+    provider,
+    cacheTtlMs: 0,
+    minRequestIntervalMs: 0,
+    creditBudgetPerMinute: 6,
+    now: () => time,
+    wait: async (ms) => { waits.push(ms); time += ms; }
+  });
+
+  const result = await engine.getSnapshots(['EUR/USD', 'GBP/USD', 'BTC/USD', 'USD/JPY'], '1min', 50);
+  assert.equal(result.length, 4);
+  assert.deepEqual(starts.map((call) => call.assets.length), [3, 1]);
+  assert.deepEqual(starts.map((call) => call.at), [0, 60_000]);
+  assert.deepEqual(waits, [60_000]);
+  assert.equal(engine.getMetrics().estimatedCreditsReserved, 8);
+  assert.equal(engine.getMetrics().estimatedHttpRequests, 4);
+  assert.equal(engine.getMetrics().creditBudgetPerMinute, 6);
+  assert.equal(engine.getMetrics().creditBudgetWaitCount, 1);
+  assert.equal(engine.getMetrics().estimatedCreditsInCurrentWindow, 2);
+});
+
+test('refuses a provider operation whose estimated credit cost cannot fit the configured budget', async () => {
+  let calls = 0;
+  const provider = {
+    providerId: 'twelvedata',
+    estimateCreditsForAssets: (assets) => assets.length * 2,
+    estimateHttpRequestsForAssets: () => 2,
+    maxSymbolsForCredits: (credits) => Math.floor(credits / 2),
+    getSnapshot: async (asset) => { calls++; return { asset, valid: true }; },
+    getSnapshots: async (assets) => { calls++; return assets.map((asset) => ({ asset, snapshot: { asset, valid: true }, error: null })); }
+  };
+  const engine = createMarketDataEngine({
+    provider,
+    creditBudgetPerMinute: 1,
+    minRequestIntervalMs: 0
+  });
+  await assert.rejects(() => engine.getSnapshot('EUR/USD'), /PROVIDER_BATCH_CREDITS_EXCEED_BUDGET/);
+  assert.equal(calls, 0);
+});
+
