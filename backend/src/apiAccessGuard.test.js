@@ -33,7 +33,7 @@ test('development remains usable without an API token', () => {
 
 test('configured token protects the API with a Bearer header', () => {
   const guard = createApiAccessGuard({
-    env: { NODE_ENV: 'production', WILL_API_ACCESS_TOKEN: 'a-long-test-token-001' }
+    env: { NODE_ENV: 'production', WILL_API_ACCESS_TOKEN: 'will-test-api-token-long-enough-001' }
   });
 
   assert.deepEqual(callGuard(guard), {
@@ -43,13 +43,20 @@ test('configured token protects the API with a Bearer header', () => {
   });
   assert.equal(callGuard(guard, 'Basic a-long-test-token-001').statusCode, 401);
   assert.equal(callGuard(guard, 'Bearer wrong-token').statusCode, 401);
-  assert.equal(callGuard(guard, 'Bearer a-long-test-token-001').nextCalled, true);
+  assert.equal(callGuard(guard, 'Bearer will-test-api-token-long-enough-001').nextCalled, true);
 });
 
 test('a configured token also protects local development when enabled', () => {
   const guard = createApiAccessGuard({
-    env: { NODE_ENV: 'development', WILL_API_ACCESS_TOKEN: 'local-test-token-001' }
+    env: { NODE_ENV: 'development', WILL_API_ACCESS_TOKEN: 'local-test-token-long-enough-001' }
   });
   assert.equal(callGuard(guard).statusCode, 401);
-  assert.equal(callGuard(guard, 'Bearer local-test-token-001').nextCalled, true);
+  assert.equal(callGuard(guard, 'Bearer local-test-token-long-enough-001').nextCalled, true);
+});
+
+test('rejects configured tokens shorter than 32 bytes', () => {
+  assert.throws(
+    () => createApiAccessGuard({ env: { NODE_ENV: 'development', WILL_API_ACCESS_TOKEN: 'short-token' } }),
+    /WILL_API_ACCESS_TOKEN_TOO_SHORT/
+  );
 });
