@@ -138,3 +138,19 @@ test('historical ingest fails closed for invalid OHLC, out-of-window and duplica
     })), /HISTORICAL_BAR_TIMESTAMP_DUPLICATE/);
   });
 });
+
+test('historical ingest excludes closed candles whose close falls after the requested end boundary', async () => {
+  const result = await fetchTwelveHistoricalDataset(args({
+    endDate: stamp(t0 + 130_000),
+    now: () => t0 + 240_000,
+    fetchImpl: async () => responseFor([row(t0 + 120_000, 1.3), row(t0 + 60_000, 1.2), row(t0, 1.1)])
+  }));
+  assert.equal(result.rowCounts.rawBars, 3);
+  assert.equal(result.rowCounts.closedBars, 2);
+  assert.equal(result.rowCounts.openOrNotYetClosedBarsExcluded, 0);
+  assert.equal(result.rowCounts.closedBarsOutsideRequestedWindowExcluded, 1);
+  assert.deepEqual(result.observations.map((item) => item.timestamp), [
+    stamp(t0 + 60_000), stamp(t0 + 120_000)
+  ]);
+});
+
