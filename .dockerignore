@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+**/.DS_Store
+**/will-history.json
+**/will-research.json
+**/will-paper-monitor-state.json
+**/will-final-commissioning.json
+**/history.json
+**/monitor.json
+**/evidence/
