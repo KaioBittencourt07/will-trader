@@ -118,7 +118,7 @@ export async function fetchTwelveHistoricalDataset({
   if (!Number.isInteger(maxPoints) || maxPoints < 1 || maxPoints > TWELVE_HISTORICAL_MAX_POINTS) {
     throw new Error('HISTORICAL_MAX_POINTS_OUT_OF_RANGE');
   }
-  const estimatedBars = Math.floor((endMs - startMs) / barWidthMs) + 1;
+  const estimatedBars = Math.ceil((endMs - startMs) / barWidthMs);
   if (estimatedBars > maxPoints) throw new Error('HISTORICAL_WINDOW_EXCEEDS_POINT_BUDGET');
   const validationNowMs = now();
   if (!Number.isFinite(validationNowMs) || endMs > validationNowMs) {
@@ -142,7 +142,7 @@ export async function fetchTwelveHistoricalDataset({
     symbol,
     interval: timeframe,
     start_date: new Date(startMs).toISOString().slice(0, 19),
-    end_date: new Date(endMs).toISOString().slice(0, 19),
+    end_date: new Date(endMs - 1_000).toISOString().slice(0, 19),
     timezone: 'UTC',
     order: 'ASC',
     include_ohlc: 'true'
