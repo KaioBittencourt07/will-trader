@@ -85,7 +85,7 @@ test('decision trace is invariant to later bars not present in the decision pref
   const a = run(original);
   const b = run(changedFuture);
 
-  const decisionCountBeforeChange = 50 - 11 + 1;
+  const decisionCountBeforeChange = 50 - 11;
   assert.deepEqual(
     a.decisions.slice(0, decisionCountBeforeChange),
     b.decisions.slice(0, decisionCountBeforeChange)
