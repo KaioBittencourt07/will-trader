@@ -66,30 +66,31 @@ router.post('/analyze', async (req, res) => {
       });
     }
 
-    if (context.requireAuthoritativeFreshness === true) {
-      const attestation = resolveMarketSnapshotAttestation(rawMarket);
-      if (!attestation.ok) {
-        const decision = {
-          direction: 'WAIT', score: 0, confidence: 0, executable: false,
-          blocked: true, clickTime: null, timing: null,
-          reason: `Snapshot Attestation Guard: ${attestation.blocker}`,
-          blockReasons: [attestation.blocker, 'SERVER_SNAPSHOT_ATTESTATION_REQUIRED']
-        };
-        return respond({
-          ok: true,
-          source: 'snapshot-attestation-guard',
-          decision,
-          data: { ...normalized, snapshotAttestation: attestation },
-          audit: createAuditEntry({ signal: normalized, decision, context })
-        });
-      }
-      rawMarket = {
-        ...rawMarket,
-        authoritativeFreshness: attestation.authoritativeFreshness
+    const attestation = resolveMarketSnapshotAttestation(rawMarket);
+    if (!attestation.ok) {
+      const decision = {
+        direction: 'WAIT', score: 0, confidence: 0, executable: false,
+        blocked: true, clickTime: null, timing: null,
+        reason: `Snapshot Attestation Guard: ${attestation.blocker}`,
+        blockReasons: [attestation.blocker, 'SERVER_SNAPSHOT_ATTESTATION_REQUIRED']
       };
+      return respond({
+        ok: true,
+        source: 'snapshot-attestation-guard',
+        decision,
+        data: { ...normalized, snapshotAttestation: attestation },
+        audit: createAuditEntry({ signal: normalized, decision, context })
+      });
     }
+    rawMarket = {
+      ...rawMarket,
+      authoritativeFreshness: attestation.authoritativeFreshness
+    };
 
-    const temporalAdmission = evaluateAnalyzeTemporalAdmission(rawMarket, context);
+    const temporalAdmission = evaluateAnalyzeTemporalAdmission(rawMarket, {
+      ...context,
+      requireAuthoritativeFreshness: true
+    });
     if (!temporalAdmission.allowed) {
       const decision = {
         direction: 'WAIT', score: 0, confidence: 0, executable: false,
