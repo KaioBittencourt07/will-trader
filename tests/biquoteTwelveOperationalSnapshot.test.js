@@ -85,6 +85,17 @@ test('composes Biquote forex tick/time with only fully closed Twelve 1m candles'
   assert.equal(result.ordersExecuted, 0);
 });
 
+test('rejects non-Twelve-Data candles for the cross-provider composition contract', () => {
+  const result = composeBiquoteTwelveOperationalSnapshot({
+    twelveSnapshot: { ...twelveSnapshot(), source: 'coinbase-exchange-rest', providerSelection: { selectedProvider: 'coinbase-exchange-rest' } },
+    biquoteHealth: health(),
+    now: EVENT + 100,
+    requiredBars: 50
+  });
+  assert.equal(result.valid, false);
+  assert.ok(result.reasons.includes('TWELVEDATA_SOURCE_REQUIRED'));
+});
+
 test('fails closed when Biquote runtime is not ready', () => {
   const result = composeBiquoteTwelveOperationalSnapshot({
     twelveSnapshot: twelveSnapshot(),

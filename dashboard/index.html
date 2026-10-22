@@ -116,6 +116,20 @@ function renderMarketSources(catalog){
       link.textContent='Documentação oficial';
       li.append(link);
     }
+    if(typeof source.homepageUrl==='string'&&source.homepageUrl.startsWith('https://')){
+      li.append(document.createElement('br'));
+      const home=document.createElement('a');
+      home.href=source.homepageUrl;home.target='_blank';home.rel='noopener noreferrer';
+      home.textContent=source.homepageLabel||'Site oficial';
+      li.append(home);
+    }
+    if(typeof source.integrationNote==='string'&&source.integrationNote.trim()){
+      li.append(document.createElement('br'));
+      const note=document.createElement('span');
+      note.className='small';
+      note.textContent=source.integrationNote;
+      li.append(note);
+    }
     const observation=source.runtimeObservation;
     if(observation){
       li.append(document.createElement('br'));

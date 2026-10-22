@@ -84,6 +84,17 @@ test('composes fresh Coinbase price/time with only fully closed Twelve 1m candle
   assert.equal(result.ordersExecuted, 0);
 });
 
+test('rejects Coinbase REST candles when the composition contract requires Twelve Data OHLC', () => {
+  const result = composeCoinbaseTwelveOperationalSnapshot({
+    twelveSnapshot: { ...twelveSnapshot(), source: 'coinbase-exchange-rest', providerSelection: { selectedProvider: 'coinbase-exchange-rest' } },
+    coinbaseHealth: health(),
+    now: EVENT + 100,
+    requiredBars: 50
+  });
+  assert.equal(result.valid, false);
+  assert.ok(result.reasons.includes('TWELVEDATA_SOURCE_REQUIRED'));
+});
+
 test('fails closed when Coinbase temporal runtime is not ready', () => {
   const result = composeCoinbaseTwelveOperationalSnapshot({
     twelveSnapshot: twelveSnapshot(),

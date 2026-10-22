@@ -20,6 +20,7 @@ import { composeWsFreshnessRestOhlc } from '../../../data/src/wsRestComposition.
 import { attachMarketAuthoritativeFreshness } from '../marketAuthoritativeFreshness.js';
 import { buildLocalRelayHeaders } from '../localRelayAuth.js';
 import { attestMarketSnapshot } from '../marketSnapshotAttestation.js';
+import { planMarketSourceRouting } from '../marketSourceRouting.js';
 
 const router = Router();
 let marketDataEngine;
@@ -210,13 +211,12 @@ function addProviderSelection(snapshot, { selectedProvider, requestedProvider = 
   });
 }
 
-export async function getMarketSnapshots(assets = [], timeframe = '1min', outputsize = 50, { telemetry } = {}) {
-  const normalized = [...new Set((assets || []).map((asset) => String(asset ?? '').trim().toUpperCase()).filter(Boolean))];
+export async function getMarketSnapshots(assets = [], timeframe = '1min', outputsize = 50, { telemetry, forceTwelveDataAssets = [] } = {}) {
+  const routingPlan = planMarketSourceRouting(assets, { forceTwelveDataAssets });
+  const { normalized, publicAssets, directTwelveAssets } = routingPlan;
   if (!normalized.length) return [];
   const results = new Map();
   const fallbackToTwelve = [];
-  const publicAssets = normalized.filter((asset) => coinbasePublicProductFor(asset) || binancePublicSymbolFor(asset));
-  const directTwelveAssets = normalized.filter((asset) => !coinbasePublicProductFor(asset) && !binancePublicSymbolFor(asset));
 
   // Each symbol has one explicitly selected venue. Public-provider failures are
   // not concealed: Twelve Data is only attempted as a separately labelled fallback.
@@ -360,7 +360,10 @@ export function getMarketSourceCatalog(now = Date.now()) {
         reasonCode: 'NO_VERIFIED_MARKET_DATA_ADAPTER',
         dataType: 'NOT_AVAILABLE',
         tradingExecution: false,
-        docsUrl: null
+        docsUrl: null,
+        homepageUrl: 'https://avalonbroker.com/',
+        homepageLabel: 'Site oficial · API não verificada',
+        integrationNote: 'Nenhuma especificação pública de API foi verificada; endpoints internos do Traderoom não são tratados como contrato estável.'
       }
     ])
   });

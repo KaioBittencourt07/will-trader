@@ -56,6 +56,7 @@ export function composeCoinbaseTwelveOperationalSnapshot({
   const asset = String(twelveSnapshot?.asset || '').trim().toUpperCase();
 
   if (!COINBASE_TEMPORAL_PRODUCTS[asset]) reasons.push('COMPOSITE_ASSET_NOT_QUALIFIED_CRYPTO');
+  if (twelveSnapshot?.source !== 'twelvedata' || (twelveSnapshot?.providerSelection && twelveSnapshot.providerSelection.selectedProvider !== 'twelvedata')) reasons.push('TWELVEDATA_SOURCE_REQUIRED');
   if (latestTick?.symbol && String(latestTick.symbol).trim().toUpperCase() !== asset) reasons.push('COINBASE_TICK_SYMBOL_MISMATCH');
   if (timeframe !== '1min') reasons.push('COMPOSITE_TIMEFRAME_UNSUPPORTED');
   if (coinbaseHealth?.ready !== true) reasons.push('COINBASE_TEMPORAL_RUNTIME_NOT_READY');

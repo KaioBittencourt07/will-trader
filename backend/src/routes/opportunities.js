@@ -182,8 +182,18 @@ router.get('/opportunities', withCycleEvidenceRequest(async (req, res) => {
 
     try {
       if (localRelayRequired) throw new Error('LOCAL_RELAY_REQUIRED');
+      // Coinbase/Biquote temporal compositions require a separately sourced Twelve Data
+      // OHLC series. Never label candles from the selected public REST venue as Twelve Data.
+      const forceTwelveDataAssets = selection.assets.filter((asset) => {
+        const coinbaseEnabled = coinbaseFeedFor(req.app, asset)?.health?.()?.enabled === true;
+        const biquoteEnabled = req.app.locals.biquoteForexFeed?.getAssetHealth?.(asset)?.enabled === true;
+        return coinbaseEnabled || biquoteEnabled;
+      });
       snapshots = await latency.stage('marketFetchMs', () =>
-        getMarketSnapshots(selection.assets, timeframe, 55, { telemetry: providerTelemetry })
+        getMarketSnapshots(selection.assets, timeframe, 55, {
+          telemetry: providerTelemetry,
+          forceTwelveDataAssets
+        })
       );
     } catch (error) {
       if (!/EACCES|network error|LOCAL_RELAY_REQUIRED/i.test(error.message)) throw error;
