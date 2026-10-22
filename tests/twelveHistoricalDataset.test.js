@@ -95,6 +95,9 @@ test('historical ingest validates key, bounded range, timeframe and HTTPS allowl
   await assert.rejects(() => fetchTwelveHistoricalDataset(args({
     baseUrl: 'http://api.twelvedata.com', fetchImpl
   })), /HISTORICAL_BASE_URL_NOT_ALLOWED/);
+  await assert.rejects(() => fetchTwelveHistoricalDataset(args({
+    endDate: stamp(t0 + 600_000), now: () => t0, fetchImpl
+  })), /HISTORICAL_END_MUST_NOT_BE_IN_FUTURE/);
   assert.equal(calls, 0);
   assert.equal(TWELVE_HISTORICAL_MAX_POINTS, 5000);
 });
