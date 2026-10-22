@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
+import { createApiAccessGuard } from './apiAccessGuard.js';
+import { hasConfiguredValue } from './configuredValue.js';
 import analyzeRouter from './routes/analyze.js';
 import marketRouter from './routes/market.js';
 import contextRouter from './routes/context.js';
@@ -235,13 +237,14 @@ app.locals.marketContextProvider = createMarketContextProvider({ macroAdapter: a
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', config.dashboardOrigin);
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 
 app.use(express.json({ limit: '256kb' }));
+app.use('/api', createApiAccessGuard());
 app.use('/dashboard', express.static(path.resolve(backendDirectory, '../../dashboard')));
 
 app.get('/health', (_req, res) => {
@@ -263,7 +266,7 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'will-trader-backend',
-    openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+    openaiConfigured: hasConfiguredValue(process.env.OPENAI_API_KEY),
     marketProvider: 'twelvedata',
     marketConfigured: runtimeSecrets.twelveData.configured,
     marketCredentialSource: runtimeSecrets.twelveData.source,

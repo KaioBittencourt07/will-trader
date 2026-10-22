@@ -6,6 +6,7 @@ import { classifyTwelveDataFailure, diagnoseTwelveData, TWELVE_DATA_DIAGNOSTIC_V
 import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
 import { composeWsFreshnessRestOhlc } from '../../../data/src/wsRestComposition.js';
 import { attachMarketAuthoritativeFreshness } from '../marketAuthoritativeFreshness.js';
+import { buildLocalRelayHeaders } from '../localRelayAuth.js';
 import { attestMarketSnapshot } from '../marketSnapshotAttestation.js';
 
 const router = Router();
@@ -43,11 +44,11 @@ export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsiz
     relayLastError = message;
     throw new Error(message);
   }
-  const baseUrl = (process.env.WILL_LOCAL_MARKET_RELAY || 'http://127.0.0.1:3000').replace(/\/$/, '');
+  const baseUrl = (process.env.WILL_LOCAL_MARKET_RELAY || `http://127.0.0.1:${process.env.PORT || 3000}`).replace(/\/$/, '');
   const query = new URLSearchParams({ asset, timeframe, outputsize: String(outputsize) });
   let response;
   try {
-    response = await fetch(`${baseUrl}/api/market?${query}`, { signal: AbortSignal.timeout(12_000) });
+    response = await fetch(`${baseUrl}/api/market?${query}`, { headers: buildLocalRelayHeaders({ relayUrl: baseUrl }), signal: AbortSignal.timeout(12_000) });
   } catch (error) {
     const message = `Relay local indisponível: ${error?.cause?.code || error.message}`;
     relayLastError = message;
@@ -109,15 +110,44 @@ router.get('/market', async (req, res) => {
 });
 
 router.get('/market/status', (req, res) => {
-  return res.json({
-    ok: true,
-    direct: getMarketDataEngine().getMetrics(),
-    providerReadiness: getMarketDataEngine().getProviderReadiness(),
-    relay: getLocalRelayStatus(),
-    webSocketShadow: req.app.locals.twelveWebSocketFeed?.health?.() ?? {
-      mode: 'SHADOW_OBSERVABILITY', state: 'UNAVAILABLE', enabled: false, decisionImpact: 'NONE'
+  const webSocketShadow = req.app.locals.twelveWebSocketFeed?.health?.() ?? {
+    mode: 'SHADOW_OBSERVABILITY', state: 'UNAVAILABLE', enabled: false, decisionImpact: 'NONE'
+  };
+  const relay = getLocalRelayStatus();
+
+  try {
+    const engine = getMarketDataEngine();
+    return res.json({
+      ok: true,
+      direct: engine.getMetrics(),
+      providerReadiness: engine.getProviderReadiness(),
+      relay,
+      webSocketShadow
+    });
+  } catch (error) {
+    // Status must remain inspectable even when external market data is not configured.
+    // This does not make market data available or allow a signal to bypass Data Guard.
+    if (String(error?.message || '') === 'TWELVEDATA_API_KEY não configurada.') {
+      return res.json({
+        ok: true,
+        direct: { provider: 'twelvedata', state: 'UNCONFIGURED' },
+        providerReadiness: {
+          provider: 'twelvedata',
+          ready: false,
+          state: 'UNCONFIGURED',
+          reasonCode: 'TWELVEDATA_API_KEY_NOT_CONFIGURED'
+        },
+        relay,
+        webSocketShadow
+      });
     }
-  });
+    return res.status(503).json({
+      ok: false,
+      error: 'MARKET_STATUS_UNAVAILABLE',
+      relay,
+      webSocketShadow
+    });
+  }
 });
 
 router.get('/market/diagnostic', async (req, res) => {

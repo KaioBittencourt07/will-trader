@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { collectAdvisorReviews } from '../ai/advisors.js';
+import { isDeterministicFallbackEnabled } from '../aiFallbackPolicy.js';
 import { normalizeMarketSnapshot } from '../../../data/src/marketAdapter.js';
 import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
@@ -8,10 +9,6 @@ import { evaluateAnalyzeTemporalAdmission } from '../analyzeTemporalAdmission.js
 import { resolveMarketSnapshotAttestation } from '../marketSnapshotAttestation.js';
 
 const router = Router();
-
-function aiFallbackEnabled() {
-  return process.env.AI_FALLBACK_ENABLED !== 'false';
-}
 
 export function persistAnalyzeDecision(req, body, context = {}) {
   const store = req.app?.locals?.historyStore;
@@ -66,30 +63,31 @@ router.post('/analyze', async (req, res) => {
       });
     }
 
-    if (context.requireAuthoritativeFreshness === true) {
-      const attestation = resolveMarketSnapshotAttestation(rawMarket);
-      if (!attestation.ok) {
-        const decision = {
-          direction: 'WAIT', score: 0, confidence: 0, executable: false,
-          blocked: true, clickTime: null, timing: null,
-          reason: `Snapshot Attestation Guard: ${attestation.blocker}`,
-          blockReasons: [attestation.blocker, 'SERVER_SNAPSHOT_ATTESTATION_REQUIRED']
-        };
-        return respond({
-          ok: true,
-          source: 'snapshot-attestation-guard',
-          decision,
-          data: { ...normalized, snapshotAttestation: attestation },
-          audit: createAuditEntry({ signal: normalized, decision, context })
-        });
-      }
-      rawMarket = {
-        ...rawMarket,
-        authoritativeFreshness: attestation.authoritativeFreshness
+    const attestation = resolveMarketSnapshotAttestation(rawMarket);
+    if (!attestation.ok) {
+      const decision = {
+        direction: 'WAIT', score: 0, confidence: 0, executable: false,
+        blocked: true, clickTime: null, timing: null,
+        reason: `Snapshot Attestation Guard: ${attestation.blocker}`,
+        blockReasons: [attestation.blocker, 'SERVER_SNAPSHOT_ATTESTATION_REQUIRED']
       };
+      return respond({
+        ok: true,
+        source: 'snapshot-attestation-guard',
+        decision,
+        data: { ...normalized, snapshotAttestation: attestation },
+        audit: createAuditEntry({ signal: normalized, decision, context })
+      });
     }
+    rawMarket = {
+      ...rawMarket,
+      authoritativeFreshness: attestation.authoritativeFreshness
+    };
 
-    const temporalAdmission = evaluateAnalyzeTemporalAdmission(rawMarket, context);
+    const temporalAdmission = evaluateAnalyzeTemporalAdmission(rawMarket, {
+      ...context,
+      requireAuthoritativeFreshness: true
+    });
     if (!temporalAdmission.allowed) {
       const decision = {
         direction: 'WAIT', score: 0, confidence: 0, executable: false,
@@ -151,7 +149,7 @@ router.post('/analyze', async (req, res) => {
         audit: createAuditEntry({ signal: normalized, decision: result.decision, context: persistenceContext })
       });
     } catch (aiError) {
-      if (!aiFallbackEnabled()) throw aiError;
+      if (!isDeterministicFallbackEnabled()) throw aiError;
 
       const fallbackDecision = {
         ...deterministic,

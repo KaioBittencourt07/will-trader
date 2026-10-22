@@ -45,3 +45,34 @@ test('leaves Twelve unconfigured when local secret is missing or placeholder', a
   assert.equal(result.twelveData.source, null);
   assert.equal(env.TWELVEDATA_API_KEY, undefined);
 });
+
+
+test('ignores the case-insensitive .env.example placeholder from the environment', async () => {
+  const env = { TWELVEDATA_API_KEY: 'coloque_sua_chave_twelvedata_aqui' };
+  const result = await hydrateRuntimeSecrets({
+    env,
+    importer: async () => {
+      const error = new Error('optional local secret file does not exist');
+      error.code = 'ERR_MODULE_NOT_FOUND';
+      throw error;
+    }
+  });
+
+  assert.equal(result.twelveData.configured, false);
+  assert.equal(result.twelveData.source, null);
+  assert.equal(env.TWELVEDATA_API_KEY, undefined);
+});
+
+test('rejects a localSecrets placeholder regardless of letter case', async () => {
+  const env = {};
+  const result = await hydrateRuntimeSecrets({
+    env,
+    importer: async () => ({
+      localSecrets: { TWELVEDATA_API_KEY: 'coloque_sua_chave_twelvedata_aqui' }
+    })
+  });
+
+  assert.equal(result.twelveData.configured, false);
+  assert.equal(result.twelveData.source, null);
+  assert.equal(env.TWELVEDATA_API_KEY, undefined);
+});

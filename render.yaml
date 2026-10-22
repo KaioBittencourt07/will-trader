@@ -16,6 +16,8 @@ services:
         value: gpt-5.6-luna
       - key: TWELVEDATA_API_KEY
         sync: false
+      - key: WILL_API_ACCESS_TOKEN
+        sync: false
       - key: DASHBOARD_ORIGIN
         sync: false
       - key: MARKET_MAX_AGE_MS

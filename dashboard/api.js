@@ -1,5 +1,54 @@
 const params = new URLSearchParams(window.location.search);
 
+function currentApiOrigin() {
+  try {
+    return new URL(getBaseUrl() || window.location.href, window.location.href).origin;
+  } catch {
+    return '';
+  }
+}
+
+function getApiAccessTokenOrigin() {
+  try {
+    const saved = localStorage.getItem('willApiTokenOrigin');
+    if (saved !== null) return saved;
+  } catch {}
+  return String(window.WILL_API_ACCESS_TOKEN_ORIGIN || '');
+}
+
+export function getApiAccessToken() {
+  let token = '';
+  try {
+    const saved = localStorage.getItem('willApiToken');
+    if (saved !== null) token = saved.trim();
+  } catch {}
+  if (!token) token = String(window.WILL_API_ACCESS_TOKEN || '').trim();
+  if (!token) return '';
+
+  // A token saved for another API origin is deliberately not made available
+  // to fetch calls or pre-filled in the settings input.
+  const tokenOrigin = getApiAccessTokenOrigin();
+  return tokenOrigin && currentApiOrigin() === tokenOrigin ? token : '';
+}
+
+export function setApiAccessToken(value) {
+  const token = String(value ?? '').trim();
+  const origin = token ? currentApiOrigin() : '';
+  try {
+    if (token) {
+      localStorage.setItem('willApiToken', token);
+      localStorage.setItem('willApiTokenOrigin', origin);
+    } else {
+      localStorage.removeItem('willApiToken');
+      localStorage.removeItem('willApiTokenOrigin');
+    }
+  } catch {
+    window.WILL_API_ACCESS_TOKEN = token;
+    window.WILL_API_ACCESS_TOKEN_ORIGIN = origin;
+  }
+  return token.length > 0;
+}
+
 function getBaseUrl() {
   const configured = window.WILL_API_BASE_URL || localStorage.getItem('willApiBase') || params.get('api') || '';
   return configured.replace(/\/$/, '');
@@ -21,12 +70,27 @@ export const WILL_API = {
 };
 
 async function request(url, options = {}) {
-  const response = await fetch(url, { cache: 'no-store', ...options });
+  const headers = new Headers(options.headers || {});
+  const token = getApiAccessToken();
+  const tokenOrigin = getApiAccessTokenOrigin();
+  let requestOrigin = '';
+  try { requestOrigin = new URL(url, window.location.href).origin; } catch {}
+  // Never forward the stored bearer token to an API host changed by an untrusted URL parameter.
+  if (token && tokenOrigin && requestOrigin === tokenOrigin) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  const response = await fetch(url, { cache: 'no-store', ...options, headers });
   if (!response.ok) {
-    let message = `HTTP ${response.status}`;
+    let message = response.status === 401
+      ? 'API requer token de acesso. Configure-o no cartão Conexão segura.'
+      : `HTTP ${response.status}`;
     try {
       const body = await response.json();
-      if (body?.error) message = body.error;
+      if (body?.error === 'API_ACCESS_TOKEN_REQUIRED') {
+        message = 'API requer token de acesso. Configure-o no cartão Conexão segura.';
+      } else if (body?.error) {
+        message = body.error;
+      }
     } catch {}
     throw new Error(message);
   }

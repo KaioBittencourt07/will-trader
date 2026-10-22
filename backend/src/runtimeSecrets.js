@@ -1,9 +1,11 @@
+import { hasConfiguredValue } from './configuredValue.js';
+
 const TWELVE_PLACEHOLDER = 'COLOQUE_SUA_CHAVE_TWELVEDATA_AQUI';
 
 function usable(value, placeholder = null) {
   const normalized = String(value ?? '').trim();
-  if (!normalized) return null;
-  if (placeholder && normalized === placeholder) return null;
+  if (!hasConfiguredValue(normalized)) return null;
+  if (placeholder && normalized.toLowerCase() === placeholder.toLowerCase()) return null;
   return normalized;
 }
 
@@ -16,7 +18,13 @@ export async function hydrateRuntimeSecrets({
   env = process.env,
   importer = (specifier) => import(specifier)
 } = {}) {
-  let twelveDataSource = usable(env.TWELVEDATA_API_KEY) ? 'ENV' : null;
+  const envTwelveDataKey = usable(env.TWELVEDATA_API_KEY, TWELVE_PLACEHOLDER);
+  let twelveDataSource = envTwelveDataKey ? 'ENV' : null;
+
+  // Do not let a copied .env.example placeholder reach the provider client.
+  if (!envTwelveDataKey && env.TWELVEDATA_API_KEY !== undefined) {
+    delete env.TWELVEDATA_API_KEY;
+  }
 
   if (!twelveDataSource) {
     try {
