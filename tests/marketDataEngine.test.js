@@ -214,3 +214,32 @@ test('each transient retry obtains a new rate-limited provider slot', async () =
   assert.equal(engine.getMetrics().retries, 1);
 });
 
+test('coalesces a single-symbol diagnostic into an active multi-symbol batch', async () => {
+  let singleCalls = 0;
+  let batchCalls = 0;
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const engine = createMarketDataEngine({
+    provider: {
+      getSnapshot: async (asset) => { singleCalls++; return { asset, valid: true, source: 'single' }; },
+      getSnapshots: async (assets) => {
+        batchCalls++;
+        await pending;
+        return assets.map((asset) => ({ asset, snapshot: { asset, valid: true, source: 'batch' }, error: null }));
+      }
+    },
+    minRequestIntervalMs: 0
+  });
+
+  const batch = engine.getSnapshots(['EUR/USD', 'GBP/USD'], '1min', 50);
+  const diagnostic = engine.getSnapshot('EUR/USD', '1min', 50);
+  release();
+  const [batchResult, diagnosticResult] = await Promise.all([batch, diagnostic]);
+
+  assert.equal(batchCalls, 1);
+  assert.equal(singleCalls, 0);
+  assert.equal(batchResult.find((entry) => entry.asset === 'EUR/USD').snapshot.source, 'batch');
+  assert.equal(diagnosticResult.source, 'batch');
+  assert.equal(engine.getMetrics().deduplicated, 1);
+});
+
