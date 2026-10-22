@@ -65,6 +65,7 @@ test('historical ingest hashes original response bytes and emits sorted closed-c
   ]);
   assert.deepEqual(result.observations.map((item) => item.price), [1.1002, 1.2002, 1.3002]);
   assert.match(requestUrl, /timezone=UTC/);
+  assert.match(requestUrl, /include_ohlc=true/);
   assert.match(requestUrl, /start_date=/);
   assert.match(requestUrl, /end_date=/);
   assert.doesNotMatch(requestUrl, /apikey|synthetic-test-api-key/);
