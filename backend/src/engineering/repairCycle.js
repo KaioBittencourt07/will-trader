@@ -132,6 +132,17 @@ export async function runBoundedRepairCycle({
         continue;
       }
 
+      if (new Set(patch.changedPaths).size !== patch.changedPaths.length) {
+        rejectedAttempts.push(Object.freeze({
+          attemptNumber,
+          reasons: Object.freeze(['PATCH_SCOPE_DUPLICATE_PATH'])
+        }));
+        await adapter.discardWorkspace({ workspace: activeWorkspace });
+        activeWorkspace = null;
+        events.push('patch_scope_rejected_duplicate_paths');
+        continue;
+      }
+
       const patchGuard = evaluateWorkspaceGuard({
         branch, baselineCommit, worktreeStatus: 'CLEAN',
         changedFiles: patch.changedPaths,
