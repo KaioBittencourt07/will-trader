@@ -58,3 +58,11 @@ npm run market:verify-replay -- --dataset-id <ID>
 O replay reconstrói barras OHLC fechadas do JSON bruto verificado e reexecuta `deriveTechnical` + `runWillPipeline` sobre cada prefixo histórico. Ele não consulta rede nem aciona advisors externos, scanner, histórico live ou corretora. Os preços de entrada/expiração vêm de aberturas futuras de velas; gaps tardios são `UNRESOLVED`. Relatórios/datasets existentes nunca são substituídos.
 
 Por padrão, sem uma timeline histórica de macro/notícias autenticada, o replay bloqueia sinais. Para diagnóstico *somente técnico*, adicione explicitamente `--technical-only-diagnostic`; esse modo ignora os filtros macro/notícias e não representa a estratégia completa. Sem `--payout-ratio`, as métricas financeiras permanecem indisponíveis. Com payout, o resultado continua hipotético e não prova edge.
+
+## Relay local de mercado
+
+O relay local reutiliza `WILL_API_ACCESS_TOKEN` somente para destinos loopback (`localhost`, `127.0.0.1` ou `::1`). Para `WILL_LOCAL_MARKET_RELAY` apontando a outro host, configure um `WILL_LOCAL_MARKET_RELAY_TOKEN` exclusivo aceito pelo serviço remoto; o token geral da API nunca é enviado a um host remoto. O relay padrão segue a porta `PORT` do backend.
+
+## Revisão por IA e fallback determinístico
+
+O modelo OpenAI padrão é `gpt-6-luna`; configure `OPENAI_MODEL` somente para um modelo habilitado na sua conta. Uma chave presente não prova que a chamada real funcionará: ela depende de chave válida, modelo disponível e limites da conta. O fallback determinístico permanece ligado por compatibilidade se nenhuma variável for definida; use `ALLOW_DETERMINISTIC_FALLBACK=false` para exigir revisão de IA. Se `AI_FALLBACK_ENABLED` estiver explicitamente definida, ela tem precedência por compatibilidade. Com fallback desativado, falha/ausência de IA não deve ser considerada consenso aprovado.

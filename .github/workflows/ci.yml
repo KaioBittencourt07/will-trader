@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --detach --name will-trader-smoke -e WILL_API_ACCESS_TOKEN=ci-token-for-smoke-test-only-long-enough-001 -p 3000:3000 will-trader:ci
+          docker run --detach --name will-trader-smoke -e WILL_API_ACCESS_TOKEN=ci-token-for-smoke-test-only-long-enough-001 -e DASHBOARD_ORIGIN=http://127.0.0.1:3000 -p 3000:3000 will-trader:ci
           cleanup() {
             docker logs will-trader-smoke || true
             docker rm --force will-trader-smoke >/dev/null 2>&1 || true
