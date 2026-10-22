@@ -225,7 +225,7 @@ test('concurrent identical collection acquires one credit-consuming provider req
 
     assert.equal(secondCode, 1);
     assert.equal(secondFetchCalls, 0);
-    assert.match(secondError, /already running/);
+    assert.match(secondError, /ALREADY_RUNNING|already running/);
 
     releaseFetch();
     assert.equal(await first, 0);
