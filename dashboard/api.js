@@ -1,5 +1,21 @@
 const params = new URLSearchParams(window.location.search);
 
+function currentApiOrigin() {
+  try {
+    return new URL(getBaseUrl() || window.location.href, window.location.href).origin;
+  } catch {
+    return '';
+  }
+}
+
+function getApiAccessTokenOrigin() {
+  try {
+    const saved = localStorage.getItem('willApiTokenOrigin');
+    if (saved !== null) return saved;
+  } catch {}
+  return String(window.WILL_API_ACCESS_TOKEN_ORIGIN || '');
+}
+
 export function getApiAccessToken() {
   try {
     const saved = localStorage.getItem('willApiToken');
@@ -10,11 +26,18 @@ export function getApiAccessToken() {
 
 export function setApiAccessToken(value) {
   const token = String(value ?? '').trim();
+  const origin = token ? currentApiOrigin() : '';
   try {
-    if (token) localStorage.setItem('willApiToken', token);
-    else localStorage.removeItem('willApiToken');
+    if (token) {
+      localStorage.setItem('willApiToken', token);
+      localStorage.setItem('willApiTokenOrigin', origin);
+    } else {
+      localStorage.removeItem('willApiToken');
+      localStorage.removeItem('willApiTokenOrigin');
+    }
   } catch {
     window.WILL_API_ACCESS_TOKEN = token;
+    window.WILL_API_ACCESS_TOKEN_ORIGIN = origin;
   }
   return token.length > 0;
 }
@@ -42,7 +65,13 @@ export const WILL_API = {
 async function request(url, options = {}) {
   const headers = new Headers(options.headers || {});
   const token = getApiAccessToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const tokenOrigin = getApiAccessTokenOrigin();
+  let requestOrigin = '';
+  try { requestOrigin = new URL(url, window.location.href).origin; } catch {}
+  // Never forward the stored bearer token to an API host changed by an untrusted URL parameter.
+  if (token && tokenOrigin && requestOrigin === tokenOrigin) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
   const response = await fetch(url, { cache: 'no-store', ...options, headers });
   if (!response.ok) {
     let message = response.status === 401
