@@ -24,7 +24,8 @@
     "test": "node --test",
     "market:history": "node src/collectTwelveHistoricalDataset.js",
     "market:verify-history": "node src/verifyTwelveHistoricalDataset.js",
-    "market:replay": "node src/runHistoricalWillReplay.js"
+    "market:replay": "node src/runHistoricalWillReplay.js",
+    "market:verify-replay": "node src/verifyHistoricalWillReplay.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
