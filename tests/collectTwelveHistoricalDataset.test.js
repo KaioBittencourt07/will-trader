@@ -59,6 +59,7 @@ test('CLI archives original raw bytes, closed observations and independently ver
   let requestUrl = '';
   let requestHeaders;
   let output = '';
+  let fetchCalls = 0;
   try {
     const canned = providerResponse();
     const code = await collectHistoricalDatasetCli({
@@ -70,7 +71,7 @@ test('CLI archives original raw bytes, closed observations and independently ver
         '--confirm-provider-credits'
       ],
       env: { TWELVEDATA_API_KEY: key },
-      fetchImpl: async (url, options) => { requestUrl = url; requestHeaders = options.headers; return canned.response; },
+      fetchImpl: async (url, options) => { fetchCalls++; requestUrl = url; requestHeaders = options.headers; return canned.response; },
       now: () => startMs + 180_000,
       outputDirectory: directory,
       stdout: (value) => { output += value; },
@@ -90,12 +91,39 @@ test('CLI archives original raw bytes, closed observations and independently ver
     assert.equal(createHash('sha256').update(storedRaw).digest('hex'), JSON.parse(output).rawSha256);
     const savedManifest = JSON.parse(fs.readFileSync(path.join(directory, manifestFile), 'utf8'));
     assert.equal(verifyMarketDatasetManifest(storedRaw, savedManifest.datasetManifest).valid, true);
-    const observations = JSON.parse(fs.readFileSync(path.join(directory, observationsFile), 'utf8'));
+    const { collectionManifestSha256, ...collectionFields } = savedManifest;
+    assert.equal(
+      createHash('sha256').update(Buffer.from(JSON.stringify(collectionFields), 'utf8')).digest('hex'),
+      collectionManifestSha256
+    );
+    const observationsBytes = fs.readFileSync(path.join(directory, observationsFile));
+    assert.equal(
+      createHash('sha256').update(observationsBytes).digest('hex'),
+      savedManifest.derivedObservations.sha256
+    );
+    const observations = JSON.parse(observationsBytes.toString('utf8'));
     assert.deepEqual(observations.map((row) => row.timestamp), [iso(startMs + 60_000), iso(startMs + 120_000)]);
     const summary = JSON.parse(output);
     assert.equal(summary.edgeProven, false);
     assert.equal(summary.providerReportedCreditsUsed, 1);
     assert.equal(summary.note, 'Dataset is archived, not yet a trading-result claim.');
+
+    let duplicateError = '';
+    const duplicateCode = await collectHistoricalDatasetCli({
+      argv: [
+        '--asset', 'EUR/USD', '--interval', '1min',
+        '--start', iso(startMs), '--end', iso(startMs + 120_000),
+        '--confirm-provider-credits'
+      ],
+      env: { TWELVEDATA_API_KEY: key },
+      fetchImpl: async () => { fetchCalls++; return canned.response; },
+      outputDirectory: directory,
+      stdout: () => {},
+      stderr: (value) => { duplicateError += value; }
+    });
+    assert.equal(duplicateCode, 1);
+    assert.equal(fetchCalls, 1);
+    assert.match(duplicateError, /no provider request was made/);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
