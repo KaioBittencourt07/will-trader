@@ -1,5 +1,24 @@
 const params = new URLSearchParams(window.location.search);
 
+export function getApiAccessToken() {
+  try {
+    const saved = localStorage.getItem('willApiToken');
+    if (saved !== null) return saved.trim();
+  } catch {}
+  return String(window.WILL_API_ACCESS_TOKEN || '').trim();
+}
+
+export function setApiAccessToken(value) {
+  const token = String(value ?? '').trim();
+  try {
+    if (token) localStorage.setItem('willApiToken', token);
+    else localStorage.removeItem('willApiToken');
+  } catch {
+    window.WILL_API_ACCESS_TOKEN = token;
+  }
+  return token.length > 0;
+}
+
 function getBaseUrl() {
   const configured = window.WILL_API_BASE_URL || localStorage.getItem('willApiBase') || params.get('api') || '';
   return configured.replace(/\/$/, '');
@@ -21,9 +40,14 @@ export const WILL_API = {
 };
 
 async function request(url, options = {}) {
-  const response = await fetch(url, { cache: 'no-store', ...options });
+  const headers = new Headers(options.headers || {});
+  const token = getApiAccessToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(url, { cache: 'no-store', ...options, headers });
   if (!response.ok) {
-    let message = `HTTP ${response.status}`;
+    let message = response.status === 401
+      ? 'API requer token de acesso. Configure-o no cartão Conexão segura.'
+      : `HTTP ${response.status}`;
     try {
       const body = await response.json();
       if (body?.error) message = body.error;
