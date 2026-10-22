@@ -58,6 +58,8 @@ A transcrição `Texto colado(20260915-025748).txt` contém uma tabela `Show-Qua
 
 A WR agregada reportada pode ser refeita aritmeticamente: (93/(93+98)=48,69\%). Um intervalo de Wilson **ingênuo por operação** é aproximadamente 41,70%–55,74%; isso não corrige dependência entre operações do mesmo ciclo, seleção de variáveis nem testes múltiplos. Para MeanAbsMomentum, combinar Q1+Q2 dá 47/88 = 53,41% (Wilson ingênuo 43,06%–63,47%) e Q3+Q4 dá 46/103 = 44,66% (Wilson ingênuo 35,42%–54,28%). Os intervalos se sobrepõem; essa diferença não prova que o filtro é rentável. Para Q4 de ReversalShare a WR é maior na tabela, mas o mesmo problema de seleção/multiplicidade continua.
 
+Uma referência de payout ilustra por que WR bruta não basta: **se** o payout líquido de uma vitória fosse 80% da stake, sem comissão/custos e com TIE devolvendo a stake, o breakeven entre resultados binários WIN/LOSS seria 55,56% (`1 / (1 + 0,80)`). Neste snapshot, a WR binária agregada é 48,69% e Q1+Q2 de MeanAbsMomentum é 53,41%, ambos abaixo desse exemplo. O payout real da conta, por ativo e por horário **não está autenticado aqui**; esta comparação não é um cálculo de PnL nem de resultado atual.
+
 Essas estatísticas são uma pista de pesquisa, **não uma validação OOS independente**. A transcrição demonstra que um script chamado `Show-Quartiles` rodou contra `$allCycleResearch`, mas não permite confirmar pela saída isolada quais IDs, campanhas, timestamps, estados oficiais ou partições temporais entraram. Não se deve inferir que esse snapshot corresponde ao protocolo posterior OOS2/OOS2T nem usar os quartis para ajustar thresholds congelados.
 
 ### Hipótese de trabalho documentada
