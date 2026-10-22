@@ -141,7 +141,8 @@ export async function fetchTwelveHistoricalDataset({
     start_date: new Date(startMs).toISOString().replace('.000Z', 'Z'),
     end_date: new Date(endMs).toISOString().replace('.000Z', 'Z'),
     timezone: 'UTC',
-    order: 'ASC'
+    order: 'ASC',
+    include_ohlc: 'true'
     // Intentionally omit outputsize when start_date/end_date are both present:
     // Twelve Data documents that outputsize can truncate a range-bounded request.
   });
