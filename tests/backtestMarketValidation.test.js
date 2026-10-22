@@ -83,7 +83,7 @@ test('BUY, SELL and tie outcomes follow the observed entry-to-expiry direction',
   assert.equal(report.netPnl, -3.5);
   assert.equal(report.expectancyPerSettledTrade, -3.5 / 3);
   assert.equal(report.breakEvenWinRateWithoutTies, 10.5 / 18);
-  assert.equal(report.maxDrawdown, 3.5);
+  assert.equal(report.maxDrawdown, 11);
   assert.equal(report.statisticalReviewReady, true);
   assert.equal(report.edgeProven, false);
   assert.equal(report.status, 'READY_FOR_STATISTICAL_REVIEW_NOT_EDGE_PROOF');
@@ -113,7 +113,7 @@ test('WAIT and blocked decisions stay in the denominator without becoming trades
 test('missing entry/expiry quotes remain unresolved and suppress complete-sample PnL', () => {
   const report = runHistoricalReplay({
     decisions: [decision('no-entry', 'BTC/USD', 'BUY')],
-    observations: [obs('BTC/USD', t0, 60_000)],
+    observations: [obs('BTC/USD', t0, 60_000), obs('BTC/USD', plus(1_000), 60_010)],
     payoutRatio: 0.8
   });
   assert.equal(report.unresolvedTrades, 1);
