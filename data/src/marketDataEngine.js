@@ -5,19 +5,30 @@ function keyFor(asset, timeframe, outputsize) {
 import { addProviderEfficiency } from './providerEfficiency.js';
 import { refreshMarketSnapshotFreshness } from './marketAdapter.js';
 
-export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), creditBudgetPerMinute = undefined, maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
+export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), creditBudgetPerMinute = undefined, creditBudgetPerDay = undefined, maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
   if (!provider || typeof provider.getSnapshot !== 'function') throw new Error('provider.getSnapshot é obrigatório.');
   const configuredCreditBudget = process.env.MARKET_CREDITS_PER_MINUTE;
+  const configuredDailyCreditBudget = process.env.MARKET_CREDITS_PER_DAY;
   const effectiveCreditBudgetPerMinute = creditBudgetPerMinute !== undefined
     ? creditBudgetPerMinute
     : configuredCreditBudget !== undefined
       ? Number(configuredCreditBudget)
       : provider.providerId === 'twelvedata' ? 6 : null;
+  const effectiveCreditBudgetPerDay = creditBudgetPerDay !== undefined
+    ? creditBudgetPerDay
+    : configuredDailyCreditBudget !== undefined
+      ? Number(configuredDailyCreditBudget)
+      : provider.providerId === 'twelvedata' ? 720 : null;
   if (effectiveCreditBudgetPerMinute !== null &&
       (!Number.isInteger(effectiveCreditBudgetPerMinute) || effectiveCreditBudgetPerMinute < 1)) {
     throw new Error('MARKET_CREDITS_PER_MINUTE must be a positive integer when configured.');
   }
-  const creditUsage = [];
+  if (effectiveCreditBudgetPerDay !== null &&
+      (!Number.isInteger(effectiveCreditBudgetPerDay) || effectiveCreditBudgetPerDay < 1)) {
+    throw new Error('MARKET_CREDITS_PER_DAY must be a positive integer when configured.');
+  }
+  const creditUsageMinute = [];
+  const creditUsageDay = [];
   const cache = new Map();
   const inFlight = new Map();
   let nextRequestAt = 0;
@@ -167,8 +178,12 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   }
 
   function maxBatchSymbols() {
-    if (effectiveCreditBudgetPerMinute === null || typeof provider.maxSymbolsForCredits !== 'function') return Infinity;
-    const maximum = Number(provider.maxSymbolsForCredits(effectiveCreditBudgetPerMinute));
+    if (typeof provider.maxSymbolsForCredits !== 'function') return Infinity;
+    const activeBudgets = [effectiveCreditBudgetPerMinute, effectiveCreditBudgetPerDay]
+      .filter((value) => value !== null);
+    if (!activeBudgets.length) return Infinity;
+    const largestAllowedRequest = Math.min(...activeBudgets);
+    const maximum = Number(provider.maxSymbolsForCredits(largestAllowedRequest));
     if (!Number.isInteger(maximum) || maximum < 1) {
       throw new Error('MARKET_CREDIT_BUDGET_TOO_LOW_FOR_SINGLE_ASSET');
     }
@@ -176,30 +191,55 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   }
 
   function pruneCreditUsage(current) {
-    const cutoff = current - 60_000;
-    while (creditUsage.length && creditUsage[0].at <= cutoff) creditUsage.shift();
+    const minuteCutoff = current - 60_000;
+    const dayCutoff = current - 86_400_000;
+    while (creditUsageMinute.length && creditUsageMinute[0].at <= minuteCutoff) creditUsageMinute.shift();
+    while (creditUsageDay.length && creditUsageDay[0].at <= dayCutoff) creditUsageDay.shift();
   }
 
   async function reserveCreditBudget(credits, telemetry) {
     if (!Number.isInteger(credits) || credits < 1) throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
-    if (effectiveCreditBudgetPerMinute === null) {
+    if (effectiveCreditBudgetPerMinute !== null && credits > effectiveCreditBudgetPerMinute) {
+      throw new Error('PROVIDER_BATCH_CREDITS_EXCEED_MINUTE_BUDGET');
+    }
+    if (effectiveCreditBudgetPerDay !== null && credits > effectiveCreditBudgetPerDay) {
+      throw new Error('PROVIDER_BATCH_CREDITS_EXCEED_DAY_BUDGET');
+    }
+    if (effectiveCreditBudgetPerMinute === null && effectiveCreditBudgetPerDay === null) {
       metrics.estimatedCreditsReserved += credits;
       return;
     }
-    if (credits > effectiveCreditBudgetPerMinute) throw new Error('PROVIDER_BATCH_CREDITS_EXCEED_BUDGET');
 
     while (true) {
       const current = now();
       pruneCreditUsage(current);
-      const used = creditUsage.reduce((sum, item) => sum + item.credits, 0);
-      if (used + credits <= effectiveCreditBudgetPerMinute) {
-        creditUsage.push({ at: current, credits });
+      const minuteUsed = creditUsageMinute.reduce((sum, item) => sum + item.credits, 0);
+      const dayUsed = creditUsageDay.reduce((sum, item) => sum + item.credits, 0);
+      const minuteFits = effectiveCreditBudgetPerMinute === null ||
+        minuteUsed + credits <= effectiveCreditBudgetPerMinute;
+      const dayFits = effectiveCreditBudgetPerDay === null ||
+        dayUsed + credits <= effectiveCreditBudgetPerDay;
+
+      if (minuteFits && dayFits) {
+        const event = { at: current, credits };
+        if (effectiveCreditBudgetPerMinute !== null) creditUsageMinute.push(event);
+        if (effectiveCreditBudgetPerDay !== null) creditUsageDay.push(event);
         metrics.estimatedCreditsReserved += credits;
         return;
       }
 
-      const oldest = creditUsage[0];
-      const delay = Math.max(1, oldest.at + 60_000 - current);
+      const delays = [];
+      if (!minuteFits && creditUsageMinute.length) {
+        delays.push(Math.max(1, creditUsageMinute[0].at + 60_000 - current));
+      }
+      if (!dayFits && creditUsageDay.length) {
+        delays.push(Math.max(1, creditUsageDay[0].at + 86_400_000 - current));
+      }
+      if (!delays.length) throw new Error('MARKET_CREDIT_BUDGET_CANNOT_PROGRESS');
+
+      // Re-evaluate when the earliest blocked window changes; a stricter
+      // remaining window may still hold the next request and will be checked again.
+      const delay = Math.min(...delays);
       metrics.creditBudgetWaitMsTotal += delay;
       metrics.creditBudgetWaitCount += 1;
       addProviderEfficiency(telemetry, { creditBudgetWaitMs: delay });
@@ -414,10 +454,16 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
         ? metrics.upstreamLatencyMsTotal / metrics.upstreamLatencySamples
         : null,
       creditBudgetPerMinute: effectiveCreditBudgetPerMinute,
+      creditBudgetPerDay: effectiveCreditBudgetPerDay,
       estimatedCreditsInCurrentWindow: (() => {
         if (effectiveCreditBudgetPerMinute === null) return null;
         pruneCreditUsage(now());
-        return creditUsage.reduce((sum, item) => sum + item.credits, 0);
+        return creditUsageMinute.reduce((sum, item) => sum + item.credits, 0);
+      })(),
+      estimatedCreditsInCurrentDay: (() => {
+        if (effectiveCreditBudgetPerDay === null) return null;
+        pruneCreditUsage(now());
+        return creditUsageDay.reduce((sum, item) => sum + item.credits, 0);
       })()
     }),
     getProviderReadiness: readiness,
