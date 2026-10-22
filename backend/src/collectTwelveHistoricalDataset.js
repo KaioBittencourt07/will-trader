@@ -78,6 +78,21 @@ export async function collectHistoricalDatasetCli({
     return 2;
   }
 
+  const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
+  const outputDirectory = outputDirectoryOverride ?? path.join(repoRoot, 'data', 'market-datasets');
+  const canonicalDatePart = (value) => {
+    const parsed = Date.parse(String(value ?? ''));
+    return (Number.isFinite(parsed) ? new Date(parsed).toISOString() : String(value ?? ''))
+      .replace(/[^0-9]/g, '').slice(0, 12);
+  };
+  const predictedDatasetId = `twelve-${String(options.asset ?? '').trim().toUpperCase().replace(/[^A-Z0-9._-]/g, '-')}-${String(options.interval ?? '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '-')}-${canonicalDatePart(options.start)}-${canonicalDatePart(options.end)}`;
+  const predictedFiles = ['raw.json', 'observations.json', 'manifest.json']
+    .map((suffix) => path.join(outputDirectory, `${predictedDatasetId}.${suffix}`));
+  if (predictedFiles.some((target) => fs.existsSync(target))) {
+    stderr('HISTORICAL_ARTIFACT_ALREADY_EXISTS: refusing to overwrite an archived dataset; no provider request was made.\n');
+    return 1;
+  }
+
   let dataset;
   try {
     dataset = await fetchTwelveHistoricalDataset({
@@ -100,20 +115,21 @@ export async function collectHistoricalDatasetCli({
     return 1;
   }
 
-  const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-  const outputDirectory = outputDirectoryOverride ?? path.join(repoRoot, 'data', 'market-datasets');
   const safeAsset = dataset.asset.replace(/[^A-Z0-9._-]/g, '-');
   const safeInterval = dataset.interval.replace(/[^a-z0-9._-]/g, '-');
   const fromPart = dataset.requestedWindow.start.replace(/[^0-9]/g, '').slice(0, 12);
   const toPart = dataset.requestedWindow.end.replace(/[^0-9]/g, '').slice(0, 12);
   const datasetId = `twelve-${safeAsset}-${safeInterval}-${fromPart}-${toPart}`;
-  const base = path.join(outputDirectory, datasetId);
+  if (datasetId !== predictedDatasetId) {
+    stderr('HISTORICAL_DATASET_ID_MISMATCH: refusing to archive ambiguous output.\n');
+    return 1;
+  }
   const rawFile = `${datasetId}.raw.json`;
   const observationsFile = `${datasetId}.observations.json`;
   const manifestFile = `${datasetId}.manifest.json`;
   const artifactPaths = [path.join(outputDirectory, rawFile), path.join(outputDirectory, observationsFile), path.join(outputDirectory, manifestFile)];
   if (artifactPaths.some((target) => fs.existsSync(target))) {
-    stderr('HISTORICAL_ARTIFACT_ALREADY_EXISTS: refusing to overwrite an archived dataset or manifest.\n');
+    stderr('HISTORICAL_ARTIFACT_ALREADY_EXISTS: refusing to overwrite an archived dataset.\n');
     return 1;
   }
 
