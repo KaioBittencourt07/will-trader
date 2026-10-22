@@ -153,3 +153,64 @@ test('concurrent diagnostic and one-symbol scanner requests coalesce before prov
   assert.equal(calls, 1);
   assert.equal(engine.getMetrics().deduplicated, 1);
 });
+
+test('serializes concurrent misses for different assets instead of releasing a request burst', async () => {
+  const starts = [];
+  const engine = createMarketDataEngine({
+    provider: {
+      getSnapshot: async (asset) => {
+        starts.push({ asset, at: Date.now() });
+        return { asset, valid: true };
+      }
+    },
+    cacheTtlMs: 0,
+    minRequestIntervalMs: 45
+  });
+
+  await Promise.all([
+    engine.getSnapshot('EUR/USD'),
+    engine.getSnapshot('GBP/USD'),
+    engine.getSnapshot('BTC/USD')
+  ]);
+
+  assert.equal(starts.length, 3);
+  const gaps = starts.slice(1).map((item, index) => item.at - starts[index].at);
+  assert.ok(gaps.every((gap) => gap >= 35), `upstream requests were too close together: ${gaps.join(',')}ms`);
+  assert.equal(engine.getMetrics().upstreamRequests, 3);
+});
+
+test('each transient retry obtains a new rate-limited provider slot', async () => {
+  let time = 0;
+  let calls = 0;
+  const starts = [];
+  const waits = [];
+  const engine = createMarketDataEngine({
+    provider: {
+      getSnapshot: async (asset) => {
+        starts.push(time);
+        calls++;
+        if (calls === 1) {
+          const error = new Error('HTTP 503 transient');
+          error.status = 503;
+          throw error;
+        }
+        return { asset, valid: true };
+      }
+    },
+    now: () => time,
+    wait: async (ms) => { waits.push(ms); time += ms; },
+    minRequestIntervalMs: 100,
+    maxRetries: 1,
+    retryBaseMs: 5,
+    retryMaxMs: 5,
+    random: () => 0.5
+  });
+
+  const result = await engine.getSnapshot('EUR/USD');
+  assert.equal(result.valid, true);
+  assert.deepEqual(starts, [0, 100]);
+  assert.deepEqual(waits, [5, 95]);
+  assert.equal(engine.getMetrics().upstreamRequests, 2);
+  assert.equal(engine.getMetrics().retries, 1);
+});
+
