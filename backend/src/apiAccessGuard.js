@@ -18,7 +18,11 @@ export function createApiAccessGuard({ env = process.env } = {}) {
   const rawToken = String(env[API_ACCESS_TOKEN_ENV] ?? '').trim();
   const configured = hasConfiguredValue(rawToken);
   const production = String(env.NODE_ENV ?? '').trim().toLowerCase() === 'production';
+  const tokenLengthBytes = Buffer.byteLength(rawToken, 'utf8');
 
+  if (configured && tokenLengthBytes < 32) {
+    throw new Error('WILL_API_ACCESS_TOKEN_TOO_SHORT');
+  }
   if (production && !configured) {
     throw new Error('WILL_API_ACCESS_TOKEN_REQUIRED_IN_PRODUCTION');
   }
