@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { runWillStrategyReplay } from '../../backtest/src/willStrategyReplay.js';
+import { buildConfidenceDiagnostics } from '../../backtest/src/confidenceDiagnostics.js';
 import { verifyTwelveHistoricalArchive } from './verifyTwelveHistoricalDataset.js';
 
 const DEFAULT_DIRECTORY = path.join(path.resolve(fileURLToPath(new URL('../../', import.meta.url))), 'data', 'market-datasets');
@@ -152,6 +153,7 @@ function parseArgs(argv) {
   const options = {
     datasetId: null,
     technicalOnlyDiagnostic: false,
+    sampleRole: 'UNSPECIFIED',
     payoutRatio: null,
     stake: 1,
     costPerTrade: 0,
@@ -175,6 +177,15 @@ function parseArgs(argv) {
     if (arg === '--help' || arg === '-h') return { ...options, help: true };
     if (arg === '--technical-only-diagnostic') {
       options.technicalOnlyDiagnostic = true;
+      continue;
+    }
+    if (arg === '--sample-role') {
+      const role = String(argv[index + 1] ?? '').toUpperCase();
+      if (!['UNSPECIFIED', 'TRAIN', 'VALIDATION', 'TEST', 'PROSPECTIVE'].includes(role)) {
+        throw new Error('HISTORICAL_SAMPLE_ROLE_INVALID');
+      }
+      options.sampleRole = role;
+      index++;
       continue;
     }
     if (arg !== '--dataset-id' && !numeric.has(arg)) throw new Error('ARGUMENT_NOT_SUPPORTED');
@@ -336,7 +347,7 @@ export function runHistoricalWillReplayCli({
   let report;
   try {
     source = verifyAndBuildBars({ datasetId: options.datasetId, outputDirectory });
-    report = runWillStrategyReplay({
+    const strategyReport = runWillStrategyReplay({
       bars: source.bars,
       asset: source.asset,
       interval: source.interval,
@@ -366,6 +377,14 @@ export function runHistoricalWillReplayCli({
         maxExpiryQuoteDelayMs: options.maxExpiryQuoteDelayMs
       }
     });
+    report = {
+      ...strategyReport,
+      confidenceDiagnostics: buildConfidenceDiagnostics({
+        decisions: strategyReport.decisions,
+        results: strategyReport.results,
+        sampleRole: options.sampleRole
+      })
+    };
   } catch (error) {
     stderr(`HISTORICAL_REPLAY_FAILED:${String(error?.message || 'UNKNOWN').slice(0, 180)}\n`);
     return 1;
@@ -411,6 +430,8 @@ export function runHistoricalWillReplayCli({
     status: 'HISTORICAL_WILL_REPLAY_SAVED',
     datasetId: options.datasetId,
     contextMode: report.strategy.contextMode,
+    confidenceDiagnosticsStatus: report.confidenceDiagnostics.status,
+    sampleRole: options.sampleRole,
     asset: source.asset,
     interval: source.interval,
     barsUsed: source.bars.length,
