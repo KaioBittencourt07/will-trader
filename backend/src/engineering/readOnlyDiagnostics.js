@@ -1,4 +1,3 @@
-const SECRET_KEY_PATTERN = /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|password|passwd|secret|credential|cookie|session[_-]?id)/i;
 const SECRET_ASSIGNMENT_PATTERN = /\b(api[_-]?key|access[_-]?token|token|authorization|password|passwd|secret|credential|cookie|session[_-]?id)\b\s*([=:])\s*(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)/gi;
 const URL_QUERY_SECRET_PATTERN = /([?&](?:api[_-]?key|access[_-]?token|token|key|secret|password)=)[^&#\s]*/gi;
 const MAX_TEXT_LENGTH = 4_000;
