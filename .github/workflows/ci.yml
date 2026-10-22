@@ -1,5 +1,9 @@
 name: WILL CI
 
+concurrency:
+  group: will-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ['**']
@@ -23,9 +27,9 @@ jobs:
         run: npm ci
       - name: Run backend-local tests
         working-directory: backend
-        run: npm test
+        run: npm test -- --test-timeout=60000 --test-force-exit
       - name: Run full repository regression suite
-        run: node --test tests/*.test.js
+        run: node --test --test-timeout=60000 --test-force-exit tests/*.test.js
       - name: Build production Docker image
         run: docker build --tag will-trader:ci .
       - name: Smoke test production container
