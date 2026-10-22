@@ -177,3 +177,85 @@ test('chronological split rejects invalid ratios, timestamps and insufficient di
     { timestamp: t0 }, { timestamp: t0 }, { timestamp: t0 }
   ]), /INSUFFICIENT_UNIQUE_TIMESTAMPS/);
 });
+
+test('scheduled historical entry respects an explicit future click time', () => {
+  const report = runHistoricalReplay({
+    decisions: [{
+      id: 'scheduled-entry',
+      asset: 'EUR/USD',
+      direction: 'BUY',
+      timestamp: t0,
+      plannedEntryTimestamp: plus(60_000),
+      executable: true
+    }],
+    observations: [
+      obs('EUR/USD', t0, 100),
+      obs('EUR/USD', plus(60_000), 101),
+      obs('EUR/USD', plus(120_000), 102)
+    ],
+    entryDelayMs: 0,
+    expirySeconds: 60,
+    payoutRatio: 0.8,
+    minimumBinaryTrades: 1
+  });
+  assert.equal(report.results[0].status, 'SETTLED');
+  assert.equal(report.results[0].targetEntryTimestamp, plus(60_000));
+  assert.equal(report.results[0].entryTimestamp, plus(60_000));
+  assert.equal(report.results[0].outcome, 'WIN');
+  assert.equal(report.edgeProven, false);
+});
+
+test('historical replay refuses a planned click that is not strictly after the signal', () => {
+  assert.throws(() => runHistoricalReplay({
+    decisions: [{
+      id: 'non-future-click',
+      asset: 'EUR/USD',
+      direction: 'BUY',
+      timestamp: t0,
+      plannedEntryTimestamp: t0,
+      executable: true
+    }],
+    observations: [obs('EUR/USD', t0, 100), obs('EUR/USD', plus(60_000), 101)]
+  }), /PLANNED_ENTRY_MUST_FOLLOW_DECISION/);
+});
+
+test('entry and expiry quotes outside configured timing tolerances remain unresolved', () => {
+  const lateEntry = runHistoricalReplay({
+    decisions: [{
+      id: 'late-entry',
+      asset: 'EUR/USD',
+      direction: 'BUY',
+      timestamp: t0,
+      plannedEntryTimestamp: plus(60_000),
+      executable: true
+    }],
+    observations: [
+      obs('EUR/USD', t0, 100),
+      obs('EUR/USD', plus(62_000), 101),
+      obs('EUR/USD', plus(122_000), 102)
+    ],
+    entryDelayMs: 0,
+    maxEntryQuoteDelayMs: 1,
+    payoutRatio: 0.8
+  });
+  assert.equal(lateEntry.results[0].status, 'UNRESOLVED');
+  assert.equal(lateEntry.results[0].reasonCode, 'ENTRY_QUOTE_TOO_LATE');
+  assert.equal(lateEntry.netPnl, null);
+
+  const lateExpiry = runHistoricalReplay({
+    decisions: [decision('late-expiry', 'EUR/USD', 'BUY')],
+    observations: [
+      obs('EUR/USD', t0, 100),
+      obs('EUR/USD', plus(1_000), 101),
+      obs('EUR/USD', plus(61_001), 102)
+    ],
+    entryDelayMs: 0,
+    expirySeconds: 60,
+    maxExpiryQuoteDelayMs: 0,
+    payoutRatio: 0.8
+  });
+  assert.equal(lateExpiry.results[0].status, 'UNRESOLVED');
+  assert.equal(lateExpiry.results[0].reasonCode, 'EXPIRY_QUOTE_TOO_LATE');
+  assert.equal(lateExpiry.netPnl, null);
+});
+
