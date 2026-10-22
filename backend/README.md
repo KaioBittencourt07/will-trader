@@ -31,3 +31,8 @@ Nenhuma dessas verificações demonstra rentabilidade. Não foi autorizada execu
 ## Relay local de mercado
 
 O relay local usa `WILL_API_ACCESS_TOKEN` apenas quando o destino é loopback (`localhost`, `127.0.0.1` ou `::1`). Se `WILL_LOCAL_MARKET_RELAY` apontar para outro host, configure `WILL_LOCAL_MARKET_RELAY_TOKEN` com um segredo exclusivo aceito por esse serviço; o token geral da API não é encaminhado para hosts remotos. O relay padrão segue a porta `PORT` do próprio backend.
+
+
+## Revisão por IA e fallback determinístico
+
+O modelo OpenAI padrão é `gpt-6-luna`; configure `OPENAI_MODEL` apenas para um modelo habilitado na sua conta. A API não é considerada operacional só porque a chave existe: uma chamada real depende de chave válida, modelo disponível e saldo/limites da conta. O fallback determinístico é mantido ligado por compatibilidade se nenhuma variável for definida; use `ALLOW_DETERMINISTIC_FALLBACK=false` para exigir a revisão por IA. `AI_FALLBACK_ENABLED`, se definida, tem precedência por compatibilidade com ambientes anteriores. Com fallback desativado, falha/ausência da IA não deve ser interpretada como consenso aprovado.

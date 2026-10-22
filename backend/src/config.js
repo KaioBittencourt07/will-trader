@@ -35,5 +35,5 @@ export const config = Object.freeze({
   executionWindowBeforeMs: numberEnv('EXECUTION_WINDOW_BEFORE_MS', 2_000, 0),
   executionWindowAfterMs: numberEnv('EXECUTION_WINDOW_AFTER_MS', 3_000, 0),
   expirySeconds: numberEnv('EXPIRY_SECONDS', 60, 1),
-  openaiModel: process.env.OPENAI_MODEL || 'gpt-5.6-luna'
+  openaiModel: process.env.OPENAI_MODEL || 'gpt-6-luna'
 });

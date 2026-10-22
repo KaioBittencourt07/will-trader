@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { collectAdvisorReviews } from '../ai/advisors.js';
+import { isDeterministicFallbackEnabled } from '../aiFallbackPolicy.js';
 import { normalizeMarketSnapshot } from '../../../data/src/marketAdapter.js';
 import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
@@ -8,10 +9,6 @@ import { evaluateAnalyzeTemporalAdmission } from '../analyzeTemporalAdmission.js
 import { resolveMarketSnapshotAttestation } from '../marketSnapshotAttestation.js';
 
 const router = Router();
-
-function aiFallbackEnabled() {
-  return process.env.AI_FALLBACK_ENABLED !== 'false';
-}
 
 export function persistAnalyzeDecision(req, body, context = {}) {
   const store = req.app?.locals?.historyStore;
@@ -152,7 +149,7 @@ router.post('/analyze', async (req, res) => {
         audit: createAuditEntry({ signal: normalized, decision: result.decision, context: persistenceContext })
       });
     } catch (aiError) {
-      if (!aiFallbackEnabled()) throw aiError;
+      if (!isDeterministicFallbackEnabled()) throw aiError;
 
       const fallbackDecision = {
         ...deterministic,
