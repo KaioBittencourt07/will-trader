@@ -9,7 +9,8 @@ test('rejects example placeholders without depending on letter case', () => {
     'coloque_sua_chave_anthropic_aqui',
     'coloque_sua_chave_twelvedata_aqui',
     'CONFIGURE_UM_MODELO_DISPONIVEL_NA_XAI',
-    'configure_um_modelo_disponivel_na_anthropic'
+    'configure_um_modelo_disponivel_na_anthropic',
+    'CONFIGURE_UM_TOKEN_SECRETO_LONGO'
   ]) {
     assert.equal(hasConfiguredValue(value), false, value);
   }
