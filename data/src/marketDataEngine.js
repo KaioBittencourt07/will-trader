@@ -10,6 +10,8 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   const cache = new Map();
   const inFlight = new Map();
   let nextRequestAt = 0;
+  // Serialize all provider slots, including batch calls and transient retries.
+  let requestQueue = Promise.resolve();
   const metrics = {
     cacheHits: 0,
     cacheMisses: 0,
@@ -129,46 +131,70 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     return Math.max(0, Math.min(retryMaxMs, Math.round(exponential * (0.5 + Math.max(0, Math.min(1, random()))))));
   }
 
-  async function timedProviderRequest(work, telemetry) {
-    const startedAt = now();
+  async function withRequestSlot(work, telemetry) {
+    const predecessor = requestQueue;
+    let unlock;
+    requestQueue = new Promise((resolve) => { unlock = resolve; });
+    await predecessor;
+
     try {
-      for (let attempt = 0; ; attempt += 1) {
-        try {
-          const result = await work();
-          recordProviderSuccess();
-          return result;
-        } catch (error) {
-          recordProviderError(error, telemetry);
-          if (rateLimited(error)) throw error;
-          if (!transient(error) || attempt >= maxRetries || !canRetry()) {
-            if (transient(error)) metrics.retryExhausted += 1;
-            throw error;
-          }
-          const delay = retryDelay(error, attempt);
-          retryAttempts.push(now());
-          metrics.retries += 1;
-          metrics.backoffMsTotal += delay;
-          await wait(delay);
-        }
+      assertReady(telemetry);
+      const delay = Math.max(0, nextRequestAt - now());
+      if (delay) {
+        metrics.rateLimitWaitMsTotal += delay;
+        metrics.rateLimitWaitCount += 1;
+        addProviderEfficiency(telemetry, { limiterWaitMs: delay });
+        await wait(delay);
+        assertReady(telemetry);
       }
+
+      // Reserve the next start time while holding the queue. Concurrent callers
+      // cannot wake at the same deadline and issue a burst of provider requests.
+      nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
+      return await work();
     } finally {
-      metrics.upstreamLatencyMsTotal += Math.max(0, now() - startedAt);
-      metrics.upstreamLatencySamples += 1;
+      unlock();
+    }
+  }
+
+  async function timedProviderAttempt(work, telemetry) {
+    return withRequestSlot(async () => {
+      const startedAt = now();
+      metrics.upstreamRequests += 1;
+      try {
+        const result = await work();
+        recordProviderSuccess();
+        return result;
+      } catch (error) {
+        recordProviderError(error, telemetry);
+        throw error;
+      } finally {
+        metrics.upstreamLatencyMsTotal += Math.max(0, now() - startedAt);
+        metrics.upstreamLatencySamples += 1;
+      }
+    }, telemetry);
+  }
+
+  async function timedProviderRequest(work, telemetry) {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await timedProviderAttempt(work, telemetry);
+      } catch (error) {
+        if (rateLimited(error)) throw error;
+        if (!transient(error) || attempt >= maxRetries || !canRetry()) {
+          if (transient(error)) metrics.retryExhausted += 1;
+          throw error;
+        }
+        const delay = retryDelay(error, attempt);
+        retryAttempts.push(now());
+        metrics.retries += 1;
+        metrics.backoffMsTotal += delay;
+        await wait(delay);
+      }
     }
   }
 
   async function fetchWithRateLimit(asset, timeframe, outputsize, telemetry) {
-    assertReady(telemetry);
-    const delay = Math.max(0, nextRequestAt - now());
-    if (delay) {
-      metrics.rateLimitWaitMsTotal += delay;
-      metrics.rateLimitWaitCount += 1;
-      addProviderEfficiency(telemetry, { limiterWaitMs: delay });
-      await wait(delay);
-      assertReady(telemetry);
-    }
-    nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
-    metrics.upstreamRequests += 1;
     return timedProviderRequest(() => telemetry
       ? provider.getSnapshot(asset, timeframe, outputsize, { telemetry })
       : provider.getSnapshot(asset, timeframe, outputsize), telemetry);
@@ -231,24 +257,9 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     assertReady(telemetry);
     metrics.cacheMisses += missing.length;
     addProviderEfficiency(telemetry, { cacheMisses: missing.length });
-    const delay = Math.max(0, nextRequestAt - now());
-    if (delay) {
-      metrics.rateLimitWaitMsTotal += delay;
-      metrics.rateLimitWaitCount += 1;
-      addProviderEfficiency(telemetry, { limiterWaitMs: delay });
-      await wait(delay);
-      assertReady(telemetry);
-    }
-    nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
-    metrics.upstreamRequests += 1;
-    let fetched;
-    try {
-      fetched = await timedProviderRequest(() => telemetry
-        ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
-        : provider.getSnapshots(missing, timeframe, outputsize), telemetry);
-    } catch (error) {
-      throw error;
-    }
+    const fetched = await timedProviderRequest(() => telemetry
+      ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
+      : provider.getSnapshots(missing, timeframe, outputsize), telemetry);
     for (const entry of fetched) {
       if (entry?.error) recordProviderError(entry.error, telemetry);
     }
