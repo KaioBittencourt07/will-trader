@@ -374,3 +374,23 @@ test('daily quota can wait briefly when enough previously reserved credits expir
   assert.equal(engine.getMetrics().estimatedCreditsInCurrentDay, 4);
 });
 
+
+
+test('supports zero-credit public market providers without consuming billed-provider quota', async () => {
+  let calls = 0;
+  const engine = createMarketDataEngine({
+    provider: {
+      providerId: 'coinbase-exchange-rest',
+      estimateCreditsForAssets: () => 0,
+      estimateHttpRequestsForAssets: () => 2,
+      getSnapshot: async (asset) => { calls++; return { asset, price: 101, valid: true, status: 'OK' }; }
+    },
+    minRequestIntervalMs: 0,
+    creditBudgetPerMinute: 1,
+    creditBudgetPerDay: 1
+  });
+  const snapshot = await engine.getSnapshot('BTC/USD');
+  assert.equal(snapshot.price, 101);
+  assert.equal(calls, 1);
+  assert.equal(engine.getMetrics().estimatedCreditsReserved, 0);
+});

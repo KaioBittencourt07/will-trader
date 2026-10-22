@@ -10,7 +10,7 @@ O backend serve o dashboard em `/dashboard/`, a API de análise, telemetria de m
 4. Execute `npm start`; o padrão local é `http://127.0.0.1:3000/dashboard/`.
 5. Para testar a conexão do dashboard: `npm run smoke:dashboard -- http://127.0.0.1:3000`.
 
-Sem `TWELVEDATA_API_KEY` real, o backend pode iniciar, mas os dados de mercado externos não estarão disponíveis. Erro, atraso ou inconsistência do feed devem produzir bloqueio/WAIT, não cotações inventadas.
+Sem `TWELVEDATA_API_KEY` real, o backend pode iniciar e consultar apenas os pares de cripto spot com mapeamento público explícito da Coinbase (USD) e da Binance (USDT). Forex, ações, ETFs, índices, commodities e outros símbolos dependem de Twelve Data ou de outra fonte autenticada/verificada; se não houver origem utilizável, o WILL bloqueia o estudo em vez de inventar cotações. As fontes públicas não são cotações Avalon nem autorizam execução de corretora.
 
 O Market Data Engine aplica um limitador seriado, deduplicação/cache e orçamentos estimados de crédito por minuto e por janela móvel de 24 horas. O fallback para Twelve Data é **6 créditos/minuto e 720/24h**; o `.env.example` mostra 8/min e 720/24h como configuração de exemplo para um plano básico, usando `MARKET_MIN_REQUEST_INTERVAL_MS=60000`. Ajuste esses valores ao plano real e mantenha margem para outros usos da mesma chave. O custo é estimado a partir das chamadas quote + time_series por símbolo; cabeçalhos de uso retornados pelo provedor, quando presentes, são evidência melhor que a estimativa local. O orçamento diário não deixa a rota HTTP esperando até o reset: se os créditos não forem liberados em até `MARKET_MAX_DAILY_CREDIT_WAIT_MS` (padrão 10 segundos), retorna bloqueio explícito `PROVIDER_DAILY_CREDIT_BUDGET_EXHAUSTED`. Configure um valor menor se preferir respostas mais rápidas.
 
@@ -66,3 +66,8 @@ O relay local reutiliza `WILL_API_ACCESS_TOKEN` somente para destinos loopback (
 ## Revisão por IA e fallback determinístico
 
 O modelo OpenAI padrão é `gpt-6-luna`; configure `OPENAI_MODEL` somente para um modelo habilitado na sua conta. Uma chave presente não prova que a chamada real funcionará: ela depende de chave válida, modelo disponível e limites da conta. O fallback determinístico permanece ligado por compatibilidade se nenhuma variável for definida; use `ALLOW_DETERMINISTIC_FALLBACK=false` para exigir revisão de IA. Se `AI_FALLBACK_ENABLED` estiver explicitamente definida, ela tem precedência por compatibilidade. Com fallback desativado, falha/ausência de IA não deve ser considerada consenso aprovado.
+
+
+## Roteamento de fontes de mercado
+
+Veja o [catálogo e contrato de fontes](../docs/MARKET_DATA_ROUTING.md). O roteador REST usa Coinbase Exchange público para os pares cripto/USD mapeados e Binance Spot público para os pares cripto/USDT mapeados; a moeda de cotação é sempre explícita. Twelve Data permanece a alternativa para Forex, ações, ETFs, índices, commodities e demais símbolos quando a chave está configurada. O endpoint `/api/market/sources` declara fontes públicas como `IMPLEMENTED_NOT_PROBED` até uma conexão ser testada no seu ambiente. O endpoint `/api/market/reference/fx` fornece somente uma taxa cambial diária de referência (sem uso para sinal intraday). Não existe integração validada com a Avalon.

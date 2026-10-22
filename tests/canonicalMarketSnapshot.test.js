@@ -108,3 +108,104 @@ test('study fingerprint changes when the closed market structure changes', () =>
   const b = buildCanonicalMarketSnapshot({ snapshot: changed, admission, now: NOW });
   assert.notEqual(createCanonicalStudyFingerprint(a).hash, createCanonicalStudyFingerprint(b).hash);
 });
+
+
+test('qualifies Coinbase REST closed candles only with its server-verified last-trade event contract', () => {
+  const bars = candles(50);
+  const eventTimestamp = new Date(NOW).toISOString();
+  const snapshot = readySnapshot({
+    asset: 'BTC/USD',
+    source: 'coinbase-exchange-rest',
+    candles: bars,
+    candleCompleteness: 'VERIFIED_CLOSED_BY_COINBASE_EVENT_TIME',
+    latestClosedCandleTimestamp: bars.at(-1).datetime,
+    latestClosedCandleCloseTimestamp: eventTimestamp,
+    timestampOrigins: {
+      quoteTimestamp: 'coinbase.exchange.ticker.time',
+      quoteTimestampField: 'ticker.time',
+      candleTimestamp: 'coinbase.exchange.product.candles.openTime',
+      candleCloseTimestamp: 'coinbase.exchange.product.candles.openTime_plus_granularity'
+    },
+    authoritativeFreshness: {
+      authorityGate: 'PASS',
+      freshnessGate: 'PASS',
+      timestampAuthority: 'EXCHANGE_EVENT_TIME_SUPPORTED',
+      freshnessContractMs: 30_000,
+      eventTimestamp: NOW
+    }
+  });
+  const accepted = buildCanonicalMarketSnapshot({ snapshot, admission, now: NOW, requiredBars: 50 });
+  assert.equal(accepted.valid, true);
+  assert.equal(accepted.state, 'READY');
+  assert.equal(accepted.source, 'coinbase-exchange-rest');
+  assert.equal(accepted.closedCandles.length, 50);
+});
+
+test('qualifies Binance klines only for the exact trade-time field and a closed timestamp before the trade', () => {
+  const bars = candles(50);
+  const eventTimestamp = new Date(NOW).toISOString();
+  const snapshot = readySnapshot({
+    asset: 'BTC/USDT',
+    source: 'binance-spot-rest',
+    candles: bars,
+    candleCompleteness: 'VERIFIED_CLOSED_BY_BINANCE_EVENT_TIME',
+    latestClosedCandleTimestamp: bars.at(-1).datetime,
+    latestClosedCandleCloseTimestamp: new Date(NOW - 1).toISOString(),
+    timestampOrigins: {
+      quoteTimestamp: 'binance.spot.trades[0].time',
+      quoteTimestampField: 'trades[0].time',
+      candleTimestamp: 'binance.spot.klines.openTime',
+      candleCloseTimestamp: 'binance.spot.klines.closeTime'
+    },
+    authoritativeFreshness: {
+      authorityGate: 'PASS',
+      freshnessGate: 'PASS',
+      timestampAuthority: 'EXCHANGE_EVENT_TIME_SUPPORTED',
+      freshnessContractMs: 30_000,
+      eventTimestamp: NOW
+    }
+  });
+  const accepted = buildCanonicalMarketSnapshot({ snapshot, admission, now: NOW, requiredBars: 50 });
+  assert.equal(accepted.valid, true);
+  assert.equal(accepted.source, 'binance-spot-rest');
+
+  const wrongField = buildCanonicalMarketSnapshot({
+    snapshot: readySnapshot({
+      ...snapshot,
+      timestampOrigins: { ...snapshot.timestampOrigins, quoteTimestampField: 'ticker24hr.closeTime' }
+    }),
+    admission,
+    now: NOW,
+    requiredBars: 50
+  });
+  assert.equal(wrongField.valid, false);
+  assert.ok(wrongField.reasons.includes('CANONICAL_CLOSED_CANDLE_PROOF_MISSING'));
+});
+
+test('rejects public exchange candle proof when the close boundary is later than the last trade', () => {
+  const bars = candles(50);
+  const snapshot = readySnapshot({
+    asset: 'BTC/USD',
+    source: 'coinbase-exchange-rest',
+    candles: bars,
+    candleCompleteness: 'VERIFIED_CLOSED_BY_COINBASE_EVENT_TIME',
+    latestClosedCandleTimestamp: bars.at(-1).datetime,
+    latestClosedCandleCloseTimestamp: new Date(NOW + 1).toISOString(),
+    timestampOrigins: {
+      quoteTimestamp: 'coinbase.exchange.ticker.time',
+      quoteTimestampField: 'ticker.time',
+      candleTimestamp: 'coinbase.exchange.product.candles.openTime',
+      candleCloseTimestamp: 'coinbase.exchange.product.candles.openTime_plus_granularity'
+    },
+    authoritativeFreshness: {
+      authorityGate: 'PASS',
+      freshnessGate: 'PASS',
+      timestampAuthority: 'EXCHANGE_EVENT_TIME_SUPPORTED',
+      freshnessContractMs: 30_000,
+      eventTimestamp: NOW
+    }
+  });
+  const rejected = buildCanonicalMarketSnapshot({ snapshot, admission, now: NOW, requiredBars: 50 });
+  assert.equal(rejected.valid, false);
+  assert.ok(rejected.reasons.includes('CANONICAL_CLOSED_CANDLE_PROOF_MISSING'));
+});

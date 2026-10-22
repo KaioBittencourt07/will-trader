@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { withCycleEvidenceRequest } from '../cycleEvidenceRequest.js';
-import { getMarketDataEngine, getLocalRelaySnapshot } from './market.js';
+import { getMarketSnapshots, getLocalRelaySnapshot } from './market.js';
 import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { selectBestOpportunity } from '../../../engine/src/opportunityEngine.js';
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
@@ -183,7 +183,7 @@ router.get('/opportunities', withCycleEvidenceRequest(async (req, res) => {
     try {
       if (localRelayRequired) throw new Error('LOCAL_RELAY_REQUIRED');
       snapshots = await latency.stage('marketFetchMs', () =>
-        getMarketDataEngine().getSnapshots(selection.assets, timeframe, 55, { telemetry: providerTelemetry })
+        getMarketSnapshots(selection.assets, timeframe, 55, { telemetry: providerTelemetry })
       );
     } catch (error) {
       if (!/EACCES|network error|LOCAL_RELAY_REQUIRED/i.test(error.message)) throw error;

@@ -30,3 +30,17 @@ test('scheduler can prioritize a healthy forming setup without changing its univ
   scheduler.setPriority('C', 90);
   assert.deepEqual(scheduler.take({ assetClass: 'FOREX', limit: 1 }).assets, ['C']);
 });
+
+
+test('exposes separate, explicit watchlists for crypto quote currencies, ETFs, indices and commodities', () => {
+  const scheduler = createMarketUniverseScheduler();
+  for (const marketClass of ['CRYPTO_USDT', 'ETFS', 'INDICES', 'COMMODITIES']) {
+    const result = scheduler.take({ assetClass: marketClass, limit: 4 });
+    assert.equal(result.assetClass, marketClass);
+    assert.ok(result.assets.length > 0);
+    assert.ok(result.totalAssets >= result.assets.length);
+  }
+  assert.ok(MARKET_UNIVERSES.CRYPTO.includes('BTC/USD'));
+  assert.ok(MARKET_UNIVERSES.CRYPTO_USDT.includes('BTC/USDT'));
+  assert.notEqual(MARKET_UNIVERSES.CRYPTO[0], MARKET_UNIVERSES.CRYPTO_USDT[0]);
+});

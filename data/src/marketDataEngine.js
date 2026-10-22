@@ -164,7 +164,8 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     const estimated = typeof provider.estimateCreditsForAssets === 'function'
       ? Number(provider.estimateCreditsForAssets(assets))
       : Math.max(1, new Set(assets).size);
-    if (!Number.isFinite(estimated) || estimated < 1) {
+    // Public providers without billed API credits may truthfully estimate zero.
+    if (!Number.isFinite(estimated) || estimated < 0) {
       throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
     }
     return Math.ceil(estimated);
@@ -201,7 +202,8 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   }
 
   async function reserveCreditBudget(credits, telemetry) {
-    if (!Number.isInteger(credits) || credits < 1) throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
+    if (!Number.isInteger(credits) || credits < 0) throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
+    if (credits === 0) return;
     if (effectiveCreditBudgetPerMinute !== null && credits > effectiveCreditBudgetPerMinute) {
       throw new Error('PROVIDER_BATCH_CREDITS_EXCEED_MINUTE_BUDGET');
     }
