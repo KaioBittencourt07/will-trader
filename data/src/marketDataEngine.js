@@ -228,9 +228,9 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   async function getSnapshots(assets = [], timeframe = '1min', outputsize = 50, { telemetry } = {}) {
     const uniqueAssets = [...new Set(assets.map((asset) => String(asset).trim().toUpperCase()).filter(Boolean))];
     if (!uniqueAssets.length) return [];
-    // The diagnostic and one-symbol scanner use the same canonical request.
-    // Route both through getSnapshot so they share cache, in-flight coalescing
-    // and the centralized cooldown instead of racing two provider operations.
+    // The one-symbol path deliberately shares getSnapshot's canonical cache and
+    // in-flight promise. Multi-symbol batching also registers each missing asset
+    // in the same map so a simultaneous diagnostic cannot request it twice.
     if (uniqueAssets.length === 1) {
       const asset = uniqueAssets[0];
       try { return [{ asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }]; }
@@ -238,11 +238,13 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     }
     if (typeof provider.getSnapshots !== 'function') {
       return Promise.all(uniqueAssets.map(async (asset) => {
-          try { return { asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }; }
+        try { return { asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }; }
         catch (error) { return { asset, snapshot: null, error: error.message }; }
       }));
     }
+
     const fresh = [];
+    const waiting = [];
     const missing = [];
     for (const asset of uniqueAssets) {
       const key = keyFor(asset, timeframe, outputsize);
@@ -251,23 +253,64 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
         metrics.cacheHits += 1;
         addProviderEfficiency(telemetry, { cacheHits: 1 });
         fresh.push({ asset, snapshot: refreshMarketSnapshotFreshness(cached.snapshot, { now: now(), cacheStoredAt: cached.storedAt }), error: null });
-      } else missing.push(asset);
+      } else if (inFlight.has(key)) {
+        metrics.deduplicated += 1;
+        addProviderEfficiency(telemetry, { deduplicated: 1 });
+        waiting.push({ asset, promise: inFlight.get(key) });
+      } else {
+        missing.push(asset);
+      }
     }
-    if (!missing.length) return uniqueAssets.map((asset) => fresh.find((entry) => entry.asset === asset));
-    assertReady(telemetry);
-    metrics.cacheMisses += missing.length;
-    addProviderEfficiency(telemetry, { cacheMisses: missing.length });
-    const fetched = await timedProviderRequest(() => telemetry
-      ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
-      : provider.getSnapshots(missing, timeframe, outputsize), telemetry);
-    for (const entry of fetched) {
-      if (entry?.error) recordProviderError(entry.error, telemetry);
+
+    let fetched = [];
+    const batchPromises = [];
+    if (missing.length) {
+      assertReady(telemetry);
+      metrics.cacheMisses += missing.length;
+      addProviderEfficiency(telemetry, { cacheMisses: missing.length });
+
+      const batchRequest = timedProviderRequest(() => telemetry
+        ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
+        : provider.getSnapshots(missing, timeframe, outputsize), telemetry).then((entries) => {
+          for (const entry of entries) {
+            if (entry?.error) recordProviderError(entry.error, telemetry);
+            if (entry?.snapshot) {
+              cache.set(keyFor(entry.asset, timeframe, outputsize), { snapshot: entry.snapshot, storedAt: now() });
+            }
+          }
+          return entries;
+        });
+
+      for (const asset of missing) {
+        const key = keyFor(asset, timeframe, outputsize);
+        let sharedPromise;
+        sharedPromise = batchRequest.then((entries) => {
+          const entry = entries.find((candidate) => candidate?.asset === asset);
+          if (entry?.snapshot) return entry.snapshot;
+          const message = entry?.error?.message ?? entry?.error ?? 'Ativo não retornado pelo provedor.';
+          throw new Error(String(message));
+        }).finally(() => {
+          if (inFlight.get(key) === sharedPromise) inFlight.delete(key);
+        });
+        inFlight.set(key, sharedPromise);
+        // Keep failures observed even if no single-symbol caller joined this promise.
+        void sharedPromise.catch(() => {});
+        batchPromises.push({ asset, promise: sharedPromise });
+      }
+
+      fetched = await batchRequest;
     }
-    for (const entry of fetched) {
-      if (entry?.snapshot) cache.set(keyFor(entry.asset, timeframe, outputsize), { snapshot: entry.snapshot, storedAt: now() });
-    }
-    const all = [...fresh, ...fetched];
-    return uniqueAssets.map((asset) => all.find((entry) => entry.asset === asset) ?? { asset, snapshot: null, error: 'Ativo não retornado pelo provedor.' });
+
+    const resolvedPending = await Promise.all([...waiting, ...batchPromises].map(async ({ asset, promise }) => {
+      try {
+        return { asset, snapshot: await promise, error: null };
+      } catch (error) {
+        return { asset, snapshot: null, error: String(error?.message || 'Market request failed') };
+      }
+    }));
+    const all = [...fresh, ...resolvedPending];
+    return uniqueAssets.map((asset) => all.find((entry) => entry.asset === asset)
+      ?? { asset, snapshot: null, error: 'Ativo não retornado pelo provedor.' });
   }
 
   return {
