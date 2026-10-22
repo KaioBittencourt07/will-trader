@@ -17,11 +17,18 @@ function getApiAccessTokenOrigin() {
 }
 
 export function getApiAccessToken() {
+  let token = '';
   try {
     const saved = localStorage.getItem('willApiToken');
-    if (saved !== null) return saved.trim();
+    if (saved !== null) token = saved.trim();
   } catch {}
-  return String(window.WILL_API_ACCESS_TOKEN || '').trim();
+  if (!token) token = String(window.WILL_API_ACCESS_TOKEN || '').trim();
+  if (!token) return '';
+
+  // A token saved for another API origin is deliberately not made available
+  // to fetch calls or pre-filled in the settings input.
+  const tokenOrigin = getApiAccessTokenOrigin();
+  return tokenOrigin && currentApiOrigin() === tokenOrigin ? token : '';
 }
 
 export function setApiAccessToken(value) {
