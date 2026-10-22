@@ -115,8 +115,12 @@ export async function fetchTwelveHistoricalDataset({
   if (!Number.isInteger(maxPoints) || maxPoints < 1 || maxPoints > TWELVE_HISTORICAL_MAX_POINTS) {
     throw new Error('HISTORICAL_MAX_POINTS_OUT_OF_RANGE');
   }
-  const estimatedBars = Math.ceil((endMs - startMs) / barWidthMs);
+  const estimatedBars = Math.floor((endMs - startMs) / barWidthMs) + 1;
   if (estimatedBars > maxPoints) throw new Error('HISTORICAL_WINDOW_EXCEEDS_POINT_BUDGET');
+  const validationNowMs = now();
+  if (!Number.isFinite(validationNowMs) || endMs > validationNowMs) {
+    throw new Error('HISTORICAL_END_MUST_NOT_BE_IN_FUTURE');
+  }
   if (typeof fetchImpl !== 'function') throw new Error('HISTORICAL_FETCH_IMPLEMENTATION_REQUIRED');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) {
     throw new Error('HISTORICAL_TIMEOUT_INVALID');
