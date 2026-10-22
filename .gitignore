@@ -4,3 +4,6 @@
 
 # Local secrets - never commit real credentials
 /backend/src/localSecrets.js
+
+# Explicitly collected historical market datasets (may contain licensed data)
+/data/market-datasets/
