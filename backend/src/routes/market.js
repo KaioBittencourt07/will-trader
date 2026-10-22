@@ -109,15 +109,44 @@ router.get('/market', async (req, res) => {
 });
 
 router.get('/market/status', (req, res) => {
-  return res.json({
-    ok: true,
-    direct: getMarketDataEngine().getMetrics(),
-    providerReadiness: getMarketDataEngine().getProviderReadiness(),
-    relay: getLocalRelayStatus(),
-    webSocketShadow: req.app.locals.twelveWebSocketFeed?.health?.() ?? {
-      mode: 'SHADOW_OBSERVABILITY', state: 'UNAVAILABLE', enabled: false, decisionImpact: 'NONE'
+  const webSocketShadow = req.app.locals.twelveWebSocketFeed?.health?.() ?? {
+    mode: 'SHADOW_OBSERVABILITY', state: 'UNAVAILABLE', enabled: false, decisionImpact: 'NONE'
+  };
+  const relay = getLocalRelayStatus();
+
+  try {
+    const engine = getMarketDataEngine();
+    return res.json({
+      ok: true,
+      direct: engine.getMetrics(),
+      providerReadiness: engine.getProviderReadiness(),
+      relay,
+      webSocketShadow
+    });
+  } catch (error) {
+    // Status must remain inspectable even when external market data is not configured.
+    // This does not make market data available or allow a signal to bypass Data Guard.
+    if (String(error?.message || '') === 'TWELVEDATA_API_KEY não configurada.') {
+      return res.json({
+        ok: true,
+        direct: { provider: 'twelvedata', state: 'UNCONFIGURED' },
+        providerReadiness: {
+          provider: 'twelvedata',
+          ready: false,
+          state: 'UNCONFIGURED',
+          reasonCode: 'TWELVEDATA_API_KEY_NOT_CONFIGURED'
+        },
+        relay,
+        webSocketShadow
+      });
     }
-  });
+    return res.status(503).json({
+      ok: false,
+      error: 'MARKET_STATUS_UNAVAILABLE',
+      relay,
+      webSocketShadow
+    });
+  }
 });
 
 router.get('/market/diagnostic', async (req, res) => {
