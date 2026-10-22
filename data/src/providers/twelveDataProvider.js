@@ -221,6 +221,18 @@ export function createTwelveDataProvider({
   if (!apiKey) throw new Error('TWELVEDATA_API_KEY não configurada.');
 
   return {
+    providerId: 'twelvedata',
+    // Current implementation issues one quote and one time_series request.
+    // Both endpoints charge per symbol, including batched symbol queries.
+    estimateCreditsForAssets(assets = []) {
+      return [...new Set((assets || []).map((asset) => String(asset).trim().toUpperCase()).filter(Boolean))].length * 2;
+    },
+    estimateHttpRequestsForAssets(assets = []) {
+      return [...new Set((assets || []).map((asset) => String(asset).trim().toUpperCase()).filter(Boolean))].length ? 2 : 0;
+    },
+    maxSymbolsForCredits(credits) {
+      return Math.floor(Number(credits) / 2);
+    },
     async getSnapshot(asset, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
       const symbol = encodeURIComponent(asset);
       const interval = encodeURIComponent(timeframe);
