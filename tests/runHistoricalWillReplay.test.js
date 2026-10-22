@@ -155,6 +155,8 @@ test('replay CLI refuses invalid archives and never overwrites an existing repor
     assert.equal(second, 1);
     assert.match(errorOutput, /refusing to overwrite/);
 
+    fs.rmSync(path.join(directory, `${dataset.datasetId}.will-replay-v1.json`), { force: true });
+    fs.rmSync(path.join(directory, `${dataset.datasetId}.will-replay-v1.manifest.json`), { force: true });
     const manifestPath = path.join(directory, `${dataset.datasetId}.manifest.json`);
     const envelope = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     fs.writeFileSync(manifestPath, JSON.stringify({ ...envelope, rowCounts: { ...envelope.rowCounts, closedBars: 2 } }, null, 2));
