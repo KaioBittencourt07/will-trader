@@ -57,7 +57,8 @@ export async function collectHistoricalDatasetCli({
   fetchImpl = fetch,
   now = () => Date.now(),
   stdout = (value) => process.stdout.write(value),
-  stderr = (value) => process.stderr.write(value)
+  stderr = (value) => process.stderr.write(value),
+  outputDirectory: outputDirectoryOverride = null
 } = {}) {
   let options;
   try {
@@ -100,7 +101,7 @@ export async function collectHistoricalDatasetCli({
   }
 
   const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-  const outputDirectory = path.join(repoRoot, 'data', 'market-datasets');
+  const outputDirectory = outputDirectoryOverride ?? path.join(repoRoot, 'data', 'market-datasets');
   const safeAsset = dataset.asset.replace(/[^A-Z0-9._-]/g, '-');
   const safeInterval = dataset.interval.replace(/[^a-z0-9._-]/g, '-');
   const fromPart = dataset.requestedWindow.start.replace(/[^0-9]/g, '').slice(0, 12);
