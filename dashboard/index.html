@@ -15,11 +15,11 @@
 <details class="card security">
   <summary>Conexão segura com a API</summary>
   <div class="securityControls">
-    <input id="apiTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Token API de produção">
+    <input id="apiTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Token de produção (mínimo 32 bytes)">
     <button id="saveApiToken" class="secondary" type="button">Salvar token</button>
     <button id="clearApiToken" class="secondary" type="button">Limpar</button>
   </div>
-  <p id="apiTokenStatus" class="small">Em produção, informe o mesmo token configurado como WILL_API_ACCESS_TOKEN no backend. Ele fica salvo apenas neste navegador.</p>
+  <p id="apiTokenStatus" class="small">Informe o mesmo WILL_API_ACCESS_TOKEN do backend (mínimo 32 bytes). O token fica neste navegador e só é enviado à origem da API vinculada no momento em que você o salva.</p>
 </details>
 <div class="grid">
 <section class="stack">
@@ -64,7 +64,7 @@ async function settle(outcome){if(!activeHistoryId)return;$('win').disabled=true
 async function status(){try{const [h,m]=await Promise.all([getHealth(),getMarketStatus()]);$('status').textContent=h.marketConfigured?'ONLINE · ANALYSIS':'SEM FEED';const relay=m.relay||{};$('feed').textContent=relay.coolingDown?`aguardando ${Math.ceil(Number(relay.cooldownMs||0)/1000)}s`:relay.mode==='LOCAL_RELAY'?'relay ativo':'pronto'}catch(error){const message=String(error?.message||'');$('status').textContent=message.toLowerCase().includes('token de acesso')?'TOKEN NECESSÁRIO':'BACKEND OFFLINE';$('feed').textContent='indisponível'}}
 $('auto').onclick=startAuto;$('stop').onclick=()=>stopAuto();$('review').onclick=review;$('outcomeSignal').onchange=e=>{activeHistoryId=e.target.value;updateOutcomeTab()};$('confirmExecution').onclick=confirmActual;$('win').onclick=()=>settle('WIN');$('loss').onclick=()=>settle('LOSS');
 $('apiTokenInput').value=getApiAccessToken();
-$('saveApiToken').onclick=()=>{const saved=setApiAccessToken($('apiTokenInput').value);$('apiTokenStatus').textContent=saved?'Token guardado apenas neste navegador. Testando conexão…':'Token vazio: nenhuma credencial será enviada.';status();refreshLearning()};
+$('saveApiToken').onclick=()=>{const token=$('apiTokenInput').value.trim();if(token&&new TextEncoder().encode(token).length<32){$('apiTokenStatus').textContent='Token inválido: use pelo menos 32 bytes.';return}const saved=setApiAccessToken(token);$('apiTokenStatus').textContent=saved?'Token guardado neste navegador e vinculado à origem atual da API. Testando conexão…':'Token vazio: nenhuma credencial será enviada.';status();refreshLearning()};
 $('clearApiToken').onclick=()=>{setApiAccessToken('');$('apiTokenInput').value='';$('apiTokenStatus').textContent='Token removido deste navegador.';status();refreshLearning()};
 persistSession();status();refreshLearning();setInterval(status,30000);setInterval(refreshLearning,30000);
 </script>
