@@ -6,7 +6,7 @@ test('all-market scheduler rotates through forex, crypto and stocks with a bound
   const scheduler = createMarketUniverseScheduler();
   const first = scheduler.take({ assetClass: 'ALL', limit: 4 });
   const second = scheduler.take({ assetClass: 'ALL', limit: 4 });
-  assert.equal(first.totalAssets, MARKET_UNIVERSES.FOREX.length + MARKET_UNIVERSES.CRYPTO.length + MARKET_UNIVERSES.STOCKS.length);
+  assert.equal(first.totalAssets, Object.values(MARKET_UNIVERSES).reduce((total, assets) => total + assets.length, 0));
   assert.equal(first.assets.length, 4);
   assert.equal(new Set([...first.assets, ...second.assets]).size, 8);
   assert.equal(first.assetClass, 'ALL');
