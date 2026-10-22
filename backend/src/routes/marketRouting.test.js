@@ -136,7 +136,7 @@ test('market source routing prefers exact public crypto mappings, identifies sou
   assert.equal(fallback.body.snapshot.source, 'twelvedata');
   assert.equal(fallback.body.snapshot.providerSelection.fallback, true);
   assert.equal(fallback.body.snapshot.providerSelection.requestedProvider, 'coinbase-exchange-rest');
-  assert.equal(fallback.body.snapshot.providerSelection.priorFailure, 'SOURCE_UNAVAILABLE');
+  assert.deepEqual(fallback.body.snapshot.providerSelection.priorFailure, { provider: 'coinbase-exchange-rest', reasonCode: 'SOURCE_UNAVAILABLE' });
 
   assert.ok(providerCalls.some((call) => call.host === 'api.exchange.coinbase.com'));
   assert.ok(providerCalls.some((call) => call.host === 'data-api.binance.vision'));
