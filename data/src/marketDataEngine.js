@@ -5,8 +5,19 @@ function keyFor(asset, timeframe, outputsize) {
 import { addProviderEfficiency } from './providerEfficiency.js';
 import { refreshMarketSnapshotFreshness } from './marketAdapter.js';
 
-export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
+export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), creditBudgetPerMinute = undefined, maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
   if (!provider || typeof provider.getSnapshot !== 'function') throw new Error('provider.getSnapshot é obrigatório.');
+  const configuredCreditBudget = process.env.MARKET_CREDITS_PER_MINUTE;
+  const effectiveCreditBudgetPerMinute = creditBudgetPerMinute !== undefined
+    ? creditBudgetPerMinute
+    : configuredCreditBudget !== undefined
+      ? Number(configuredCreditBudget)
+      : provider.providerId === 'twelvedata' ? 6 : null;
+  if (effectiveCreditBudgetPerMinute !== null &&
+      (!Number.isInteger(effectiveCreditBudgetPerMinute) || effectiveCreditBudgetPerMinute < 1)) {
+    throw new Error('MARKET_CREDITS_PER_MINUTE must be a positive integer when configured.');
+  }
+  const creditUsage = [];
   const cache = new Map();
   const inFlight = new Map();
   let nextRequestAt = 0;
@@ -25,6 +36,10 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     upstreamLatencySamples: 0,
     rateLimitWaitMsTotal: 0,
     rateLimitWaitCount: 0,
+    estimatedCreditsReserved: 0,
+    estimatedHttpRequests: 0,
+    creditBudgetWaitMsTotal: 0,
+    creditBudgetWaitCount: 0,
     lastProviderError: null,
     retries: 0,
     retryExhausted: 0,
@@ -131,7 +146,69 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     return Math.max(0, Math.min(retryMaxMs, Math.round(exponential * (0.5 + Math.max(0, Math.min(1, random()))))));
   }
 
-  async function withRequestSlot(work, telemetry) {
+  function estimateCredits(assets) {
+    const estimated = typeof provider.estimateCreditsForAssets === 'function'
+      ? Number(provider.estimateCreditsForAssets(assets))
+      : Math.max(1, new Set(assets).size);
+    if (!Number.isFinite(estimated) || estimated < 1) {
+      throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
+    }
+    return Math.ceil(estimated);
+  }
+
+  function estimateHttpRequests(assets) {
+    const estimated = typeof provider.estimateHttpRequestsForAssets === 'function'
+      ? Number(provider.estimateHttpRequestsForAssets(assets))
+      : 1;
+    if (!Number.isFinite(estimated) || estimated < 1) {
+      throw new Error('PROVIDER_HTTP_REQUEST_ESTIMATE_INVALID');
+    }
+    return Math.ceil(estimated);
+  }
+
+  function maxBatchSymbols() {
+    if (effectiveCreditBudgetPerMinute === null || typeof provider.maxSymbolsForCredits !== 'function') return Infinity;
+    const maximum = Number(provider.maxSymbolsForCredits(effectiveCreditBudgetPerMinute));
+    if (!Number.isInteger(maximum) || maximum < 1) {
+      throw new Error('MARKET_CREDIT_BUDGET_TOO_LOW_FOR_SINGLE_ASSET');
+    }
+    return maximum;
+  }
+
+  function pruneCreditUsage(current) {
+    const cutoff = current - 60_000;
+    while (creditUsage.length && creditUsage[0].at <= cutoff) creditUsage.shift();
+  }
+
+  async function reserveCreditBudget(credits, telemetry) {
+    if (!Number.isInteger(credits) || credits < 1) throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
+    if (effectiveCreditBudgetPerMinute === null) {
+      metrics.estimatedCreditsReserved += credits;
+      return;
+    }
+    if (credits > effectiveCreditBudgetPerMinute) throw new Error('PROVIDER_BATCH_CREDITS_EXCEED_BUDGET');
+
+    while (true) {
+      const current = now();
+      pruneCreditUsage(current);
+      const used = creditUsage.reduce((sum, item) => sum + item.credits, 0);
+      if (used + credits <= effectiveCreditBudgetPerMinute) {
+        creditUsage.push({ at: current, credits });
+        metrics.estimatedCreditsReserved += credits;
+        return;
+      }
+
+      const oldest = creditUsage[0];
+      const delay = Math.max(1, oldest.at + 60_000 - current);
+      metrics.creditBudgetWaitMsTotal += delay;
+      metrics.creditBudgetWaitCount += 1;
+      addProviderEfficiency(telemetry, { creditBudgetWaitMs: delay });
+      await wait(delay);
+      assertReady(telemetry);
+    }
+  }
+
+  async function withRequestSlot(work, telemetry, estimatedCredits, estimatedHttpRequests) {
     const predecessor = requestQueue;
     let unlock;
     requestQueue = new Promise((resolve) => { unlock = resolve; });
@@ -148,19 +225,21 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
         assertReady(telemetry);
       }
 
-      // Reserve the next start time while holding the queue. Concurrent callers
-      // cannot wake at the same deadline and issue a burst of provider requests.
+      // Reserve credits before the call while holding the same serial queue.
+      // The estimate counts each billed symbol/endpoint, not only JS calls.
+      await reserveCreditBudget(estimatedCredits, telemetry);
       nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
-      return await work();
+      return await work(estimatedHttpRequests);
     } finally {
       unlock();
     }
   }
 
-  async function timedProviderAttempt(work, telemetry) {
-    return withRequestSlot(async () => {
+  async function timedProviderAttempt(work, telemetry, estimatedCredits, estimatedHttpRequests) {
+    return withRequestSlot(async (httpRequests) => {
       const startedAt = now();
       metrics.upstreamRequests += 1;
+      metrics.estimatedHttpRequests += httpRequests;
       try {
         const result = await work();
         recordProviderSuccess();
@@ -172,13 +251,13 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
         metrics.upstreamLatencyMsTotal += Math.max(0, now() - startedAt);
         metrics.upstreamLatencySamples += 1;
       }
-    }, telemetry);
+    }, telemetry, estimatedCredits, estimatedHttpRequests);
   }
 
-  async function timedProviderRequest(work, telemetry) {
+  async function timedProviderRequest(work, telemetry, estimatedCredits = 1, estimatedHttpRequests = 1) {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await timedProviderAttempt(work, telemetry);
+        return await timedProviderAttempt(work, telemetry, estimatedCredits, estimatedHttpRequests);
       } catch (error) {
         if (rateLimited(error)) throw error;
         if (!transient(error) || attempt >= maxRetries || !canRetry()) {
@@ -195,9 +274,11 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   }
 
   async function fetchWithRateLimit(asset, timeframe, outputsize, telemetry) {
+    const assets = [String(asset).trim().toUpperCase()];
     return timedProviderRequest(() => telemetry
       ? provider.getSnapshot(asset, timeframe, outputsize, { telemetry })
-      : provider.getSnapshot(asset, timeframe, outputsize), telemetry);
+      : provider.getSnapshot(asset, timeframe, outputsize), telemetry,
+      estimateCredits(assets), estimateHttpRequests(assets));
   }
 
   async function getSnapshot(asset, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
