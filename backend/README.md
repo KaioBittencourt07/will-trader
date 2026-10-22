@@ -26,3 +26,18 @@ Sem `TWELVEDATA_API_KEY` real, o backend pode iniciar, mas os dados de mercado e
 - O CI constrói a imagem Docker e testa `/health`, o dashboard e os cenários com/sem token. Não considere validação concluída enquanto o job não terminar em sucesso.
 
 Nenhuma dessas verificações demonstra rentabilidade. Não foi autorizada execução automática na Avalon ou em outra corretora.
+
+## Coleta histórica para análise (sempre opt-in)
+
+O coletor `market:history` faz **uma requisição histórica para um ativo** quando invocado, e nunca roda no startup ou na CI. Ele exige a confirmação `--confirm-provider-credits`, uma chave real e janela temporal em ISO-8601 com fuso explícito. A chamada é limitada a 5.000 barras e a intervalos intraday suportados; janelas futuras e nomes de arquivo já existentes são recusados antes de consultar a API.
+
+No PowerShell:
+
+```powershell
+cd backend
+$env:TWELVEDATA_API_KEY = "SUA_CHAVE_REAL"
+npm run market:history -- --asset EUR/USD --interval 1min --start 2026-10-01T12:00:00Z --end 2026-10-01T13:00:00Z --confirm-provider-credits
+```
+
+A saída local fica em `../data/market-datasets/` e não é enviada ao Git nem empacotada no Docker. O coletor guarda os bytes brutos, observações derivadas somente de barras fechadas e manifestos SHA-256. Ele não sobrescreve arquivos existentes e não declara edge. Leia o [protocolo de validação](../docs/MARKET_VALIDATION_PROTOCOL.md) e confira as quotas do seu plano antes de executar; os cabeçalhos de créditos reportados pela API são mais autoritativos do que qualquer estimativa local.
+
