@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --detach --name will-trader-smoke -e WILL_API_ACCESS_TOKEN=ci-token-for-smoke-test-only -p 3000:3000 will-trader:ci
+          docker run --detach --name will-trader-smoke -e WILL_API_ACCESS_TOKEN=ci-token-for-smoke-test-only-long-enough-001 -p 3000:3000 will-trader:ci
           cleanup() {
             docker logs will-trader-smoke || true
             docker rm --force will-trader-smoke >/dev/null 2>&1 || true
@@ -56,5 +56,5 @@ jobs:
           grep -q 'WILL TRADER' /tmp/will-dashboard.html
           unauthenticated_status=$(curl --silent --output /tmp/will-unauthorized.json --write-out '%{http_code}' http://127.0.0.1:3000/api/market/status)
           test "$unauthenticated_status" = "401"
-          curl --fail --silent -H "Authorization: Bearer ci-token-for-smoke-test-only" http://127.0.0.1:3000/api/market/status >/tmp/will-api-status.json
+          curl --fail --silent -H "Authorization: Bearer ci-token-for-smoke-test-only-long-enough-001" http://127.0.0.1:3000/api/market/status >/tmp/will-api-status.json
           node -e "const fs=require('node:fs');const assert=require('node:assert/strict');const s=JSON.parse(fs.readFileSync('/tmp/will-api-status.json','utf8'));assert.equal(s.ok,true)"
