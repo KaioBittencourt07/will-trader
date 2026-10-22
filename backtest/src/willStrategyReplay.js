@@ -100,8 +100,9 @@ export function runWillStrategyReplay({
     expirySeconds = replayOptions.expirySeconds ?? 60,
     windowBeforeMs = 2_000,
     windowAfterMs = 3_000,
-    macroBlocked = false,
-    newsBlocked = false
+    macroBlocked: requestedMacroBlocked = false,
+    newsBlocked: requestedNewsBlocked = false,
+    technicalOnlyDiagnostic = false
   } = strategyOptions;
 
   if (!Number.isFinite(Number(minimumConfidence)) || Number(minimumConfidence) < 0 || Number(minimumConfidence) > 100) {
@@ -115,6 +116,10 @@ export function runWillStrategyReplay({
       !Number.isFinite(windowAfterMs) || windowAfterMs < 0) {
     throw new Error('STRATEGY_TIMING_OPTIONS_INVALID');
   }
+
+  if (typeof technicalOnlyDiagnostic !== 'boolean') throw new Error('STRATEGY_CONTEXT_MODE_INVALID');
+  const macroBlocked = technicalOnlyDiagnostic ? Boolean(requestedMacroBlocked) : true;
+  const newsBlocked = technicalOnlyDiagnostic ? Boolean(requestedNewsBlocked) : true;
 
   const priceObservations = prepared.bars.map((bar) => ({
     asset: prepared.symbol,
@@ -244,7 +249,10 @@ export function runWillStrategyReplay({
       expirySeconds,
       macroBlocked,
       newsBlocked,
-      note: 'No historical macro/news feed supplied unless explicitly injected; output is not an execution record.'
+      contextMode: technicalOnlyDiagnostic ? 'TECHNICAL_ONLY_DIAGNOSTIC_MACRO_NEWS_OMITTED' : 'MISSING_MACRO_NEWS_FAIL_CLOSED',
+      note: technicalOnlyDiagnostic
+        ? 'Macro/news filters intentionally omitted for a technical-only diagnostic; not the full operational strategy.'
+        : 'No authenticated historical macro/news timeline supplied; directional candidates are blocked fail-closed.'
     },
     datasetEvidence: datasetManifest
       ? { supplied: true, claim: 'CALLER_SUPPLIED_MANIFEST_NOT_VERIFIED_BY_STRATEGY_REPLAY', datasetManifest }
