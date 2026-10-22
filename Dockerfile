@@ -16,7 +16,6 @@ COPY context ./context
 COPY learning ./learning
 COPY paper ./paper
 COPY backtest ./backtest
-COPY core ./core
 COPY dashboard ./dashboard
 
 ENV NODE_ENV=production
