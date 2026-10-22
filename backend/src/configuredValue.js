@@ -4,7 +4,8 @@ const PLACEHOLDERS = new Set([
   'coloque_sua_chave_anthropic_aqui',
   'coloque_sua_chave_twelvedata_aqui',
   'configure_um_modelo_disponivel_na_xai',
-  'configure_um_modelo_disponivel_na_anthropic'
+  'configure_um_modelo_disponivel_na_anthropic',
+  'configure_um_token_secreto_longo'
 ]);
 
 /**
