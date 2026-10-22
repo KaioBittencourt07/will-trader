@@ -343,16 +343,22 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
       }
     }
 
-    let fetched = [];
     const batchPromises = [];
+    const batchRequests = [];
     if (missing.length) {
       assertReady(telemetry);
       metrics.cacheMisses += missing.length;
       addProviderEfficiency(telemetry, { cacheMisses: missing.length });
 
-      const batchRequest = timedProviderRequest(() => telemetry
-        ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
-        : provider.getSnapshots(missing, timeframe, outputsize), telemetry).then((entries) => {
+      const chunkSize = Math.min(missing.length, maxBatchSymbols());
+      for (let offset = 0; offset < missing.length; offset += chunkSize) {
+        const chunk = missing.slice(offset, offset + chunkSize);
+        const estimatedCredits = estimateCredits(chunk);
+        const estimatedHttpRequests = estimateHttpRequests(chunk);
+        const batchRequest = timedProviderRequest(() => telemetry
+          ? provider.getSnapshots(chunk, timeframe, outputsize, { telemetry })
+          : provider.getSnapshots(chunk, timeframe, outputsize),
+        telemetry, estimatedCredits, estimatedHttpRequests).then((entries) => {
           for (const entry of entries) {
             if (entry?.error) recordProviderError(entry.error, telemetry);
             if (entry?.snapshot) {
@@ -361,25 +367,27 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
           }
           return entries;
         });
+        batchRequests.push(batchRequest);
 
-      for (const asset of missing) {
-        const key = keyFor(asset, timeframe, outputsize);
-        let sharedPromise;
-        sharedPromise = batchRequest.then((entries) => {
-          const entry = entries.find((candidate) => candidate?.asset === asset);
-          if (entry?.snapshot) return entry.snapshot;
-          const message = entry?.error?.message ?? entry?.error ?? 'Ativo não retornado pelo provedor.';
-          throw new Error(String(message));
-        }).finally(() => {
-          if (inFlight.get(key) === sharedPromise) inFlight.delete(key);
-        });
-        inFlight.set(key, sharedPromise);
-        // Keep failures observed even if no single-symbol caller joined this promise.
-        void sharedPromise.catch(() => {});
-        batchPromises.push({ asset, promise: sharedPromise });
+        for (const asset of chunk) {
+          const key = keyFor(asset, timeframe, outputsize);
+          let sharedPromise;
+          sharedPromise = batchRequest.then((entries) => {
+            const entry = entries.find((candidate) => candidate?.asset === asset);
+            if (entry?.snapshot) return entry.snapshot;
+            const message = entry?.error?.message ?? entry?.error ?? 'Ativo não retornado pelo provedor.';
+            throw new Error(String(message));
+          }).finally(() => {
+            if (inFlight.get(key) === sharedPromise) inFlight.delete(key);
+          });
+          inFlight.set(key, sharedPromise);
+          // Keep failures observed even if no single-symbol caller joined this promise.
+          void sharedPromise.catch(() => {});
+          batchPromises.push({ asset, promise: sharedPromise });
+        }
       }
 
-      fetched = await batchRequest;
+      await Promise.all(batchRequests);
     }
 
     const resolvedPending = await Promise.all([...waiting, ...batchPromises].map(async ({ asset, promise }) => {
@@ -404,7 +412,13 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
       degradedDurationMs: metrics.degradedSince === null ? 0 : Math.max(0, now() - metrics.degradedSince),
       upstreamLatencyMsAverage: metrics.upstreamLatencySamples
         ? metrics.upstreamLatencyMsTotal / metrics.upstreamLatencySamples
-        : null
+        : null,
+      creditBudgetPerMinute: effectiveCreditBudgetPerMinute,
+      estimatedCreditsInCurrentWindow: (() => {
+        if (effectiveCreditBudgetPerMinute === null) return null;
+        pruneCreditUsage(now());
+        return creditUsage.reduce((sum, item) => sum + item.credits, 0);
+      })()
     }),
     getProviderReadiness: readiness,
     clearCache: () => cache.clear()
