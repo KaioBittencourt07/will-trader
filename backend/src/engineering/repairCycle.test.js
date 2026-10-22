@@ -74,6 +74,25 @@ test('protected paths are rejected before patch application', async () => {
   assert.ok(adapter.calls.includes('discard:1'));
 });
 
+test('diff path mismatch is discarded even when the proposed patch path was allowed', async () => {
+  const adapter = makeAdapter({
+    async inspectDiff() {
+      this.calls.push('diff-mismatch');
+      return {
+        changedPaths: ['docs/engineering/unreported-change.md'],
+        diffReviewed: true,
+        secretsDetected: false,
+        testsWeakened: false
+      };
+    }
+  });
+  const result = await runBoundedRepairCycle({ adapter, requestedPaths: scope });
+  assert.equal(result.decision, 'STOP_AND_REPORT');
+  assert.equal(result.rejectedAttempts[0].reasons[0], 'PATCH_DIFF_PATH_MISMATCH');
+  assert.ok(adapter.calls.includes('discard:1'));
+  assert.ok(!adapter.calls.includes('retain:1'));
+});
+
 test('adapter errors are contained and active workspace is discarded', async () => {
   const adapter = makeAdapter({ async runRequiredChecks() { throw new Error('adapter failed'); }});
   const result = await runBoundedRepairCycle({ adapter, requestedPaths: scope });
