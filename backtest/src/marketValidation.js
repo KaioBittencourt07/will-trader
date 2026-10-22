@@ -104,9 +104,11 @@ export function validatePriceObservations(records) {
   });
 }
 
-function validateReplayOptions({ expirySeconds, entryDelayMs, stake, payoutRatio, costPerTrade, minimumBinaryTrades }) {
+function validateReplayOptions({ expirySeconds, entryDelayMs, maxEntryQuoteDelayMs, maxExpiryQuoteDelayMs, stake, payoutRatio, costPerTrade, minimumBinaryTrades }) {
   if (!Number.isInteger(expirySeconds) || expirySeconds <= 0) throw new Error('INVALID_EXPIRY_SECONDS');
   if (!Number.isInteger(entryDelayMs) || entryDelayMs < 0) throw new Error('INVALID_ENTRY_DELAY_MS');
+  if (!Number.isInteger(maxEntryQuoteDelayMs) || maxEntryQuoteDelayMs < 0) throw new Error('INVALID_MAX_ENTRY_QUOTE_DELAY_MS');
+  if (!Number.isInteger(maxExpiryQuoteDelayMs) || maxExpiryQuoteDelayMs < 0) throw new Error('INVALID_MAX_EXPIRY_QUOTE_DELAY_MS');
   if (!Number.isFinite(stake) || stake <= 0) throw new Error('INVALID_STAKE');
   if (payoutRatio !== null && (!Number.isFinite(payoutRatio) || payoutRatio <= 0 || payoutRatio > 10)) {
     throw new Error('INVALID_PAYOUT_RATIO');
@@ -132,12 +134,14 @@ export function runHistoricalReplay({
   observations,
   expirySeconds = 60,
   entryDelayMs = 250,
+  maxEntryQuoteDelayMs = 5_000,
+  maxExpiryQuoteDelayMs = 5_000,
   payoutRatio = null,
   stake = 1,
   costPerTrade = 0,
   minimumBinaryTrades = 100
 } = {}) {
-  validateReplayOptions({ expirySeconds, entryDelayMs, stake, payoutRatio, costPerTrade, minimumBinaryTrades });
+  validateReplayOptions({ expirySeconds, entryDelayMs, maxEntryQuoteDelayMs, maxExpiryQuoteDelayMs, stake, payoutRatio, costPerTrade, minimumBinaryTrades });
   if (!Array.isArray(decisions)) throw new TypeError('DECISIONS_MUST_BE_AN_ARRAY');
 
   const dataReport = validatePriceObservations(observations);
@@ -159,21 +163,27 @@ export function runHistoricalReplay({
     }
     const asset = assetKey(decision.asset);
     const time = timestampMs(decision.decisionTimestamp ?? decision.timestamp);
+    const plannedEntryTime = decision.plannedEntryTimestamp === undefined || decision.plannedEntryTimestamp === null
+      ? null
+      : timestampMs(decision.plannedEntryTimestamp);
     const direction = typeof decision.direction === 'string' ? decision.direction.toUpperCase() : '';
     const id = decision.id === undefined || decision.id === null || decision.id === ''
       ? `decision-${index + 1}`
       : String(decision.id);
     if (!ASSET_PATTERN.test(asset)) throw new Error(`INVALID_DECISION_ASSET:${index}`);
     if (!Number.isFinite(time)) throw new Error(`INVALID_DECISION_TIMESTAMP:${index}`);
+    if (plannedEntryTime !== null && (!Number.isFinite(plannedEntryTime) || plannedEntryTime <= time)) {
+      throw new Error(`PLANNED_ENTRY_MUST_FOLLOW_DECISION:${index}`);
+    }
     if (!['BUY', 'SELL', 'WAIT'].includes(direction)) throw new Error(`INVALID_DECISION_DIRECTION:${index}`);
     if (seenDecisionIds.has(id)) throw new Error('DUPLICATE_DECISION_ID');
     seenDecisionIds.add(id);
-    return { decision, index, id, asset, time, direction };
+    return { decision, index, id, asset, time, plannedEntryTime, direction };
   }).sort((a, b) => a.time - b.time || a.index - b.index);
 
   const results = [];
   for (const item of prepared) {
-    const { decision, id, asset, time, direction } = item;
+    const { decision, id, asset, time, plannedEntryTime, direction } = item;
     const decisionTime = new Date(time).toISOString();
 
     if (direction === 'WAIT') {
@@ -190,11 +200,32 @@ export function runHistoricalReplay({
     }
 
     const quotes = quotesByAsset.get(asset) ?? [];
-    const entryTarget = time + Math.max(1, entryDelayMs);
+    // Generic decisions need a strictly later observation. Engine-produced
+    // decisions may supply an explicitly future plannedEntryTimestamp; a quote
+    // at that planned click time is allowed because it is still after the signal.
+    const entryTarget = plannedEntryTime !== null
+      ? plannedEntryTime + entryDelayMs
+      : time + Math.max(1, entryDelayMs);
     const entryIndex = lowerBound(quotes, entryTarget);
     const entry = quotes[entryIndex];
     if (!entry) {
-      results.push({ id, asset, direction, decisionTimestamp: decisionTime, status: 'UNRESOLVED', reasonCode: 'NO_POST_DECISION_ENTRY_QUOTE' });
+      results.push({
+        id, asset, direction, decisionTimestamp: decisionTime,
+        plannedEntryTimestamp: plannedEntryTime === null ? null : new Date(plannedEntryTime).toISOString(),
+        targetEntryTimestamp: new Date(entryTarget).toISOString(),
+        status: 'UNRESOLVED', reasonCode: 'NO_POST_DECISION_ENTRY_QUOTE'
+      });
+      continue;
+    }
+    const entryQuoteDelayMs = entry.timestampMs - entryTarget;
+    if (entryQuoteDelayMs > maxEntryQuoteDelayMs) {
+      results.push({
+        id, asset, direction, decisionTimestamp: decisionTime,
+        plannedEntryTimestamp: plannedEntryTime === null ? null : new Date(plannedEntryTime).toISOString(),
+        targetEntryTimestamp: new Date(entryTarget).toISOString(),
+        entryTimestamp: entry.timestamp, entryPrice: entry.price, entryQuoteDelayMs,
+        status: 'UNRESOLVED', reasonCode: 'ENTRY_QUOTE_TOO_LATE'
+      });
       continue;
     }
 
@@ -204,9 +235,24 @@ export function runHistoricalReplay({
     if (!exit || exit.timestampMs <= entry.timestampMs) {
       results.push({
         id, asset, direction, decisionTimestamp: decisionTime,
+        plannedEntryTimestamp: plannedEntryTime === null ? null : new Date(plannedEntryTime).toISOString(),
+        targetEntryTimestamp: new Date(entryTarget).toISOString(),
         entryTimestamp: entry.timestamp, entryPrice: entry.price,
         targetExpiryTimestamp: new Date(expiryTarget).toISOString(),
         status: 'UNRESOLVED', reasonCode: 'NO_POST_EXPIRY_SETTLEMENT_QUOTE'
+      });
+      continue;
+    }
+    const expiryDelayMs = exit.timestampMs - expiryTarget;
+    if (expiryDelayMs > maxExpiryQuoteDelayMs) {
+      results.push({
+        id, asset, direction, decisionTimestamp: decisionTime,
+        plannedEntryTimestamp: plannedEntryTime === null ? null : new Date(plannedEntryTime).toISOString(),
+        targetEntryTimestamp: new Date(entryTarget).toISOString(),
+        entryTimestamp: entry.timestamp, entryPrice: entry.price,
+        targetExpiryTimestamp: new Date(expiryTarget).toISOString(),
+        settlementTimestamp: exit.timestamp, settlementPrice: exit.price,
+        expiryDelayMs, status: 'UNRESOLVED', reasonCode: 'EXPIRY_QUOTE_TOO_LATE'
       });
       continue;
     }
@@ -224,10 +270,13 @@ export function runHistoricalReplay({
 
     results.push({
       id, asset, direction, decisionTimestamp: decisionTime,
+      plannedEntryTimestamp: plannedEntryTime === null ? null : new Date(plannedEntryTime).toISOString(),
+      targetEntryTimestamp: new Date(entryTarget).toISOString(),
       entryTimestamp: entry.timestamp, entryPrice: entry.price,
+      entryQuoteDelayMs,
       targetExpiryTimestamp: new Date(expiryTarget).toISOString(),
       settlementTimestamp: exit.timestamp, settlementPrice: exit.price,
-      expiryDelayMs: exit.timestampMs - expiryTarget,
+      expiryDelayMs,
       outcome, pnl, status: 'SETTLED'
     });
   }
@@ -317,9 +366,11 @@ export function runHistoricalReplay({
       provenance: 'CALLER_SUPPLIED_NOT_AUTHENTICATED'
     },
     executionAssumptions: {
-      entryRule: 'first quote strictly after decision time and at/after configured delay',
+      entryRule: 'first quote strictly after decision time, or at/after an explicit future plannedEntryTimestamp',
       expiryRule: 'first quote at/after entry timestamp plus expiry seconds',
-      quoteDelayMode: 'measured by settlement timestamp against target expiry',
+      maxEntryQuoteDelayMs,
+      maxExpiryQuoteDelayMs,
+      quoteDelayMode: 'quotes later than configured entry/expiry delay limits become UNRESOLVED',
       spreadSlippageAndBrokerFill: 'NOT_MODELED',
       decisionsUseSameTimestampQuoteForEntry: false,
       payoutRatioSuppliedByCaller: payoutRatio !== null
