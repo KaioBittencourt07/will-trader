@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchFrankfurterDailyReference } from './fxReferenceRate.js';
+import { fetchFrankfurterDailyReference } from '../backend/src/fxReferenceRate.js';
 
 function response(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
