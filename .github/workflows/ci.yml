@@ -2,13 +2,12 @@ name: WILL CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +18,32 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
-      - name: Run tests
+      - name: Run backend-local tests
         working-directory: backend
         run: npm test
+      - name: Run full repository regression suite
+        run: node --test tests/*.test.js
+      - name: Build production Docker image
+        run: docker build --tag will-trader:ci .
+      - name: Smoke test production container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name will-trader-smoke -p 3000:3000 will-trader:ci
+          cleanup() {
+            docker logs will-trader-smoke || true
+            docker rm --force will-trader-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/health >/tmp/will-health.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+          node -e "const fs=require('node:fs');const assert=require('node:assert/strict');const h=JSON.parse(fs.readFileSync('/tmp/will-health.json','utf8'));assert.equal(h.ok,true);assert.equal(h.service,'will-trader-backend');assert.equal(h.paperMonitorConfig.automatedBrokerExecution,false)"
+          curl --fail --silent http://127.0.0.1:3000/dashboard/ >/tmp/will-dashboard.html
+          grep -q 'WILL TRADER' /tmp/will-dashboard.html
