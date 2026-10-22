@@ -2,7 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fetchTwelveHistoricalDataset } from '../../data/src/providers/twelveHistoricalDataset.js';
 import { createMarketDatasetManifest } from '../../backtest/src/datasetManifest.js';
 
