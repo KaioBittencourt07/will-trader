@@ -40,15 +40,52 @@ function parseArgs(argv) {
   return parsed;
 }
 
-function atomicWrite(target, bytes) {
+function atomicWriteExclusive(target, bytes) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.${randomUUID()}.tmp`;
   try {
     fs.writeFileSync(temporary, bytes, { flag: 'wx' });
-    fs.renameSync(temporary, target);
+    // linkSync creates the final name atomically and fails with EEXIST instead
+    // of replacing an earlier evidence artifact.
+    fs.linkSync(temporary, target);
   } finally {
     try { fs.rmSync(temporary, { force: true }); } catch {}
   }
+}
+
+function acquireCollectionLock(outputDirectory, datasetId) {
+  fs.mkdirSync(outputDirectory, { recursive: true });
+  const lockPath = path.join(outputDirectory, `${datasetId}.lock`);
+  let descriptor;
+  try {
+    descriptor = fs.openSync(lockPath, 'wx');
+    fs.writeSync(descriptor, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+    return { path: lockPath, descriptor };
+  } catch (error) {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch {}
+      try { fs.rmSync(lockPath, { force: true }); } catch {}
+    }
+    if (error?.code === 'EEXIST') {
+      try {
+        const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+        // The provider timeout is capped at 120s; a 10-minute lease safely
+        // identifies abandoned local locks without racing normal requests.
+        if (ageMs > 600_000) {
+          fs.rmSync(lockPath, { force: true });
+          return acquireCollectionLock(outputDirectory, datasetId);
+        }
+      } catch {}
+      return null;
+    }
+    throw error;
+  }
+}
+
+function releaseCollectionLock(lock) {
+  if (!lock) return;
+  try { fs.closeSync(lock.descriptor); } catch {}
+  try { fs.rmSync(lock.path, { force: true }); } catch {}
 }
 
 export async function collectHistoricalDatasetCli({
@@ -93,6 +130,19 @@ export async function collectHistoricalDatasetCli({
     return 1;
   }
 
+  let datasetLock;
+  try {
+    datasetLock = acquireCollectionLock(outputDirectory, predictedDatasetId);
+  } catch (error) {
+    stderr(`HISTORICAL_COLLECTION_LOCK_FAILED:${String(error?.code || 'IO_ERROR').slice(0, 80)}\n`);
+    return 1;
+  }
+  if (!datasetLock) {
+    stderr('HISTORICAL_COLLECTION_ALREADY_RUNNING: same dataset request is locked; no provider request was made.\n');
+    return 1;
+  }
+
+  try {
   let dataset;
   try {
     dataset = await fetchTwelveHistoricalDataset({
@@ -168,9 +218,9 @@ export async function collectHistoricalDatasetCli({
   const collectionManifest = { ...collectionFields, collectionManifestSha256 };
 
   try {
-    atomicWrite(path.join(outputDirectory, rawFile), rawBytes);
-    atomicWrite(path.join(outputDirectory, observationsFile), observationBytes);
-    atomicWrite(path.join(outputDirectory, manifestFile), Buffer.from(JSON.stringify(collectionManifest, null, 2), 'utf8'));
+    atomicWriteExclusive(path.join(outputDirectory, rawFile), rawBytes);
+    atomicWriteExclusive(path.join(outputDirectory, observationsFile), observationBytes);
+    atomicWriteExclusive(path.join(outputDirectory, manifestFile), Buffer.from(JSON.stringify(collectionManifest, null, 2), 'utf8'));
   } catch (error) {
     stderr(`HISTORICAL_ARTIFACT_WRITE_FAILED:${String(error?.code || 'IO_ERROR').slice(0, 80)}\n`);
     return 1;
@@ -194,6 +244,9 @@ export async function collectHistoricalDatasetCli({
     note: 'Dataset is archived, not yet a trading-result claim.'
   }, null, 2) + '\n');
   return 0;
+  } finally {
+    releaseCollectionLock(datasetLock);
+  }
 }
 
 const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
