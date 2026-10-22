@@ -13,9 +13,19 @@ function mockFetch(url) {
   return Promise.resolve({ ok: true, json: async () => body });
 }
 
-test('builds a valid market snapshot from quote and candles', async () => {
-  const provider = createTwelveDataProvider({ apiKey: 'test', fetchImpl: mockFetch });
+test('builds a valid market snapshot and explicitly requests OHLC fields', async () => {
+  const requestUrls = [];
+  const provider = createTwelveDataProvider({
+    apiKey: 'test',
+    fetchImpl: async (url) => {
+      requestUrls.push(url);
+      return mockFetch(url);
+    }
+  });
   const result = await provider.getSnapshot('EUR/USD', '1min', 20);
+  const seriesUrl = requestUrls.find((url) => url.includes('/time_series?'));
+  assert.ok(seriesUrl);
+  assert.match(seriesUrl, /include_ohlc=true/);
   assert.equal(result.valid, true);
   assert.equal(result.source, 'twelvedata');
   assert.equal(result.candleCount, 20);
