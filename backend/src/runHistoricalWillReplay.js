@@ -216,6 +216,88 @@ function atomicWrite(filePath, bytes) {
  * This command does not access the network, provider credentials, history store,
  * live scanner, advisor APIs, broker or real-money execution.
  */
+export function verifyHistoricalWillReplayArtifact({ datasetId, outputDirectory = DEFAULT_DIRECTORY } = {}) {
+  if (typeof datasetId !== 'string' || !DATASET_ID_PATTERN.test(datasetId)) {
+    throw new Error('HISTORICAL_DATASET_ID_REQUIRED');
+  }
+
+  const archive = verifyTwelveHistoricalArchive({ datasetId, outputDirectory });
+  const reportPath = path.join(outputDirectory, `${datasetId}.will-replay-v1.json`);
+  const manifestPath = path.join(outputDirectory, `${datasetId}.will-replay-v1.manifest.json`);
+  const checks = {
+    sourceArchiveValid: archive.valid === true,
+    replayReportPresent: fs.existsSync(reportPath),
+    replayManifestPresent: fs.existsSync(manifestPath),
+    reportSha256Valid: false,
+    manifestSha256Valid: false,
+    sourceHashesMatch: false,
+    reportContractValid: false
+  };
+  const reasonCodes = [];
+  if (!checks.replayReportPresent || !checks.replayManifestPresent) {
+    reasonCodes.push('REPLAY_ARTIFACT_MISSING');
+    return { schemaVersion: 'will-historical-replay-verification-v1', valid: false, datasetId, checks, reasonCodes };
+  }
+
+  const reportBytes = fs.readFileSync(reportPath);
+  const report = (() => {
+    try { return JSON.parse(reportBytes.toString('utf8')); } catch { return null; }
+  })();
+  const manifest = readJson(manifestPath);
+  if (!report || !manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    reasonCodes.push('REPLAY_ARTIFACT_JSON_INVALID');
+    return { schemaVersion: 'will-historical-replay-verification-v1', valid: false, datasetId, checks, reasonCodes };
+  }
+
+  checks.reportSha256Valid = hash(reportBytes) === manifest.reportSha256;
+  if (!checks.reportSha256Valid) reasonCodes.push('REPLAY_REPORT_HASH_MISMATCH');
+
+  const { replayManifestSha256, ...manifestFields } = manifest;
+  checks.manifestSha256Valid = typeof replayManifestSha256 === 'string' &&
+    hash(Buffer.from(JSON.stringify(manifestFields), 'utf8')) === replayManifestSha256;
+  if (!checks.manifestSha256Valid) reasonCodes.push('REPLAY_MANIFEST_HASH_MISMATCH');
+
+  checks.sourceHashesMatch = checks.sourceArchiveValid &&
+    manifest.datasetId === datasetId &&
+    manifest.datasetRawSha256 === archive.rawSha256 &&
+    manifest.datasetObservationsSha256 === archive.observationsSha256 &&
+    manifest.datasetManifestSha256 === archive.datasetManifestSha256 &&
+    manifest.collectionManifestSha256 === archive.collectionManifestSha256;
+  if (!checks.sourceHashesMatch) reasonCodes.push('REPLAY_SOURCE_HASH_MISMATCH');
+
+  checks.reportContractValid = report.schemaVersion === 'will-strategy-historical-replay-v1' &&
+    report.mode === 'WILL_STRATEGY_HISTORICAL_OHLC_REPLAY' &&
+    report.edgeProven === false &&
+    report.datasetEvidence?.datasetManifest?.datasetId === datasetId &&
+    Array.isArray(report.decisions) &&
+    Array.isArray(report.results) &&
+    report.decisions.length === report.decisionBars &&
+    report.results.length === report.decisionBars &&
+    manifest.replayMode === report.mode &&
+    manifest.edgeProven === false;
+  if (!checks.reportContractValid) reasonCodes.push('REPLAY_REPORT_CONTRACT_INVALID');
+
+  return {
+    schemaVersion: 'will-historical-replay-verification-v1',
+    valid: reasonCodes.length === 0,
+    datasetId,
+    checks,
+    reasonCodes,
+    reportSha256: hash(reportBytes),
+    replayManifestSha256,
+    sourceTrust: 'ARCHIVE_HASH_CHAIN_VERIFIED_SOURCE_AUTHENTICITY_AND_MARKET_EDGE_NOT_PROVEN',
+    summary: {
+      asset: report.asset ?? null,
+      interval: report.interval ?? null,
+      barsAvailable: report.barsAvailable ?? null,
+      decisionBars: report.decisionBars ?? null,
+      settledTrades: report.settledTrades ?? null,
+      unresolvedTrades: report.unresolvedTrades ?? null,
+      edgeProven: false
+    }
+  };
+}
+
 export function runHistoricalWillReplayCli({
   argv = process.argv.slice(2),
   stdout = (value) => process.stdout.write(value),
