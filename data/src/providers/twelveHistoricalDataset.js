@@ -60,6 +60,13 @@ async function responseBytes(response) {
   throw new Error('TWELVEDATA_RESPONSE_BODY_UNAVAILABLE');
 }
 
+function numericHeader(headers, name) {
+  const value = headers?.get?.(name);
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
 function parseRetryAfter(response) {
   const raw = response.headers?.get?.('retry-after');
   if (!raw) return {};
@@ -228,7 +235,9 @@ export async function fetchTwelveHistoricalDataset({
       apiRequests: 1,
       estimatedApiCredits: 1,
       estimatedCreditsAreOfficialAccountUsage: false,
-      note: 'One /time_series request for one symbol; verify account-specific headers/usage.'
+      providerReportedCreditsUsed: numericHeader(response.headers, 'api-credits-used'),
+      providerReportedCreditsLeft: numericHeader(response.headers, 'api-credits-left'),
+      note: 'One /time_series request for one symbol. Prefer provider response headers over the estimate.'
     },
     rawDataset: {
       contentType: response.headers?.get?.('content-type') ?? null,
