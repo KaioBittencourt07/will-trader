@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { collectHistoricalDatasetCli } from '../backend/src/collectTwelveHistoricalDataset.js';
+import { verifyTwelveHistoricalArchive } from '../backend/src/verifyTwelveHistoricalDataset.js';
 import { verifyMarketDatasetManifest } from '../backtest/src/datasetManifest.js';
 
 const startMs = Date.parse('2026-10-01T12:00:00.000Z');
@@ -108,6 +109,14 @@ test('CLI archives original raw bytes, closed observations and independently ver
     assert.equal(summary.providerReportedCreditsUsed, 1);
     assert.equal(summary.note, 'Dataset is archived, not yet a trading-result claim.');
 
+    const verified = verifyTwelveHistoricalArchive({ datasetId: summary.datasetId, outputDirectory: directory });
+    assert.equal(verified.valid, true);
+    assert.equal(verified.checks.rawHashValid, true);
+    assert.equal(verified.checks.datasetManifestValid, true);
+    assert.equal(verified.checks.observationsHashValid, true);
+    assert.equal(verified.checks.collectionManifestHashValid, true);
+    assert.equal(verified.dataTrust, 'BYTE_INTEGRITY_AND_SHAPE_ONLY_SOURCE_AUTHENTICITY_NOT_PROVEN');
+
     let duplicateError = '';
     const duplicateCode = await collectHistoricalDatasetCli({
       argv: [
@@ -124,6 +133,17 @@ test('CLI archives original raw bytes, closed observations and independently ver
     assert.equal(duplicateCode, 1);
     assert.equal(fetchCalls, 1);
     assert.match(duplicateError, /no provider request was made/);
+
+    fs.writeFileSync(path.join(directory, observationsFile), Buffer.concat([observationsBytes, Buffer.from(' ')]));
+    const changedObservations = verifyTwelveHistoricalArchive({ datasetId: summary.datasetId, outputDirectory: directory });
+    assert.equal(changedObservations.valid, false);
+    assert.ok(changedObservations.reasonCodes.includes('DERIVED_OBSERVATIONS_HASH_MISMATCH'));
+
+    fs.writeFileSync(path.join(directory, observationsFile), observationsBytes);
+    fs.writeFileSync(path.join(directory, rawFile), Buffer.from('tampered raw historical bytes'));
+    const changedRaw = verifyTwelveHistoricalArchive({ datasetId: summary.datasetId, outputDirectory: directory });
+    assert.equal(changedRaw.valid, false);
+    assert.ok(changedRaw.reasonCodes.includes('RAW_DATASET_HASH_MISMATCH'));
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
