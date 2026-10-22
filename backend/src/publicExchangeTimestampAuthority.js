@@ -40,7 +40,7 @@ export function qualifyPublicExchangeTimestampAuthority({
     version: PUBLIC_EXCHANGE_TIMESTAMP_QUALIFICATION_VERSION,
     providerId: String(source ?? ''),
     fieldName: contract?.fieldName ?? (field || null),
-    semantic: contract?.semantic ?? 'UNRESOLVED',
+    semantic: contract && field === contract.fieldName ? contract.semantic : 'UNRESOLVED',
     docsUrl: contract?.docsUrl ?? null,
     candidateAuthority: 'EXCHANGE_EVENT_TIME',
     provenanceVerified: Boolean(contract && field === contract.fieldName && Number.isFinite(eventMs)),
