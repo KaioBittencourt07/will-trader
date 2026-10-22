@@ -239,7 +239,7 @@ export function createTwelveDataProvider({
       const headers = { Authorization: `apikey ${apiKey}` };
       const [quoteResponse, seriesResponse] = await Promise.all([
         fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${symbol}`, { headers, cache: 'no-store' }, { telemetry }),
-        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${symbol}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' }, { telemetry })
+        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${symbol}&interval=${interval}&outputsize=${outputsize}&timezone=UTC&include_ohlc=true`, { headers, cache: 'no-store' }, { telemetry })
       ]);
       if (!quoteResponse.ok) throw httpError('quote', quoteResponse);
       if (!seriesResponse.ok) throw httpError('time_series', seriesResponse);
@@ -260,7 +260,7 @@ export function createTwelveDataProvider({
       const headers = { Authorization: `apikey ${apiKey}` };
       const [quoteResponse, seriesResponse] = await Promise.all([
         fetchTwelveData(fetchImpl, `${baseUrl}/quote?symbol=${joinedSymbols}`, { headers, cache: 'no-store' }, { telemetry, creditsEstimated: symbols.length }),
-        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${joinedSymbols}&interval=${interval}&outputsize=${outputsize}&timezone=UTC`, { headers, cache: 'no-store' }, { telemetry, creditsEstimated: symbols.length })
+        fetchTwelveData(fetchImpl, `${baseUrl}/time_series?symbol=${joinedSymbols}&interval=${interval}&outputsize=${outputsize}&timezone=UTC&include_ohlc=true`, { headers, cache: 'no-store' }, { telemetry, creditsEstimated: symbols.length })
       ]);
       if (!quoteResponse.ok) throw httpError('quote', quoteResponse);
       if (!seriesResponse.ok) throw httpError('time_series', seriesResponse);
