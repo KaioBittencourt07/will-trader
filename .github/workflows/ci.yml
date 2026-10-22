@@ -45,4 +45,5 @@ jobs:
           done
           test "$ready" -eq 1
           node -e "const fs=require('node:fs');const assert=require('node:assert/strict');const h=JSON.parse(fs.readFileSync('/tmp/will-health.json','utf8'));assert.equal(h.ok,true);assert.equal(h.service,'will-trader-backend');assert.equal(h.paperMonitorConfig.automatedBrokerExecution,false)"
-          curl --fail --silent http://127.0.0.1:3000/dashboard/ | grep -q 'WILL TRADER'
+          curl --fail --silent http://127.0.0.1:3000/dashboard/ >/tmp/will-dashboard.html
+          grep -q 'WILL TRADER' /tmp/will-dashboard.html
