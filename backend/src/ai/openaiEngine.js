@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { hasConfiguredValue } from '../configuredValue.js';
 
 let client;
 
@@ -9,7 +10,7 @@ function boundedTimeoutMs(value) {
 }
 
 function getClient() {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY não configurada no backend.');
+  if (!hasConfiguredValue(process.env.OPENAI_API_KEY)) throw new Error('OPENAI_API_KEY não configurada no backend.');
   client ??= new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
     // WILL prefers one bounded observation over hidden retry amplification.
