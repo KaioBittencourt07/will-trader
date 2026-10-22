@@ -50,7 +50,11 @@ async function request(url, options = {}) {
       : `HTTP ${response.status}`;
     try {
       const body = await response.json();
-      if (body?.error) message = body.error;
+      if (body?.error === 'API_ACCESS_TOKEN_REQUIRED') {
+        message = 'API requer token de acesso. Configure-o no cartão Conexão segura.';
+      } else if (body?.error) {
+        message = body.error;
+      }
     } catch {}
     throw new Error(message);
   }
