@@ -113,7 +113,10 @@ function verifyAndBuildBars({ datasetId, outputDirectory }) {
     };
   }).sort((a, b) => Date.parse(a.barOpenTimestamp) - Date.parse(b.barOpenTimestamp));
 
-  const closedBars = bars.filter((bar) => Date.parse(bar.barCloseTimestamp) <= asOfMs);
+  const closedBars = bars.filter((bar) =>
+    Date.parse(bar.barCloseTimestamp) <= asOfMs &&
+    Date.parse(bar.barCloseTimestamp) <= endMs
+  );
   if (closedBars.length !== Number(envelope.rowCounts?.closedBars) ||
       savedObservations.length !== closedBars.length) {
     throw new Error('HISTORICAL_ARCHIVE_CLOSED_BAR_COUNT_MISMATCH');
