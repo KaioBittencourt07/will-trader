@@ -58,3 +58,32 @@ Mesmo assim, não se deve prometer lucro nem chamar score heurístico de probabi
 ## Estado desta implementação
 
 O CI usa dados sintéticos exclusivamente para verificar as regras do replay e não consulta a TwelveData nem usa chaves reais. Portanto, não é uma análise de mercado atual nem comprovação de edge do WILL. Para o estudo real será necessário fornecer/configurar um dataset histórico verificável ou credenciais autorizadas do provedor e arquivar o dataset bruto com hash, janela temporal e fonte. A operação da Avalon continua MANUAL/PAPER, sem auto-click ou ordens reais.
+
+## Coleta histórica da Twelve Data (opt-in)
+
+O coletor `backend/src/collectTwelveHistoricalDataset.js` solicita um único símbolo e intervalo intraday por chamada. Não faz requisição até que `--confirm-provider-credits` seja fornecido explicitamente. Não compartilhe a chave; ela vai apenas no cabeçalho de autorização, nunca na URL.
+
+Exemplo no PowerShell:
+
+```powershell
+cd backend
+$env:TWELVEDATA_API_KEY = "SUA_CHAVE_REAL"
+npm run market:history -- --asset EUR/USD --interval 1min --start 2026-10-01T12:00:00Z --end 2026-10-01T13:00:00Z --confirm-provider-credits
+```
+
+A data final deve estar no passado; o intervalo deve caber no orçamento de pontos; o coletor suporta até 5.000 barras por chamada e somente intervalos intraday listados no módulo. O parâmetro `timezone=UTC` é usado para que o horário das barras intraday possa ser interpretado de maneira determinística. O timestamp das observações derivadas é o **fechamento da barra** (abertura + duração), nunca o horário de abertura como se o close já fosse conhecido.
+
+Arquivos são escritos em `data/market-datasets/`, que fica fora do Git e da imagem Docker. O coletor grava:
+- `.raw.json`: bytes brutos devolvidos pela API;
+- `.observations.json`: closes de barras fechadas, no formato usado pelo replay;
+- `.manifest.json`: SHA-256 dos bytes brutos, manifesto de dataset, hash das observações derivadas, janela e contagem.
+
+Arquivos existentes nunca são sobrescritos. Para recolher a mesma janela, preserve o artefato original e escolha uma janela/identificador distinto; não substitua silenciosamente evidência previamente usada.
+
+**Custo de dados:** a documentação da Twelve Data diz que `/time_series` é contabilizado por símbolo e que o limite máximo por resposta é 5.000 pontos. Com a janela e um símbolo escolhidos acima, o coletor estima uma chamada e também guarda os cabeçalhos de créditos reportados pela resposta quando disponíveis. A estimativa não é a fatura/uso definitivo da conta; confira o seu painel e os limites diários/minuto do plano. Consulte a documentação oficial antes da primeira chamada:
+- https://twelvedata.com/docs
+- https://support.twelvedata.com/en/articles/5214728-getting-historical-data
+- https://support.twelvedata.com/en/articles/5615854-credits
+
+O coletor não é executado na CI e nenhum dado real foi baixado por estes testes. É necessário invocá-lo manualmente com chave autorizada. Uma chave não é fornecida em código, testes ou commit. A ingestão cria dados auditáveis, mas **não gera por si só um backtest da estratégia real do WILL nem prova edge**: as decisões cronológicas do motor ainda precisam ser produzidas/reexecutadas sobre esses candles fechados, usando a mesma versão de estratégia e regra de timing congeladas.
+
