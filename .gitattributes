@@ -5,3 +5,4 @@ backend/config/experiments/edge-gate-oos2u-freeze.json -text
 backend/config/experiments/edge-gate-oos2u-freeze.json.sha256 -text
 backend/config/experiments/edge-gate-oos2v-freeze.json -text
 backend/config/experiments/edge-gate-oos2v-freeze.json.sha256 -text
+backend/config/experiments/edge-gate-oos2-freeze.json -text
