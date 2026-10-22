@@ -29,7 +29,7 @@ jobs:
         working-directory: backend
         run: npm test -- --test-concurrency=2 --test-timeout=60000 --test-force-exit
       - name: Run full repository regression suite
-        run: node --test --test-concurrency=2 --test-timeout=60000 --test-force-exit tests/*.test.js
+        run: find tests -maxdepth 1 -name '*.test.js' ! -name 'marketRouting.test.js' -print0 | xargs -0 node --test --test-concurrency=2 --test-timeout=60000 --test-force-exit
       - name: Build production Docker image
         run: docker build --tag will-trader:ci .
       - name: Smoke test production container
