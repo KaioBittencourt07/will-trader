@@ -126,7 +126,7 @@ export async function collectHistoricalDatasetCli({
     atomicWrite(`${base}.raw.json`, rawBytes);
     atomicWrite(`${base}.observations.json`, Buffer.from(JSON.stringify(dataset.observations, null, 2), 'utf8'));
     atomicWrite(`${base}.manifest.json`, Buffer.from(JSON.stringify({
-      ...manifest,
+      datasetManifest: manifest,
       request: {
         asset: dataset.asset,
         interval: dataset.interval,
