@@ -73,7 +73,7 @@ export function validatePriceObservations(records) {
       return;
     }
 
-    const key = `${asset}| ${time}`;
+    const key = `${asset}|${time}`;
     if (seen.has(key)) {
       duplicateCount++;
       invalidRows++;
@@ -291,6 +291,7 @@ export function runHistoricalReplay({
     settlementCoverage: actionable ? settled.length / actionable : null,
     binaryWinRate: binaryN ? wins / binaryN : null,
     wilsonInterval95: wilsonInterval95(wins, losses),
+    wilsonIntervalMethod: 'WILSON_95_BINOMIAL_RECORD_LEVEL_NOT_ADJUSTED_FOR_SERIAL_DEPENDENCE',
     payoutRatio,
     stake,
     costPerTrade,
