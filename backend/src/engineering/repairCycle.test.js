@@ -74,6 +74,21 @@ test('protected paths are rejected before patch application', async () => {
   assert.ok(adapter.calls.includes('discard:1'));
 });
 
+test('duplicate patch paths are rejected before applying changes', async () => {
+  const adapter = makeAdapter({
+    async proposePatch() {
+      this.calls.push('propose-duplicate');
+      return { changedPaths: ['backend/src/engineering/fix.js', 'backend/src/engineering/fix.js'] };
+    }
+  });
+  const result = await runBoundedRepairCycle({ adapter, requestedPaths: scope });
+  assert.equal(result.decision, 'STOP_AND_REPORT');
+  assert.equal(result.rejectedAttempts[0].reasons[0], 'PATCH_SCOPE_DUPLICATE_PATH');
+  assert.ok(adapter.calls.includes('discard:1'));
+  assert.ok(!adapter.calls.includes('apply'));
+  assert.ok(!adapter.calls.includes('retain:1'));
+});
+
 test('diff path mismatch is discarded even when the proposed patch path was allowed', async () => {
   const adapter = makeAdapter({
     async inspectDiff() {
