@@ -192,3 +192,19 @@ Preferir:
 - PAPER readiness;
 - Real-money readiness;
 - Principais bloqueadores.
+
+## Atualização de validação — 2026-10-22
+
+### Comprovado em automação
+- A linha-base de implantação (PR #4, branch `fix/docker-runtime-bundle-final`) passou no GitHub Actions: testes do backend, regressão completa de **948 testes**, build Docker e smoke test de health/dashboard/API protegida.
+- A branch `feat/market-evidence-backtesting` adiciona replay temporal com regra de entrada posterior à decisão, expiração sem antecipar observações, outcomes UNRESOLVED para lacunas, payout explícito para PnL, divisão temporal com embargo e manifesto SHA-256 dos bytes brutos.
+- Esses testes usam fixtures sintéticas; não são estatística do mercado nem demonstram edge real.
+
+### Ainda depende de evidência real
+- Configurar chave válida e autorizada do provedor, validar rate limit, timestamps, frescor, cobertura e qualidade em ambiente controlado.
+- Arquivar dataset histórico bruto e seu manifesto; confirmar origem/licença e payout histórico por ativo/horário.
+- Executar replay temporal e walk-forward com parâmetros congelados, baseline, custos e amostra suficiente; guardar resultados completos, inclusive WAIT, bloqueios e casos não resolvidos.
+- Fazer PAPER prospectivo com persistência e circuit breaker, e comparar a amostra independente ao protocolo em `docs/MARKET_VALIDATION_PROTOCOL.md`.
+
+Nenhum resultado financeiro é declarado comprovado até essas etapas terminarem. A Avalon permanece MANUAL/PAPER; nenhum threshold congelado ou artefato OOS foi ajustado para forçar aprovação.
+

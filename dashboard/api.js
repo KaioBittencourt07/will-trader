@@ -165,10 +165,10 @@ export function getMultiTimeframe(asset = operationalAsset, timeframes = '1min,5
   return request(`${WILL_API.baseUrl}/api/market/multi?${query}`);
 }
 
-export function scanOpportunities(timeframe = '1min', entryDelaySeconds = 120, assets = null) {
+export function scanOpportunities(timeframe = '1min', entryDelaySeconds = 120, assets = null, assetClass = 'FX_CRYPTO') {
   const query = new URLSearchParams({ timeframe, entryDelaySeconds });
   if (assets) query.set('assets', assets);
-  else query.set('assetClass', 'FX_CRYPTO');
+  else query.set('assetClass', assetClass);
   return request(`${WILL_API.baseUrl}${WILL_API.opportunitiesPath}?${query}`);
 }
 
@@ -179,4 +179,14 @@ export async function scanLegacyOpportunities() {
   const candidate = { asset, snapshot: market.snapshot, decision: analysis.decision || analysis };
   const executable = candidate.decision?.executable && !candidate.decision.blocked && ['BUY', 'SELL'].includes(candidate.decision.direction);
   return { ok: true, recommendation: executable ? candidate : null, reason: executable ? 'Sinal executável encontrado no modo compatível.' : `Modo compatível: ${asset} não atingiu os critérios. WAIT é correto.` };
+}
+
+
+export function getMarketSources() {
+  return request(`${WILL_API.baseUrl}/api/market/sources`);
+}
+
+export function getFxReferenceRate(base = 'USD', quote = 'BRL') {
+  const query = new URLSearchParams({ base, quote });
+  return request(`${WILL_API.baseUrl}/api/market/reference/fx?${query}`);
 }

@@ -242,3 +242,18 @@ O conhecimento será organizado em uma base versionada de conceitos, setups, con
 ## Regra de ouro
 
 > **Se o sistema não sabe, ele não inventa. Ele aguarda.**
+
+## Validação histórica de mercado e evidência
+
+Para não confundir taxa de acerto com rentabilidade, use as novas ferramentas exportadas de `backtest/src/index.js`:
+
+- `validatePriceObservations(records)`: valida preços e timestamps com fuso explícito; não descarta linhas inválidas silenciosamente.
+- `runHistoricalReplay({ decisions, observations, expirySeconds, entryDelayMs, payoutRatio, stake, costPerTrade })`: replay sem usar a mesma cotação que gerou a decisão como preenchimento; WAIT/BLOCKED permanecem no relatório; falta de preço pós-expiração vira `UNRESOLVED`.
+- `splitChronologically(records, { trainRatio, validationRatio, embargoMs })`: separa por tempo, preserva registros com timestamp igual e admite embargo para evitar vazamento entre rótulos.
+- `createMarketDatasetManifest({ rawBytes, ...metadata })` e `verifyMarketDatasetManifest(rawBytes, manifest)`: geram e verificam hashes SHA-256 dos bytes brutos e metadados de um dataset.
+
+As métricas financeiras ficam indisponíveis sem payout explicitamente informado. O intervalo de Wilson incluído é descritivo e não corrige dependência serial. O validador de formato/hash não autentica a fonte dos preços. **O replay sempre retorna `edgeProven: false`**: resultado de mercado precisa de dataset real cuja origem possa ser comprovada, parâmetros pré-registrados, teste temporal fora da amostra, custos/payout verificados e revisão independente.
+
+Coleta histórica controlada: em `backend/`, execute `npm run market:history -- --asset EUR/USD --interval 1min --start 2026-10-01T12:00:00Z --end 2026-10-01T13:00:00Z --confirm-provider-credits` após configurar `TWELVEDATA_API_KEY`. A consulta não ocorre sem confirmação explícita e os arquivos locais não entram no Git/Docker. Use `npm run market:verify-history -- --dataset-id <ID>` para verificar o dataset offline. Para reexecutar o motor real do WILL: `npm run market:replay -- --dataset-id <ID> --payout-ratio 0.8`; verifique o relatório com `npm run market:verify-replay -- --dataset-id <ID>`. O replay bloqueia sinais sem contexto macro/notícias por padrão; `--technical-only-diagnostic` é explicitamente um estudo técnico incompleto, não a estratégia operacional completa.
+
+Protocolo completo: [docs/MARKET_VALIDATION_PROTOCOL.md](docs/MARKET_VALIDATION_PROTOCOL.md). Evidência histórica anterior e seus limites: [docs/HISTORICAL_EVIDENCE_AUDIT.md](docs/HISTORICAL_EVIDENCE_AUDIT.md). Critérios de implantação: [docs/PRODUCTION_RELEASE_CHECKLIST.md](docs/PRODUCTION_RELEASE_CHECKLIST.md).

@@ -32,6 +32,37 @@ function supportedClosedCandleProof(snapshot = {}, temporal = null) {
   if (completeness === 'VERIFIED_CLOSED_BY_BIQUOTE_EVENT_TIME') {
     return temporal?.timestampAuthority === 'BIQUOTE_API_LATEST_TICK_TIMESTAMP';
   }
+
+  // Public exchange REST sources can prove closure only when the server has
+  // qualified their event timestamp and the exact source/field contract matches.
+  const source = snapshot.source;
+  const eventTimestamp = Number(temporal?.eventTimestamp);
+  const latestOpenMs = Date.parse(snapshot.latestClosedCandleTimestamp ?? '');
+  const closeMs = Date.parse(snapshot.latestClosedCandleCloseTimestamp ?? '');
+  const timeframeMs = ({
+    '1min': 60_000, '5min': 300_000, '15min': 900_000,
+    '30min': 1_800_000, '1h': 3_600_000, '2h': 7_200_000,
+    '4h': 14_400_000, '6h': 21_600_000, '1day': 86_400_000
+  })[snapshot.timeframe];
+  if (!Number.isFinite(eventTimestamp) || !Number.isFinite(latestOpenMs) ||
+      !Number.isFinite(closeMs) || !Number.isFinite(timeframeMs) || closeMs > eventTimestamp) {
+    return false;
+  }
+  if (source === 'coinbase-exchange-rest') {
+    return completeness === 'VERIFIED_CLOSED_BY_COINBASE_EVENT_TIME'
+      && temporal?.timestampAuthority === 'EXCHANGE_EVENT_TIME_SUPPORTED'
+      && snapshot.timestampOrigins?.quoteTimestampField === 'ticker.time'
+      && snapshot.timestampOrigins?.candleCloseTimestamp === 'coinbase.exchange.product.candles.openTime_plus_granularity'
+      && closeMs === latestOpenMs + timeframeMs;
+  }
+  if (source === 'binance-spot-rest') {
+    return completeness === 'VERIFIED_CLOSED_BY_BINANCE_EVENT_TIME'
+      && temporal?.timestampAuthority === 'EXCHANGE_EVENT_TIME_SUPPORTED'
+      && snapshot.timestampOrigins?.quoteTimestampField === 'trades[0].time'
+      && snapshot.timestampOrigins?.candleCloseTimestamp === 'binance.spot.klines.closeTime'
+      && closeMs >= latestOpenMs + timeframeMs - 1
+      && closeMs <= latestOpenMs + timeframeMs;
+  }
   return false;
 }
 

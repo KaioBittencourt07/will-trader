@@ -5,11 +5,38 @@ function keyFor(asset, timeframe, outputsize) {
 import { addProviderEfficiency } from './providerEfficiency.js';
 import { refreshMarketSnapshotFreshness } from './marketAdapter.js';
 
-export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
+export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), creditBudgetPerMinute = undefined, creditBudgetPerDay = undefined, maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), maxDailyCreditWaitMs = Number(process.env.MARKET_MAX_DAILY_CREDIT_WAIT_MS ?? 10_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
   if (!provider || typeof provider.getSnapshot !== 'function') throw new Error('provider.getSnapshot é obrigatório.');
+  const configuredCreditBudget = process.env.MARKET_CREDITS_PER_MINUTE;
+  const configuredDailyCreditBudget = process.env.MARKET_CREDITS_PER_DAY;
+  const effectiveCreditBudgetPerMinute = creditBudgetPerMinute !== undefined
+    ? creditBudgetPerMinute
+    : configuredCreditBudget !== undefined
+      ? Number(configuredCreditBudget)
+      : provider.providerId === 'twelvedata' ? 6 : null;
+  const effectiveCreditBudgetPerDay = creditBudgetPerDay !== undefined
+    ? creditBudgetPerDay
+    : configuredDailyCreditBudget !== undefined
+      ? Number(configuredDailyCreditBudget)
+      : provider.providerId === 'twelvedata' ? 720 : null;
+  if (effectiveCreditBudgetPerMinute !== null &&
+      (!Number.isInteger(effectiveCreditBudgetPerMinute) || effectiveCreditBudgetPerMinute < 1)) {
+    throw new Error('MARKET_CREDITS_PER_MINUTE must be a positive integer when configured.');
+  }
+  if (effectiveCreditBudgetPerDay !== null &&
+      (!Number.isInteger(effectiveCreditBudgetPerDay) || effectiveCreditBudgetPerDay < 1)) {
+    throw new Error('MARKET_CREDITS_PER_DAY must be a positive integer when configured.');
+  }
+  if (!Number.isInteger(maxDailyCreditWaitMs) || maxDailyCreditWaitMs < 0) {
+    throw new Error('MARKET_MAX_DAILY_CREDIT_WAIT_MS must be a non-negative integer.');
+  }
+  const creditUsageMinute = [];
+  const creditUsageDay = [];
   const cache = new Map();
   const inFlight = new Map();
   let nextRequestAt = 0;
+  // Serialize all provider slots, including batch calls and transient retries.
+  let requestQueue = Promise.resolve();
   const metrics = {
     cacheHits: 0,
     cacheMisses: 0,
@@ -23,6 +50,10 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     upstreamLatencySamples: 0,
     rateLimitWaitMsTotal: 0,
     rateLimitWaitCount: 0,
+    estimatedCreditsReserved: 0,
+    estimatedHttpRequests: 0,
+    creditBudgetWaitMsTotal: 0,
+    creditBudgetWaitCount: 0,
     lastProviderError: null,
     retries: 0,
     retryExhausted: 0,
@@ -129,49 +160,189 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     return Math.max(0, Math.min(retryMaxMs, Math.round(exponential * (0.5 + Math.max(0, Math.min(1, random()))))));
   }
 
-  async function timedProviderRequest(work, telemetry) {
-    const startedAt = now();
-    try {
-      for (let attempt = 0; ; attempt += 1) {
-        try {
-          const result = await work();
-          recordProviderSuccess();
-          return result;
-        } catch (error) {
-          recordProviderError(error, telemetry);
-          if (rateLimited(error)) throw error;
-          if (!transient(error) || attempt >= maxRetries || !canRetry()) {
-            if (transient(error)) metrics.retryExhausted += 1;
-            throw error;
-          }
-          const delay = retryDelay(error, attempt);
-          retryAttempts.push(now());
-          metrics.retries += 1;
-          metrics.backoffMsTotal += delay;
-          await wait(delay);
+  function estimateCredits(assets) {
+    const estimated = typeof provider.estimateCreditsForAssets === 'function'
+      ? Number(provider.estimateCreditsForAssets(assets))
+      : Math.max(1, new Set(assets).size);
+    // Public providers without billed API credits may truthfully estimate zero.
+    if (!Number.isFinite(estimated) || estimated < 0) {
+      throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
+    }
+    return Math.ceil(estimated);
+  }
+
+  function estimateHttpRequests(assets) {
+    const estimated = typeof provider.estimateHttpRequestsForAssets === 'function'
+      ? Number(provider.estimateHttpRequestsForAssets(assets))
+      : 1;
+    if (!Number.isFinite(estimated) || estimated < 1) {
+      throw new Error('PROVIDER_HTTP_REQUEST_ESTIMATE_INVALID');
+    }
+    return Math.ceil(estimated);
+  }
+
+  function maxBatchSymbols() {
+    if (typeof provider.maxSymbolsForCredits !== 'function') return Infinity;
+    const activeBudgets = [effectiveCreditBudgetPerMinute, effectiveCreditBudgetPerDay]
+      .filter((value) => value !== null);
+    if (!activeBudgets.length) return Infinity;
+    const largestAllowedRequest = Math.min(...activeBudgets);
+    const maximum = Number(provider.maxSymbolsForCredits(largestAllowedRequest));
+    if (!Number.isInteger(maximum) || maximum < 1) {
+      throw new Error('MARKET_CREDIT_BUDGET_TOO_LOW_FOR_SINGLE_ASSET');
+    }
+    return maximum;
+  }
+
+  function pruneCreditUsage(current) {
+    const minuteCutoff = current - 60_000;
+    const dayCutoff = current - 86_400_000;
+    while (creditUsageMinute.length && creditUsageMinute[0].at <= minuteCutoff) creditUsageMinute.shift();
+    while (creditUsageDay.length && creditUsageDay[0].at <= dayCutoff) creditUsageDay.shift();
+  }
+
+  async function reserveCreditBudget(credits, telemetry) {
+    if (!Number.isInteger(credits) || credits < 0) throw new Error('PROVIDER_CREDIT_ESTIMATE_INVALID');
+    if (credits === 0) return;
+    if (effectiveCreditBudgetPerMinute !== null && credits > effectiveCreditBudgetPerMinute) {
+      throw new Error('PROVIDER_BATCH_CREDITS_EXCEED_MINUTE_BUDGET');
+    }
+    if (effectiveCreditBudgetPerDay !== null && credits > effectiveCreditBudgetPerDay) {
+      throw new Error('PROVIDER_BATCH_CREDITS_EXCEED_DAY_BUDGET');
+    }
+    if (effectiveCreditBudgetPerMinute === null && effectiveCreditBudgetPerDay === null) {
+      metrics.estimatedCreditsReserved += credits;
+      return;
+    }
+
+    while (true) {
+      const current = now();
+      pruneCreditUsage(current);
+      const minuteUsed = creditUsageMinute.reduce((sum, item) => sum + item.credits, 0);
+      const dayUsed = creditUsageDay.reduce((sum, item) => sum + item.credits, 0);
+      const minuteFits = effectiveCreditBudgetPerMinute === null ||
+        minuteUsed + credits <= effectiveCreditBudgetPerMinute;
+      const dayFits = effectiveCreditBudgetPerDay === null ||
+        dayUsed + credits <= effectiveCreditBudgetPerDay;
+
+      // Never keep a dashboard/API request open for hours waiting on a daily
+      // quota reset. Wait only when enough credits become available soon.
+      if (!dayFits) {
+        const creditsThatMustExpire = dayUsed + credits - effectiveCreditBudgetPerDay;
+        let creditsScheduledToExpire = 0;
+        let enoughCreditsAt = null;
+        for (const usage of creditUsageDay) {
+          creditsScheduledToExpire += usage.credits;
+          enoughCreditsAt = usage.at + 86_400_000;
+          if (creditsScheduledToExpire >= creditsThatMustExpire) break;
+        }
+        const estimatedDailyWaitMs = enoughCreditsAt === null
+          ? Infinity
+          : Math.max(0, enoughCreditsAt - current);
+        if (estimatedDailyWaitMs > maxDailyCreditWaitMs) {
+          throw new Error('PROVIDER_DAILY_CREDIT_BUDGET_EXHAUSTED');
         }
       }
+
+      if (minuteFits && dayFits) {
+        const event = { at: current, credits };
+        if (effectiveCreditBudgetPerMinute !== null) creditUsageMinute.push(event);
+        if (effectiveCreditBudgetPerDay !== null) creditUsageDay.push(event);
+        metrics.estimatedCreditsReserved += credits;
+        return;
+      }
+
+      const delays = [];
+      if (!minuteFits && creditUsageMinute.length) {
+        delays.push(Math.max(1, creditUsageMinute[0].at + 60_000 - current));
+      }
+      if (!dayFits && creditUsageDay.length) {
+        delays.push(Math.max(1, creditUsageDay[0].at + 86_400_000 - current));
+      }
+      if (!delays.length) throw new Error('MARKET_CREDIT_BUDGET_CANNOT_PROGRESS');
+
+      // Re-evaluate when the earliest blocked window changes; a stricter
+      // remaining window may still hold the next request and will be checked again.
+      const delay = Math.min(...delays);
+      metrics.creditBudgetWaitMsTotal += delay;
+      metrics.creditBudgetWaitCount += 1;
+      addProviderEfficiency(telemetry, { creditBudgetWaitMs: delay });
+      await wait(delay);
+      assertReady(telemetry);
+    }
+  }
+
+  async function withRequestSlot(work, telemetry, estimatedCredits, estimatedHttpRequests) {
+    const predecessor = requestQueue;
+    let unlock;
+    requestQueue = new Promise((resolve) => { unlock = resolve; });
+    await predecessor;
+
+    try {
+      assertReady(telemetry);
+      const delay = Math.max(0, nextRequestAt - now());
+      if (delay) {
+        metrics.rateLimitWaitMsTotal += delay;
+        metrics.rateLimitWaitCount += 1;
+        addProviderEfficiency(telemetry, { limiterWaitMs: delay });
+        await wait(delay);
+        assertReady(telemetry);
+      }
+
+      // Reserve credits before the call while holding the same serial queue.
+      // The estimate counts each billed symbol/endpoint, not only JS calls.
+      await reserveCreditBudget(estimatedCredits, telemetry);
+      nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
+      return await work(estimatedHttpRequests);
     } finally {
-      metrics.upstreamLatencyMsTotal += Math.max(0, now() - startedAt);
-      metrics.upstreamLatencySamples += 1;
+      unlock();
+    }
+  }
+
+  async function timedProviderAttempt(work, telemetry, estimatedCredits, estimatedHttpRequests) {
+    return withRequestSlot(async (httpRequests) => {
+      const startedAt = now();
+      metrics.upstreamRequests += 1;
+      metrics.estimatedHttpRequests += httpRequests;
+      try {
+        const result = await work();
+        recordProviderSuccess();
+        return result;
+      } catch (error) {
+        recordProviderError(error, telemetry);
+        throw error;
+      } finally {
+        metrics.upstreamLatencyMsTotal += Math.max(0, now() - startedAt);
+        metrics.upstreamLatencySamples += 1;
+      }
+    }, telemetry, estimatedCredits, estimatedHttpRequests);
+  }
+
+  async function timedProviderRequest(work, telemetry, estimatedCredits = 1, estimatedHttpRequests = 1) {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await timedProviderAttempt(work, telemetry, estimatedCredits, estimatedHttpRequests);
+      } catch (error) {
+        if (rateLimited(error)) throw error;
+        if (!transient(error) || attempt >= maxRetries || !canRetry()) {
+          if (transient(error)) metrics.retryExhausted += 1;
+          throw error;
+        }
+        const delay = retryDelay(error, attempt);
+        retryAttempts.push(now());
+        metrics.retries += 1;
+        metrics.backoffMsTotal += delay;
+        await wait(delay);
+      }
     }
   }
 
   async function fetchWithRateLimit(asset, timeframe, outputsize, telemetry) {
-    assertReady(telemetry);
-    const delay = Math.max(0, nextRequestAt - now());
-    if (delay) {
-      metrics.rateLimitWaitMsTotal += delay;
-      metrics.rateLimitWaitCount += 1;
-      addProviderEfficiency(telemetry, { limiterWaitMs: delay });
-      await wait(delay);
-      assertReady(telemetry);
-    }
-    nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
-    metrics.upstreamRequests += 1;
+    const assets = [String(asset).trim().toUpperCase()];
     return timedProviderRequest(() => telemetry
       ? provider.getSnapshot(asset, timeframe, outputsize, { telemetry })
-      : provider.getSnapshot(asset, timeframe, outputsize), telemetry);
+      : provider.getSnapshot(asset, timeframe, outputsize), telemetry,
+      estimateCredits(assets), estimateHttpRequests(assets));
   }
 
   async function getSnapshot(asset, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
@@ -202,9 +373,9 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   async function getSnapshots(assets = [], timeframe = '1min', outputsize = 50, { telemetry } = {}) {
     const uniqueAssets = [...new Set(assets.map((asset) => String(asset).trim().toUpperCase()).filter(Boolean))];
     if (!uniqueAssets.length) return [];
-    // The diagnostic and one-symbol scanner use the same canonical request.
-    // Route both through getSnapshot so they share cache, in-flight coalescing
-    // and the centralized cooldown instead of racing two provider operations.
+    // The one-symbol path deliberately shares getSnapshot's canonical cache and
+    // in-flight promise. Multi-symbol batching also registers each missing asset
+    // in the same map so a simultaneous diagnostic cannot request it twice.
     if (uniqueAssets.length === 1) {
       const asset = uniqueAssets[0];
       try { return [{ asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }]; }
@@ -212,11 +383,13 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     }
     if (typeof provider.getSnapshots !== 'function') {
       return Promise.all(uniqueAssets.map(async (asset) => {
-          try { return { asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }; }
+        try { return { asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }; }
         catch (error) { return { asset, snapshot: null, error: error.message }; }
       }));
     }
+
     const fresh = [];
+    const waiting = [];
     const missing = [];
     for (const asset of uniqueAssets) {
       const key = keyFor(asset, timeframe, outputsize);
@@ -225,38 +398,72 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
         metrics.cacheHits += 1;
         addProviderEfficiency(telemetry, { cacheHits: 1 });
         fresh.push({ asset, snapshot: refreshMarketSnapshotFreshness(cached.snapshot, { now: now(), cacheStoredAt: cached.storedAt }), error: null });
-      } else missing.push(asset);
+      } else if (inFlight.has(key)) {
+        metrics.deduplicated += 1;
+        addProviderEfficiency(telemetry, { deduplicated: 1 });
+        waiting.push({ asset, promise: inFlight.get(key) });
+      } else {
+        missing.push(asset);
+      }
     }
-    if (!missing.length) return uniqueAssets.map((asset) => fresh.find((entry) => entry.asset === asset));
-    assertReady(telemetry);
-    metrics.cacheMisses += missing.length;
-    addProviderEfficiency(telemetry, { cacheMisses: missing.length });
-    const delay = Math.max(0, nextRequestAt - now());
-    if (delay) {
-      metrics.rateLimitWaitMsTotal += delay;
-      metrics.rateLimitWaitCount += 1;
-      addProviderEfficiency(telemetry, { limiterWaitMs: delay });
-      await wait(delay);
+
+    const batchPromises = [];
+    const batchRequests = [];
+    if (missing.length) {
       assertReady(telemetry);
+      metrics.cacheMisses += missing.length;
+      addProviderEfficiency(telemetry, { cacheMisses: missing.length });
+
+      const chunkSize = Math.min(missing.length, maxBatchSymbols());
+      for (let offset = 0; offset < missing.length; offset += chunkSize) {
+        const chunk = missing.slice(offset, offset + chunkSize);
+        const estimatedCredits = estimateCredits(chunk);
+        const estimatedHttpRequests = estimateHttpRequests(chunk);
+        const batchRequest = timedProviderRequest(() => telemetry
+          ? provider.getSnapshots(chunk, timeframe, outputsize, { telemetry })
+          : provider.getSnapshots(chunk, timeframe, outputsize),
+        telemetry, estimatedCredits, estimatedHttpRequests).then((entries) => {
+          for (const entry of entries) {
+            if (entry?.error) recordProviderError(entry.error, telemetry);
+            if (entry?.snapshot) {
+              cache.set(keyFor(entry.asset, timeframe, outputsize), { snapshot: entry.snapshot, storedAt: now() });
+            }
+          }
+          return entries;
+        });
+        batchRequests.push(batchRequest);
+
+        for (const asset of chunk) {
+          const key = keyFor(asset, timeframe, outputsize);
+          let sharedPromise;
+          sharedPromise = batchRequest.then((entries) => {
+            const entry = entries.find((candidate) => candidate?.asset === asset);
+            if (entry?.snapshot) return entry.snapshot;
+            const message = entry?.error?.message ?? entry?.error ?? 'Ativo não retornado pelo provedor.';
+            throw new Error(String(message));
+          }).finally(() => {
+            if (inFlight.get(key) === sharedPromise) inFlight.delete(key);
+          });
+          inFlight.set(key, sharedPromise);
+          // Keep failures observed even if no single-symbol caller joined this promise.
+          void sharedPromise.catch(() => {});
+          batchPromises.push({ asset, promise: sharedPromise });
+        }
+      }
+
+      await Promise.all(batchRequests);
     }
-    nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
-    metrics.upstreamRequests += 1;
-    let fetched;
-    try {
-      fetched = await timedProviderRequest(() => telemetry
-        ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
-        : provider.getSnapshots(missing, timeframe, outputsize), telemetry);
-    } catch (error) {
-      throw error;
-    }
-    for (const entry of fetched) {
-      if (entry?.error) recordProviderError(entry.error, telemetry);
-    }
-    for (const entry of fetched) {
-      if (entry?.snapshot) cache.set(keyFor(entry.asset, timeframe, outputsize), { snapshot: entry.snapshot, storedAt: now() });
-    }
-    const all = [...fresh, ...fetched];
-    return uniqueAssets.map((asset) => all.find((entry) => entry.asset === asset) ?? { asset, snapshot: null, error: 'Ativo não retornado pelo provedor.' });
+
+    const resolvedPending = await Promise.all([...waiting, ...batchPromises].map(async ({ asset, promise }) => {
+      try {
+        return { asset, snapshot: await promise, error: null };
+      } catch (error) {
+        return { asset, snapshot: null, error: String(error?.message || 'Market request failed') };
+      }
+    }));
+    const all = [...fresh, ...resolvedPending];
+    return uniqueAssets.map((asset) => all.find((entry) => entry.asset === asset)
+      ?? { asset, snapshot: null, error: 'Ativo não retornado pelo provedor.' });
   }
 
   return {
@@ -269,7 +476,19 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
       degradedDurationMs: metrics.degradedSince === null ? 0 : Math.max(0, now() - metrics.degradedSince),
       upstreamLatencyMsAverage: metrics.upstreamLatencySamples
         ? metrics.upstreamLatencyMsTotal / metrics.upstreamLatencySamples
-        : null
+        : null,
+      creditBudgetPerMinute: effectiveCreditBudgetPerMinute,
+      creditBudgetPerDay: effectiveCreditBudgetPerDay,
+      estimatedCreditsInCurrentWindow: (() => {
+        if (effectiveCreditBudgetPerMinute === null) return null;
+        pruneCreditUsage(now());
+        return creditUsageMinute.reduce((sum, item) => sum + item.credits, 0);
+      })(),
+      estimatedCreditsInCurrentDay: (() => {
+        if (effectiveCreditBudgetPerDay === null) return null;
+        pruneCreditUsage(now());
+        return creditUsageDay.reduce((sum, item) => sum + item.credits, 0);
+      })()
     }),
     getProviderReadiness: readiness,
     clearCache: () => cache.clear()

@@ -7,9 +7,24 @@ export const MARKET_UNIVERSES = Object.freeze({
     'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'ADA/USD', 'DOGE/USD',
     'AVAX/USD', 'LINK/USD', 'LTC/USD', 'BCH/USD', 'DOT/USD', 'MATIC/USD'
   ]),
+  // USDT is a distinct quote currency, not silently converted to USD.
+  CRYPTO_USDT: Object.freeze([
+    'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'ADA/USDT',
+    'DOGE/USDT', 'AVAX/USDT', 'LINK/USDT', 'LTC/USDT', 'BCH/USDT', 'DOT/USDT'
+  ]),
   STOCKS: Object.freeze([
     'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA', 'AMD',
     'NFLX', 'AVGO', 'JPM', 'V', 'WMT', 'XOM', 'KO', 'DIS'
+  ]),
+  ETFS: Object.freeze([
+    'SPY', 'QQQ', 'DIA', 'IWM', 'GLD', 'SLV', 'TLT', 'USO',
+    'XLE', 'XLK', 'XLF', 'ARKK'
+  ]),
+  INDICES: Object.freeze([
+    'SPX', 'NDX', 'DJI', 'RUT', 'VIX', 'DAX', 'FTSE', 'N225'
+  ]),
+  COMMODITIES: Object.freeze([
+    'XAU/USD', 'XAG/USD', 'WTI/USD', 'BRENT/USD', 'NATGAS/USD', 'CORN/USD', 'WHEAT/USD'
   ])
 });
 
@@ -21,7 +36,7 @@ export const WILL_PHASE1_FX_CRYPTO = Object.freeze([
 function className(value = 'ALL') {
   const normalized = String(value).trim().toUpperCase();
   if (normalized !== 'ALL' && normalized !== 'FX_CRYPTO' && !MARKET_UNIVERSES[normalized]) {
-    throw new Error('Classe de ativo inválida. Use ALL, FX_CRYPTO, FOREX, CRYPTO ou STOCKS.');
+    throw new Error('Classe de ativo inválida. Use ALL, FX_CRYPTO, FOREX, CRYPTO, CRYPTO_USDT, STOCKS, ETFS, INDICES ou COMMODITIES.');
   }
   return normalized;
 }

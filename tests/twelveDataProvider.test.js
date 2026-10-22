@@ -13,9 +13,19 @@ function mockFetch(url) {
   return Promise.resolve({ ok: true, json: async () => body });
 }
 
-test('builds a valid market snapshot from quote and candles', async () => {
-  const provider = createTwelveDataProvider({ apiKey: 'test', fetchImpl: mockFetch });
+test('builds a valid market snapshot and explicitly requests OHLC fields', async () => {
+  const requestUrls = [];
+  const provider = createTwelveDataProvider({
+    apiKey: 'test',
+    fetchImpl: async (url) => {
+      requestUrls.push(url);
+      return mockFetch(url);
+    }
+  });
   const result = await provider.getSnapshot('EUR/USD', '1min', 20);
+  const seriesUrl = requestUrls.find((url) => url.includes('/time_series?'));
+  assert.ok(seriesUrl);
+  assert.match(seriesUrl, /include_ohlc=true/);
   assert.equal(result.valid, true);
   assert.equal(result.source, 'twelvedata');
   assert.equal(result.candleCount, 20);
@@ -83,3 +93,30 @@ test('captures only safe rate-limit timing evidence from provider headers', asyn
     return true;
   });
 });
+
+test('batched market snapshots also explicitly request OHLC fields', async () => {
+  const requestUrls = [];
+  const provider = createTwelveDataProvider({
+    apiKey: 'test',
+    fetchImpl: async (url) => {
+      requestUrls.push(url);
+      if (url.includes('/quote?')) {
+        return { ok: true, json: async () => ({
+          'EUR/USD': { close: '1.1700', timestamp: Math.floor(Date.now() / 1000) },
+          'GBP/USD': { close: '1.2700', timestamp: Math.floor(Date.now() / 1000) }
+        }) };
+      }
+      return { ok: true, json: async () => ({
+        'EUR/USD': seriesBody(),
+        'GBP/USD': seriesBody()
+      }) };
+    }
+  });
+  const results = await provider.getSnapshots(['EUR/USD', 'GBP/USD'], '1min', 20);
+  assert.equal(results.length, 2);
+  const seriesUrl = requestUrls.find((url) => url.includes('/time_series?'));
+  assert.ok(seriesUrl);
+  assert.match(seriesUrl, /include_ohlc=true/);
+  assert.equal(results.every((entry) => entry.snapshot?.candles?.length === 20), true);
+});
+

@@ -13,9 +13,11 @@ function seconds(value, fallback, minimum, maximum) {
 
 export function runWillPipeline(data, context = {}) {
   if (!data) throw new Error('Market snapshot ausente.');
-  const result = willCore(data, context);
+  const clockMs = Number.isFinite(context.nowMs) ? context.nowMs : Date.now();
+  const deterministicContext = { ...context, nowMs: clockMs };
+  const result = willCore(data, deterministicContext);
   const directional = result.direction !== 'WAIT' && !result.blocked;
-  const signalTime = new Date().toISOString();
+  const signalTime = new Date(clockMs).toISOString();
   const entryStartSeconds = seconds(context.entryWindowStartSeconds, process.env.ENTRY_WINDOW_START_SECONDS ?? 60, 60, 300);
   const entryEndSeconds = seconds(context.entryWindowEndSeconds, process.env.ENTRY_WINDOW_END_SECONDS ?? 300, entryStartSeconds, 300);
   const suggestedEntrySeconds = seconds(context.entryDelaySeconds, process.env.ENTRY_DELAY_SECONDS ?? 120, entryStartSeconds, entryEndSeconds);
@@ -30,7 +32,7 @@ export function runWillPipeline(data, context = {}) {
     expirySeconds: Number(context.expirySeconds ?? process.env.EXPIRY_SECONDS ?? 60)
   }) : null;
   const timingValid = Boolean(timing?.valid);
-  const entryTiming = assessEntryTiming({ snapshot: data, signalTime, validFrom: timing?.validFrom ?? null, validUntil: timing?.validUntil ?? null });
+  const entryTiming = assessEntryTiming({ snapshot: data, signalTime, validFrom: timing?.validFrom ?? null, validUntil: timing?.validUntil ?? null, now: clockMs });
   const onlyTooEarly = entryTiming.timingStatus === 'WAIT_TIMING'
     && Array.isArray(entryTiming.timingReasons)
     && entryTiming.timingReasons.length === 1

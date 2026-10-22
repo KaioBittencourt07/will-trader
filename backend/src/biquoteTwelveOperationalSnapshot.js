@@ -51,6 +51,7 @@ export function composeBiquoteTwelveOperationalSnapshot({
   const latestTick = biquoteHealth?.latestTick ?? null;
 
   if (!BIQUOTE_FOREX_PRODUCTS[asset]) reasons.push('COMPOSITE_ASSET_NOT_QUALIFIED_FOREX');
+  if (twelveSnapshot?.source !== 'twelvedata' || (twelveSnapshot?.providerSelection && twelveSnapshot.providerSelection.selectedProvider !== 'twelvedata')) reasons.push('TWELVEDATA_SOURCE_REQUIRED');
   if (latestTick?.symbol && String(latestTick.symbol).trim().toUpperCase() !== asset) reasons.push('BIQUOTE_TICK_SYMBOL_MISMATCH');
   if (timeframe !== '1min') reasons.push('COMPOSITE_TIMEFRAME_UNSUPPORTED');
   if (biquoteHealth?.ready !== true) reasons.push('BIQUOTE_TEMPORAL_RUNTIME_NOT_READY');
