@@ -68,7 +68,7 @@ test('market source routing prefers exact public crypto mappings, identifies sou
         return response(Array.from({ length: 30 }, (_, index) => {
           const openMs = latestOpen - index * 60_000;
           const close = 60300 + (29 - index) * 12;
-          return [openMs, close - 4, close + 10, close - 1, close, 1.25, openMs + 59_999, '75000', 200, '0.75', '45000', '0'];
+          return [openMs, close - 4, close + 10, close - 5, close, 1.25, openMs + 59_999, '75000', 200, '0.75', '45000', '0'];
         }));
       }
     }

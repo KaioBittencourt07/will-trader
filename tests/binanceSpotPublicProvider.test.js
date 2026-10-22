@@ -8,7 +8,7 @@ function fixtures(nowMs = Date.now(), ageMs = 700) {
   const candles = Array.from({ length: 35 }, (_, index) => {
     const openMs = latestClosedOpen - index * 60_000;
     const close = 60_000 + (34 - index) * 12;
-    return [openMs, String(close - 4), String(close + 10), String(close - 1), String(close), '1.25', openMs + 59_999, '75000', 200, '0.75', '45000', '0'];
+    return [openMs, String(close - 4), String(close + 10), String(close - 5), String(close), '1.25', openMs + 59_999, '75000', 200, '0.75', '45000', '0'];
   });
   return {
     trade: [{ id: 42, price: '60348.2', qty: '0.01', time: quoteMs, isBuyerMaker: false, isBestMatch: true }],
