@@ -6,3 +6,4 @@ export { normalizeHistorical, validateHistorical } from './dataset.js';
 export { runHistoricalReplay, splitChronologically, validatePriceObservations } from './marketValidation.js';
 export { createMarketDatasetManifest, verifyMarketDatasetManifest } from './datasetManifest.js';
 export { runWillStrategyReplay } from './willStrategyReplay.js';
+export { buildConfidenceDiagnostics } from './confidenceDiagnostics.js';
