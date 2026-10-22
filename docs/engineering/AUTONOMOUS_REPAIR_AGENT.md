@@ -1,6 +1,6 @@
 # WILL Trader — Autonomous Engineering & Repair Agent
 
-Status: Phase 1 read-only diagnostics started (v1); bounded repair is still design-only.  
+Status: Phase 1 read-only diagnostics and Phase 2 workspace policy guard implemented; patch application and repair execution remain design-only.  
 Scope: diagnostics and bounded code repair only. This document does not enable broker execution or production self-deployment.
 
 ## Objective
@@ -63,7 +63,7 @@ Initial release target: L1, with L2 available only when repository permissions a
 9. `reporter/`: concise summary of root cause, patch, test evidence, confidence, unresolved risks, and PR link.
 10. `scheduler/` (later): opt-in, bounded scheduled runs with rate limits, alerting, kill switch, and no production write authority.
 
-These modules are the target architecture. As of 2026-10-22, only the Phase 1 read-only report generator is implemented at `backend/src/engineering/readOnlyDiagnostics.js`, with targeted tests in `backend/src/engineering/readOnlyDiagnostics.test.js`. It redacts common secret formats, bounds report fields, applies heuristic triage labels, and explicitly records that it did not execute commands, write files, call networks, or contact a broker. The repair loop, workspace guard, patcher, verification runner, diff gate, incident persistence, PR automation, and scheduler are not implemented. Branch CI run #646 passed the backend suite (26/26 tests, 0 failures) after enabling feature-branch workflow triggers. This validates the backend tests in CI, but does not yet exercise a full repair loop.
+These modules are the target architecture. As of 2026-10-22, Phase 1 is implemented at `backend/src/engineering/readOnlyDiagnostics.js` with tests in `backend/src/engineering/readOnlyDiagnostics.test.js`. A pure, fail-closed Phase 2 policy check is implemented at `backend/src/engineering/workspaceGuard.js` with tests in `backend/src/engineering/workspaceGuard.test.js`. It checks branch isolation, a valid baseline commit, clean worktree status, bounded path lists, and an allowlist limited to `backend/src/engineering/**` and `docs/engineering/**`; it rejects traversal, absolute/Windows paths, protected segments, and paths outside the allowlist. The guard is a policy function only: it does not inspect Git or the filesystem, execute commands, write files, call networks, or contact a broker. The actual isolated worktree, patcher, reproduction/verification runner, automatic rollback, diff gate, incident persistence, PR automation, and scheduler are not implemented. Earlier branch CI run #648 passed the backend suite (26/26 tests, 0 failures) before the guard was added; a new CI run is required to validate this increment. This validates backend tests only, not a full repair loop.
 
 ## Initial acceptance criteria
 
