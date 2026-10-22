@@ -242,3 +242,16 @@ O conhecimento será organizado em uma base versionada de conceitos, setups, con
 ## Regra de ouro
 
 > **Se o sistema não sabe, ele não inventa. Ele aguarda.**
+
+## Validação histórica de mercado e evidência
+
+Para não confundir taxa de acerto com rentabilidade, use as novas ferramentas exportadas de `backtest/src/index.js`:
+
+- `validatePriceObservations(records)`: valida preços e timestamps com fuso explícito; não descarta linhas inválidas silenciosamente.
+- `runHistoricalReplay({ decisions, observations, expirySeconds, entryDelayMs, payoutRatio, stake, costPerTrade })`: replay sem usar a mesma cotação que gerou a decisão como preenchimento; WAIT/BLOCKED permanecem no relatório; falta de preço pós-expiração vira `UNRESOLVED`.
+- `splitChronologically(records, { trainRatio, validationRatio, embargoMs })`: separa por tempo, preserva registros com timestamp igual e admite embargo para evitar vazamento entre rótulos.
+- `createMarketDatasetManifest({ rawBytes, ...metadata })` e `verifyMarketDatasetManifest(rawBytes, manifest)`: geram e verificam hashes SHA-256 dos bytes brutos e metadados de um dataset.
+
+As métricas financeiras ficam indisponíveis sem payout explicitamente informado. O intervalo de Wilson incluído é descritivo e não corrige dependência serial. O validador de formato/hash não autentica a fonte dos preços. **O replay sempre retorna `edgeProven: false`**: resultado de mercado precisa de dataset real cuja origem possa ser comprovada, parâmetros pré-registrados, teste temporal fora da amostra, custos/payout verificados e revisão independente.
+
+Protocolo completo: [docs/MARKET_VALIDATION_PROTOCOL.md](docs/MARKET_VALIDATION_PROTOCOL.md). Critérios de implantação: [docs/PRODUCTION_RELEASE_CHECKLIST.md](docs/PRODUCTION_RELEASE_CHECKLIST.md).
