@@ -213,7 +213,10 @@ export async function fetchTwelveHistoricalDataset({
   }).sort((a, b) => Date.parse(a.barOpenTimestamp) - Date.parse(b.barOpenTimestamp));
 
   const retrievedAtMs = now();
-  const closedBars = bars.filter((bar) => Date.parse(bar.barCloseTimestamp) <= retrievedAtMs);
+  const closedByRetrieval = bars.filter((bar) => Date.parse(bar.barCloseTimestamp) <= retrievedAtMs);
+  // A candle can open before endDate but close after it. Such a close must not
+  // leak past the caller's requested temporal boundary into derived observations.
+  const closedBars = closedByRetrieval.filter((bar) => Date.parse(bar.barCloseTimestamp) <= endMs);
   const observations = closedBars.map((bar) => ({
     asset: bar.asset,
     timestamp: bar.barCloseTimestamp,
@@ -257,7 +260,8 @@ export async function fetchTwelveHistoricalDataset({
     rowCounts: {
       rawBars: bars.length,
       closedBars: observations.length,
-      openOrNotYetClosedBarsExcluded: bars.length - observations.length
+      openOrNotYetClosedBarsExcluded: bars.length - closedByRetrieval.length,
+      closedBarsOutsideRequestedWindowExcluded: closedByRetrieval.length - closedBars.length
     },
     bars,
     observations
