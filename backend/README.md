@@ -26,3 +26,8 @@ Sem `TWELVEDATA_API_KEY` real, o backend pode iniciar, mas os dados de mercado e
 - O CI constrói a imagem Docker e testa `/health`, o dashboard e os cenários com/sem token. Não considere validação concluída enquanto o job não terminar em sucesso.
 
 Nenhuma dessas verificações demonstra rentabilidade. Não foi autorizada execução automática na Avalon ou em outra corretora.
+
+
+## Relay local de mercado
+
+O relay local usa `WILL_API_ACCESS_TOKEN` apenas quando o destino é loopback (`localhost`, `127.0.0.1` ou `::1`). Se `WILL_LOCAL_MARKET_RELAY` apontar para outro host, configure `WILL_LOCAL_MARKET_RELAY_TOKEN` com um segredo exclusivo aceito por esse serviço; o token geral da API não é encaminhado para hosts remotos. O relay padrão segue a porta `PORT` do próprio backend.

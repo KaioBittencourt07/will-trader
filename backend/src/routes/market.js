@@ -6,6 +6,7 @@ import { classifyTwelveDataFailure, diagnoseTwelveData, TWELVE_DATA_DIAGNOSTIC_V
 import { createProviderEfficiencyTelemetry, providerEfficiencySnapshot } from '../../../data/src/providerEfficiency.js';
 import { composeWsFreshnessRestOhlc } from '../../../data/src/wsRestComposition.js';
 import { attachMarketAuthoritativeFreshness } from '../marketAuthoritativeFreshness.js';
+import { buildLocalRelayHeaders } from '../localRelayAuth.js';
 import { attestMarketSnapshot } from '../marketSnapshotAttestation.js';
 
 const router = Router();
@@ -43,11 +44,11 @@ export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsiz
     relayLastError = message;
     throw new Error(message);
   }
-  const baseUrl = (process.env.WILL_LOCAL_MARKET_RELAY || 'http://127.0.0.1:3000').replace(/\/$/, '');
+  const baseUrl = (process.env.WILL_LOCAL_MARKET_RELAY || `http://127.0.0.1:${process.env.PORT || 3000}`).replace(/\/$/, '');
   const query = new URLSearchParams({ asset, timeframe, outputsize: String(outputsize) });
   let response;
   try {
-    response = await fetch(`${baseUrl}/api/market?${query}`, { signal: AbortSignal.timeout(12_000) });
+    response = await fetch(`${baseUrl}/api/market?${query}`, { headers: buildLocalRelayHeaders({ relayUrl: baseUrl }), signal: AbortSignal.timeout(12_000) });
   } catch (error) {
     const message = `Relay local indisponível: ${error?.cause?.code || error.message}`;
     relayLastError = message;
