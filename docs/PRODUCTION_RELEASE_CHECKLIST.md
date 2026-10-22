@@ -8,6 +8,7 @@ Este checklist é o critério mínimo para chamar uma build de funcional. Abrir 
 - [ ] Revisar o diff inteiro antes de merge.
 - [ ] Confirmar que `.env`, `localSecrets.js`, históricos, estados de monitor e diretórios de evidência não entram no commit nem na imagem.
 - [ ] Confirmar que as chaves fictícias de `.env.example` são tratadas como ausentes.
+- [ ] Em produção, configurar `WILL_API_ACCESS_TOKEN` como segredo do host com pelo menos 32 bytes aleatórios; o backend deve falhar ao iniciar se estiver ausente ou for um placeholder.
 
 ## 2. Validação automatizada
 
@@ -29,7 +30,9 @@ Este checklist é o critério mínimo para chamar uma build de funcional. Abrir 
 
 ## 4. Segurança de implantação — bloqueadores
 
-- [ ] Antes de publicar uma API acessível pela internet, definir e testar autenticação/autorização para endpoints de escrita e para dados privados de histórico. CORS não é autenticação.
+- [ ] Confirmar que `/api/*` retorna `401` sem `Authorization: Bearer <token>` e aceita o token correto.
+- [ ] Definir o mesmo token no cartão **Conexão segura com a API** do dashboard; o token fica no armazenamento local daquele navegador, não no HTML nem no repositório.
+- [ ] Configurar `DASHBOARD_ORIGIN` para a origem real do dashboard no host de produção. CORS não é autenticação.
 - [ ] Verificar limites de requisição, timeout, tamanho de payload e rate limit para evitar consumo acidental do orçamento do provedor.
 - [ ] Verificar logs para garantir que não revelem chaves, cabeçalhos de autorização, URLs com credenciais ou payloads privados.
 - [ ] Manter Avalon manual/read-only; nenhum auto-click, ordem real ou integração de corretora é aceito nesta etapa.
