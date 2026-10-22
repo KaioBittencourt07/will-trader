@@ -3,3 +3,4 @@ export { groupBy, analyzeSegments } from './grouping.js';
 export { timeSplit } from './split.js';
 export { replay } from './replay.js';
 export { normalizeHistorical, validateHistorical } from './dataset.js';
+export { runHistoricalReplay, splitChronologically, validatePriceObservations } from './marketValidation.js';
