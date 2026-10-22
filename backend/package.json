@@ -23,7 +23,8 @@
     "observe:twelve-r8k": "node src/runTwelveR8k.js",
     "test": "node --test",
     "market:history": "node src/collectTwelveHistoricalDataset.js",
-    "market:verify-history": "node src/verifyTwelveHistoricalDataset.js"
+    "market:verify-history": "node src/verifyTwelveHistoricalDataset.js",
+    "market:replay": "node src/runHistoricalWillReplay.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
