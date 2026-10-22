@@ -112,6 +112,9 @@ export async function fetchTwelveHistoricalDataset({
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs >= endMs) {
     throw new Error('HISTORICAL_WINDOW_INVALID');
   }
+  if (startMs % 1_000 !== 0 || endMs % 1_000 !== 0) {
+    throw new Error('HISTORICAL_WINDOW_MUST_ALIGN_TO_SECONDS');
+  }
   if (!Number.isInteger(maxPoints) || maxPoints < 1 || maxPoints > TWELVE_HISTORICAL_MAX_POINTS) {
     throw new Error('HISTORICAL_MAX_POINTS_OUT_OF_RANGE');
   }
@@ -138,8 +141,8 @@ export async function fetchTwelveHistoricalDataset({
   const query = new URLSearchParams({
     symbol,
     interval: timeframe,
-    start_date: new Date(startMs).toISOString().replace('.000Z', 'Z'),
-    end_date: new Date(endMs).toISOString().replace('.000Z', 'Z'),
+    start_date: new Date(startMs).toISOString().slice(0, 19),
+    end_date: new Date(endMs).toISOString().slice(0, 19),
     timezone: 'UTC',
     order: 'ASC',
     include_ohlc: 'true'
