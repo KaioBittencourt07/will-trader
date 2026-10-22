@@ -85,5 +85,21 @@ Arquivos existentes nunca são sobrescritos. Para recolher a mesma janela, prese
 - https://support.twelvedata.com/en/articles/5214728-getting-historical-data
 - https://support.twelvedata.com/en/articles/5615854-credits
 
-O coletor não é executado na CI e nenhum dado real foi baixado por estes testes. É necessário invocá-lo manualmente com chave autorizada. Uma chave não é fornecida em código, testes ou commit. A ingestão cria dados auditáveis, mas **não gera por si só um backtest da estratégia real do WILL nem prova edge**: as decisões cronológicas do motor ainda precisam ser produzidas/reexecutadas sobre esses candles fechados, usando a mesma versão de estratégia e regra de timing congeladas.
+O coletor não é executado na CI e nenhum dado real foi baixado por estes testes. É necessário invocá-lo manualmente com chave autorizada. Uma chave não é fornecida em código, testes ou commit.
+
+## Replay histórico do motor real do WILL
+
+Após coletar e verificar o arquivo, execute o replay offline do motor de estratégia:
+
+```powershell
+cd backend
+npm run market:replay -- --dataset-id <ID> --payout-ratio 0.8 --stake 1 --cost-per-trade 0.01 --minimum-binary-trades 100
+npm run market:verify-replay -- --dataset-id <ID>
+```
+
+O `<ID>` é o prefixo mostrado pelo comando `market:history`, sem `.raw.json` ou outras extensões. O replay não consulta internet: valida as barras do arquivo bruto, reconcilia opens/closes com as observações derivadas e executa `deriveTechnical` + `runWillPipeline` sobre cada prefixo de velas fechadas. Entradas e expirações são avaliadas contra os preços de abertura das velas futuras; cotação ausente ou tardia torna a execução hipotética `UNRESOLVED`. O relatório é arquivado uma única vez, junto de SHA-256 que amarra o relatório ao dataset e às observações.
+
+**Contexto macro/notícias:** o modo padrão falha fechado e bloqueia sinais porque ainda não há timeline histórica macro/notícias autenticada nesse dataset. Para explorar somente os sinais técnicos, existe a opção explícita `--technical-only-diagnostic`. Ela ignora deliberadamente os filtros macro/notícias e o relatório marca `TECHNICAL_ONLY_DIAGNOSTIC_MACRO_NEWS_OMITTED`; não confunda esse resultado com a estratégia operacional completa.
+
+A verificação confirma integridade/consistência dos bytes em relação aos manifestos locais, não identidade do provedor nem autenticidade criptográfica externa. Os testes usam fixtures sintéticas. Nenhum dado real foi coletado por CI e nenhum backtest por si só prova vantagem financeira; origem/licença, payout histórico, custos, contexto macro, fora-da-amostra e paper prospectivo continuam necessários.
 
