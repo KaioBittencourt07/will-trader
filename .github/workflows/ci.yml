@@ -2,9 +2,7 @@ name: WILL CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 jobs:
   test:
@@ -19,6 +17,8 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
-      - name: Run tests
+      - name: Run backend tests
         working-directory: backend
         run: npm test
+      - name: Build production Docker image
+        run: docker build --tag will-trader:ci .
