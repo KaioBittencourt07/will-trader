@@ -5,7 +5,7 @@ function keyFor(asset, timeframe, outputsize) {
 import { addProviderEfficiency } from './providerEfficiency.js';
 import { refreshMarketSnapshotFreshness } from './marketAdapter.js';
 
-export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), creditBudgetPerMinute = undefined, creditBudgetPerDay = undefined, maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
+export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.env.MARKET_CACHE_TTL_MS || 10_000), minRequestIntervalMs = Number(process.env.MARKET_MIN_REQUEST_INTERVAL_MS || 60_000), creditBudgetPerMinute = undefined, creditBudgetPerDay = undefined, maxRetries = Number(process.env.MARKET_MAX_RETRIES || 2), retryBaseMs = Number(process.env.MARKET_RETRY_BASE_MS || 500), retryMaxMs = Number(process.env.MARKET_RETRY_MAX_MS || 10_000), retryWindowMs = Number(process.env.MARKET_RETRY_WINDOW_MS || 60_000), retryWindowLimit = Number(process.env.MARKET_RETRY_WINDOW_LIMIT || 4), rateLimitCooldownMs = Number(process.env.MARKET_RATE_LIMIT_COOLDOWN_MS || 60_000), maxRateLimitCooldownMs = Number(process.env.MARKET_MAX_RATE_LIMIT_COOLDOWN_MS || 900_000), maxDailyCreditWaitMs = Number(process.env.MARKET_MAX_DAILY_CREDIT_WAIT_MS ?? 10_000), now = () => Date.now(), wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), random = Math.random } = {}) {
   if (!provider || typeof provider.getSnapshot !== 'function') throw new Error('provider.getSnapshot é obrigatório.');
   const configuredCreditBudget = process.env.MARKET_CREDITS_PER_MINUTE;
   const configuredDailyCreditBudget = process.env.MARKET_CREDITS_PER_DAY;
@@ -26,6 +26,9 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   if (effectiveCreditBudgetPerDay !== null &&
       (!Number.isInteger(effectiveCreditBudgetPerDay) || effectiveCreditBudgetPerDay < 1)) {
     throw new Error('MARKET_CREDITS_PER_DAY must be a positive integer when configured.');
+  }
+  if (!Number.isInteger(maxDailyCreditWaitMs) || maxDailyCreditWaitMs < 0) {
+    throw new Error('MARKET_MAX_DAILY_CREDIT_WAIT_MS must be a non-negative integer.');
   }
   const creditUsageMinute = [];
   const creditUsageDay = [];
@@ -219,6 +222,25 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
         minuteUsed + credits <= effectiveCreditBudgetPerMinute;
       const dayFits = effectiveCreditBudgetPerDay === null ||
         dayUsed + credits <= effectiveCreditBudgetPerDay;
+
+      // Never keep a dashboard/API request open for hours waiting on a daily
+      // quota reset. Wait only when enough credits become available soon.
+      if (!dayFits) {
+        const creditsThatMustExpire = dayUsed + credits - effectiveCreditBudgetPerDay;
+        let creditsScheduledToExpire = 0;
+        let enoughCreditsAt = null;
+        for (const usage of creditUsageDay) {
+          creditsScheduledToExpire += usage.credits;
+          enoughCreditsAt = usage.at + 86_400_000;
+          if (creditsScheduledToExpire >= creditsThatMustExpire) break;
+        }
+        const estimatedDailyWaitMs = enoughCreditsAt === null
+          ? Infinity
+          : Math.max(0, enoughCreditsAt - current);
+        if (estimatedDailyWaitMs > maxDailyCreditWaitMs) {
+          throw new Error('PROVIDER_DAILY_CREDIT_BUDGET_EXHAUSTED');
+        }
+      }
 
       if (minuteFits && dayFits) {
         const event = { at: current, credits };

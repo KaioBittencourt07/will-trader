@@ -298,7 +298,7 @@ test('refuses a provider operation whose estimated credit cost cannot fit the co
   assert.equal(calls, 0);
 });
 
-test('rolling daily credit cap prevents a second batch from draining the remaining daily quota', async () => {
+test('daily quota exhaustion fails fast instead of keeping the caller waiting 24 hours', async () => {
   let time = 0;
   const starts = [];
   const waits = [];
@@ -324,14 +324,53 @@ test('rolling daily credit cap prevents a second batch from draining the remaini
   });
 
   await engine.getSnapshots(['EUR/USD', 'GBP/USD'], '1min', 50);
+  await assert.rejects(
+    () => engine.getSnapshots(['BTC/USD', 'USD/JPY'], '1min', 50),
+    /PROVIDER_DAILY_CREDIT_BUDGET_EXHAUSTED/
+  );
+
+  assert.deepEqual(starts.map((call) => call.at), [0]);
+  assert.deepEqual(waits, []);
+  assert.equal(engine.getMetrics().creditBudgetPerMinute, 8);
+  assert.equal(engine.getMetrics().creditBudgetPerDay, 4);
+  assert.equal(engine.getMetrics().estimatedCreditsReserved, 4);
+  assert.equal(engine.getMetrics().estimatedCreditsInCurrentDay, 4);
+  assert.equal(engine.getMetrics().creditBudgetWaitCount, 0);
+});
+
+test('daily quota can wait briefly when enough previously reserved credits expire soon', async () => {
+  let time = 0;
+  const starts = [];
+  const waits = [];
+  const provider = {
+    providerId: 'twelvedata',
+    estimateCreditsForAssets: (assets) => assets.length * 2,
+    estimateHttpRequestsForAssets: () => 2,
+    maxSymbolsForCredits: (credits) => Math.floor(credits / 2),
+    getSnapshot: async (asset) => ({ asset, valid: true }),
+    getSnapshots: async (assets) => {
+      starts.push({ assets: [...assets], at: time });
+      return assets.map((asset) => ({ asset, snapshot: { asset, valid: true }, error: null }));
+    }
+  };
+  const engine = createMarketDataEngine({
+    provider,
+    cacheTtlMs: 0,
+    minRequestIntervalMs: 0,
+    creditBudgetPerMinute: 8,
+    creditBudgetPerDay: 4,
+    maxDailyCreditWaitMs: 10_000,
+    now: () => time,
+    wait: async (ms) => { waits.push(ms); time += ms; }
+  });
+
+  await engine.getSnapshots(['EUR/USD', 'GBP/USD'], '1min', 50);
+  time = 86_395_000;
   await engine.getSnapshots(['BTC/USD', 'USD/JPY'], '1min', 50);
 
   assert.deepEqual(starts.map((call) => call.at), [0, 86_400_000]);
-  assert.deepEqual(waits, [86_400_000]);
-  assert.equal(engine.getMetrics().creditBudgetPerMinute, 8);
-  assert.equal(engine.getMetrics().creditBudgetPerDay, 4);
+  assert.deepEqual(waits, [5_000]);
   assert.equal(engine.getMetrics().estimatedCreditsReserved, 8);
   assert.equal(engine.getMetrics().estimatedCreditsInCurrentDay, 4);
-  assert.equal(engine.getMetrics().creditBudgetWaitCount, 1);
 });
 
