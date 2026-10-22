@@ -152,6 +152,20 @@ export async function runBoundedRepairCycle({
       events.push('patch_applied_in_isolation');
       const checks = await adapter.runRequiredChecks({ workspace: activeWorkspace });
       const diff = await adapter.inspectDiff({ workspace: activeWorkspace });
+      const proposedPaths = [...patch.changedPaths].sort();
+      const inspectedPaths = Array.isArray(diff?.changedPaths) ? [...diff.changedPaths].sort() : null;
+      if (!inspectedPaths || proposedPaths.length !== inspectedPaths.length ||
+          proposedPaths.some((path, index) => path !== inspectedPaths[index])) {
+        rejectedAttempts.push(Object.freeze({
+          attemptNumber,
+          reasons: Object.freeze(['PATCH_DIFF_PATH_MISMATCH']),
+          output: redactDiagnosticText(checks?.output ?? '', 2000)
+        }));
+        await adapter.discardWorkspace({ workspace: activeWorkspace });
+        activeWorkspace = null;
+        events.push('candidate_rejected_diff_scope_mismatch');
+        continue;
+      }
       const gate = evaluateRepairCandidate({
         workspaceGuard: patchGuard,
         attemptNumber,
