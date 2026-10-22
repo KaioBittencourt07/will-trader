@@ -27,9 +27,9 @@ jobs:
         run: npm ci
       - name: Run backend-local tests
         working-directory: backend
-        run: npm test -- --test-timeout=60000 --test-force-exit
+        run: npm test -- --test-concurrency=2 --test-timeout=60000 --test-force-exit
       - name: Run full repository regression suite
-        run: node --test --test-timeout=60000 --test-force-exit tests/*.test.js
+        run: node --test --test-concurrency=2 --test-timeout=60000 --test-force-exit tests/*.test.js
       - name: Build production Docker image
         run: docker build --tag will-trader:ci .
       - name: Smoke test production container
