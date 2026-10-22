@@ -205,12 +205,12 @@ function parseArgs(argv) {
   return options;
 }
 
-function atomicWrite(filePath, bytes) {
+function atomicWriteExclusive(filePath, bytes) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.${randomUUID()}.tmp`;
   try {
     fs.writeFileSync(temporary, bytes, { flag: 'wx' });
-    fs.renameSync(temporary, filePath);
+    fs.linkSync(temporary, filePath);
   } finally {
     try { fs.rmSync(temporary, { force: true }); } catch {}
   }
@@ -397,8 +397,8 @@ export function runHistoricalWillReplayCli({
       stderr('HISTORICAL_REPLAY_ARTIFACT_EXISTS: refusing to overwrite an earlier report.\n');
       return 1;
     }
-    atomicWrite(outputPath, reportBytes);
-    atomicWrite(manifestPath, manifestBytes);
+    atomicWriteExclusive(outputPath, reportBytes);
+    atomicWriteExclusive(manifestPath, manifestBytes);
   } catch (error) {
     stderr(`HISTORICAL_REPLAY_WRITE_FAILED:${String(error?.code || 'IO_ERROR').slice(0, 80)}\n`);
     return 1;
