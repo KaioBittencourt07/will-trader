@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { hasConfiguredValue } from './configuredValue.js';
 import analyzeRouter from './routes/analyze.js';
 import marketRouter from './routes/market.js';
 import contextRouter from './routes/context.js';
@@ -263,7 +264,7 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'will-trader-backend',
-    openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+    openaiConfigured: hasConfiguredValue(process.env.OPENAI_API_KEY),
     marketProvider: 'twelvedata',
     marketConfigured: runtimeSecrets.twelveData.configured,
     marketCredentialSource: runtimeSecrets.twelveData.source,
