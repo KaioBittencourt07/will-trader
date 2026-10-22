@@ -67,7 +67,7 @@ test('historical ingest hashes original response bytes and emits sorted closed-c
   assert.match(requestUrl, /timezone=UTC/);
   assert.match(requestUrl, /include_ohlc=true/);
   assert.match(requestUrl, /start_date=2026-10-01T12%3A00%3A00/);
-  assert.match(requestUrl, /end_date=2026-10-01T12%3A03%3A00/);
+  assert.match(requestUrl, /end_date=2026-10-01T12%3A02%3A59/);
   assert.doesNotMatch(requestUrl, /apikey|synthetic-test-api-key/);
   assert.equal(requestOptions.headers.Authorization, `apikey ${key}`);
   assert.equal(result.requestBudget.apiRequests, 1);
