@@ -108,8 +108,17 @@ export async function collectHistoricalDatasetCli({
   const toPart = dataset.requestedWindow.end.replace(/[^0-9]/g, '').slice(0, 12);
   const datasetId = `twelve-${safeAsset}-${safeInterval}-${fromPart}-${toPart}`;
   const base = path.join(outputDirectory, datasetId);
+  const rawFile = `${datasetId}.raw.json`;
+  const observationsFile = `${datasetId}.observations.json`;
+  const manifestFile = `${datasetId}.manifest.json`;
+  const artifactPaths = [path.join(outputDirectory, rawFile), path.join(outputDirectory, observationsFile), path.join(outputDirectory, manifestFile)];
+  if (artifactPaths.some((target) => fs.existsSync(target))) {
+    stderr('HISTORICAL_ARTIFACT_ALREADY_EXISTS: refusing to overwrite an archived dataset or manifest.\n');
+    return 1;
+  }
 
   const rawBytes = Buffer.from(dataset.rawDataset.bytes);
+  const observationBytes = Buffer.from(JSON.stringify(dataset.observations, null, 2), 'utf8');
   const manifest = createMarketDatasetManifest({
     rawBytes,
     datasetId,
@@ -121,22 +130,31 @@ export async function collectHistoricalDatasetCli({
     toTimestamp: dataset.bars.at(-1).barOpenTimestamp,
     recordCount: dataset.rowCounts.rawBars
   });
+  const collectionFields = {
+    schemaVersion: 'will-historical-collection-manifest-v1',
+    datasetManifest: manifest,
+    request: {
+      asset: dataset.asset,
+      interval: dataset.interval,
+      start: dataset.requestedWindow.start,
+      end: dataset.requestedWindow.end
+    },
+    rowCounts: dataset.rowCounts,
+    requestBudget: dataset.requestBudget,
+    integrityClaim: dataset.integrityClaim,
+    derivedObservations: {
+      file: observationsFile,
+      byteLength: observationBytes.byteLength,
+      sha256: createHash('sha256').update(observationBytes).digest('hex')
+    }
+  };
+  const collectionManifestSha256 = createHash('sha256').update(Buffer.from(JSON.stringify(collectionFields), 'utf8')).digest('hex');
+  const collectionManifest = { ...collectionFields, collectionManifestSha256 };
 
   try {
-    atomicWrite(`${base}.raw.json`, rawBytes);
-    atomicWrite(`${base}.observations.json`, Buffer.from(JSON.stringify(dataset.observations, null, 2), 'utf8'));
-    atomicWrite(`${base}.manifest.json`, Buffer.from(JSON.stringify({
-      datasetManifest: manifest,
-      request: {
-        asset: dataset.asset,
-        interval: dataset.interval,
-        start: dataset.requestedWindow.start,
-        end: dataset.requestedWindow.end
-      },
-      rowCounts: dataset.rowCounts,
-      requestBudget: dataset.requestBudget,
-      integrityClaim: dataset.integrityClaim
-    }, null, 2), 'utf8'));
+    atomicWrite(path.join(outputDirectory, rawFile), rawBytes);
+    atomicWrite(path.join(outputDirectory, observationsFile), observationBytes);
+    atomicWrite(path.join(outputDirectory, manifestFile), Buffer.from(JSON.stringify(collectionManifest, null, 2), 'utf8'));
   } catch (error) {
     stderr(`HISTORICAL_ARTIFACT_WRITE_FAILED:${String(error?.code || 'IO_ERROR').slice(0, 80)}\n`);
     return 1;
@@ -150,6 +168,7 @@ export async function collectHistoricalDatasetCli({
     rowCounts: dataset.rowCounts,
     rawSha256: dataset.rawDataset.sha256,
     manifestSha256: manifest.manifestSha256,
+    collectionManifestSha256,
     providerReportedCreditsUsed: dataset.requestBudget.providerReportedCreditsUsed,
     providerReportedCreditsLeft: dataset.requestBudget.providerReportedCreditsLeft,
     rawFile: `${datasetId}.raw.json`,
