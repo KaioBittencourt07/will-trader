@@ -99,6 +99,14 @@ const SUPPORTED_MARKET_TIMEFRAMES = new Set([
 ]);
 const DEFAULT_MARKET_TIMEFRAMES = ['1min', '5min', '15min'];
 
+export function parseMarketTimeframe(raw) {
+  const value = raw === undefined || raw === null || String(raw).trim() === ''
+    ? '1min'
+    : String(raw).trim().toLowerCase();
+  if (!SUPPORTED_MARKET_TIMEFRAMES.has(value)) return { error: 'MARKET_TIMEFRAME_INVALID' };
+  return { value };
+}
+
 export function parseMarketTimeframes(raw) {
   if (raw === undefined || raw === null || String(raw).trim() === '') {
     return { value: [...DEFAULT_MARKET_TIMEFRAMES] };
@@ -128,7 +136,9 @@ function withServerAttestation(snapshot) {
 
 router.get('/market', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
-  const timeframe = String(req.query.timeframe || '1min');
+  const parsedTimeframe = parseMarketTimeframe(req.query.timeframe);
+  if (parsedTimeframe.error) return res.status(400).json({ ok: false, error: parsedTimeframe.error });
+  const timeframe = parsedTimeframe.value;
   const parsedOutputsize = parseMarketOutputsize(req.query.outputsize, 12);
   if (parsedOutputsize.error) return res.status(400).json({ ok: false, error: parsedOutputsize.error });
   const outputsize = parsedOutputsize.value;
@@ -186,7 +196,9 @@ router.get('/market/status', (req, res) => {
 
 router.get('/market/diagnostic', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
-  const timeframe = String(req.query.timeframe || '1min');
+  const parsedTimeframe = parseMarketTimeframe(req.query.timeframe);
+  if (parsedTimeframe.error) return res.status(400).json({ ok: false, error: parsedTimeframe.error });
+  const timeframe = parsedTimeframe.value;
   const telemetry = createProviderEfficiencyTelemetry('api-market-diagnostic-request');
   let engine;
   try {
