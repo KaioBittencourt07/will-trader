@@ -76,6 +76,19 @@ test('protected paths are rejected before patch application', async () => {
   assert.ok(adapter.calls.includes('discard:1'));
 });
 
+test('patches cannot modify paths outside the original requested scope', async () => {
+  const adapter = makeAdapter({
+    async proposePatch() {
+      return { changedPaths: ['backend/src/engineering/unrequested.js'] };
+    }
+  });
+  const result = await runBoundedRepairCycle({ adapter, requestedPaths: scope });
+  assert.equal(result.decision, 'STOP_AND_REPORT');
+  assert.equal(result.rejectedAttempts[0].reasons[0], 'PATCH_SCOPE_EXCEEDS_REQUESTED_PATHS');
+  assert.ok(adapter.calls.includes('discard:1'));
+  assert.ok(!adapter.calls.includes('apply'));
+});
+
 test('duplicate patch paths are rejected before applying changes', async () => {
   const adapter = makeAdapter({
     async proposePatch() {
