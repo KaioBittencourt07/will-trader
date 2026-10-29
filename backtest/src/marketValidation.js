@@ -3,6 +3,21 @@ const ISO_TIMESTAMP_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9
 
 function timestampMs(value) {
   if (typeof value !== 'string' || !ISO_TIMESTAMP_WITH_ZONE.test(value)) return NaN;
+  // Date.parse can normalize impossible calendar dates (for example, Feb 31).
+  // Validate the represented wall-clock fields before accepting the timestamp.
+  const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})/);
+  if (!match) return NaN;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1] ||
+      hour > 23 || minute > 59 || second > 59) return NaN;
   const result = Date.parse(value);
   return Number.isFinite(result) ? result : NaN;
 }
