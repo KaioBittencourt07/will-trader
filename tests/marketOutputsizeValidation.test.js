@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseMarketOutputsize, parseMarketTimeframes } from '../backend/src/routes/market.js';
+import { parseMarketOutputsize, parseMarketTimeframe, parseMarketTimeframes } from '../backend/src/routes/market.js';
 
 test('defaults missing market outputsize to 50', () => {
   assert.deepEqual(parseMarketOutputsize(undefined), { value: 50 });
@@ -37,5 +37,19 @@ test('normalizes and accepts up to three supported unique timeframes', () => {
 test('rejects empty entries, unsupported periods, duplicates, and more than three periods', () => {
   for (const value of [',,,', '1min,,5min', '0min', '2min', '1min,1MIN', '1min,5min,15min,30min']) {
     assert.deepEqual(parseMarketTimeframes(value), { error: 'MARKET_TIMEFRAMES_INVALID' }, value);
+  }
+});
+
+  
+test('defaults a missing or blank single timeframe to 1min and normalizes supported values', () => {
+  assert.deepEqual(parseMarketTimeframe(undefined), { value: '1min' });
+  assert.deepEqual(parseMarketTimeframe('  '), { value: '1min' });
+  assert.deepEqual(parseMarketTimeframe(' 15MIN '), { value: '15min' });
+  assert.deepEqual(parseMarketTimeframe('1day'), { value: '1day' });
+});
+
+test('rejects unsupported single timeframe values before provider access', () => {
+  for (const value of ['2min', '0min', '1m', 'forever']) {
+    assert.deepEqual(parseMarketTimeframe(value), { error: 'MARKET_TIMEFRAME_INVALID' }, value);
   }
 });
