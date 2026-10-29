@@ -93,6 +93,29 @@ export function parseMarketOutputsize(raw, minimum = 12) {
   return { value: Math.min(Math.max(parsed, minimum), 200) };
 }
 
+const SUPPORTED_MARKET_TIMEFRAMES = new Set([
+  '1min', '5min', '15min', '30min', '45min',
+  '1h', '2h', '4h', '1day', '1week', '1month'
+]);
+const DEFAULT_MARKET_TIMEFRAMES = ['1min', '5min', '15min'];
+
+export function parseMarketTimeframes(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return { value: [...DEFAULT_MARKET_TIMEFRAMES] };
+  }
+
+  const values = String(raw).split(',').map((value) => value.trim().toLowerCase());
+  if (
+    values.length > 3
+    || values.some((value) => !SUPPORTED_MARKET_TIMEFRAMES.has(value))
+    || new Set(values).size !== values.length
+  ) {
+    return { error: 'MARKET_TIMEFRAMES_INVALID' };
+  }
+
+  return { value: values };
+}
+
 function withServerAttestation(snapshot) {
   const attestation = attestMarketSnapshot(snapshot);
   return Object.freeze({
@@ -195,7 +218,9 @@ router.get('/market/diagnostic', async (req, res) => {
 
 router.get('/market/multi', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
-  const timeframes = String(req.query.timeframes || '1min,5min,15min').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 3);
+  const parsedTimeframes = parseMarketTimeframes(req.query.timeframes);
+  if (parsedTimeframes.error) return res.status(400).json({ ok: false, error: parsedTimeframes.error });
+  const timeframes = parsedTimeframes.value;
   const parsedOutputsize = parseMarketOutputsize(req.query.outputsize, 20);
   if (parsedOutputsize.error) return res.status(400).json({ ok: false, error: parsedOutputsize.error });
   const outputsize = parsedOutputsize.value;
