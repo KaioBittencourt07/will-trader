@@ -143,6 +143,18 @@ export async function runBoundedRepairCycle({
         continue;
       }
 
+      const allowedRequestedPaths = new Set(Array.isArray(requestedPaths) ? requestedPaths : []);
+      if (patch.changedPaths.some((path) => !allowedRequestedPaths.has(path))) {
+        rejectedAttempts.push(Object.freeze({
+          attemptNumber,
+          reasons: Object.freeze(['PATCH_SCOPE_EXCEEDS_REQUESTED_PATHS'])
+        }));
+        await adapter.discardWorkspace({ workspace: activeWorkspace });
+        activeWorkspace = null;
+        events.push('patch_scope_rejected_outside_requested_paths');
+        continue;
+      }
+
       const patchGuard = evaluateWorkspaceGuard({
         branch, baselineCommit, worktreeStatus: 'CLEAN',
         changedFiles: patch.changedPaths,
