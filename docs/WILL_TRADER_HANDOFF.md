@@ -2,10 +2,14 @@
 
 ## Atualização de auditoria — 2026-10-29 (última execução)
 
+- PR #8 (draft, aberto): validação de parâmetros `outputsize` e `timeframe(s)` com HTTP 400 antes de qualquer chamada do provedor. Push CI: https://github.com/KaioBittencourt07/will-trader/actions/runs/40964918765 — **sucesso**; PR CI: https://github.com/KaioBittencourt07/will-trader/actions/runs/40964922362 — **sucesso**, no commit `73ea1da4969644f8ce7842a72738547d64210119`.
+- PR #9 (draft, aberto): implementa `GET /api/market/sources` como endpoint somente leitura e painel português no dashboard. Exibe estados das fontes sem iniciar sondagens externas; Binance segue `IMPLEMENTED_NOT_PROBED` e Avalon `NOT_CONNECTED`. Push CI: https://github.com/KaioBittencourt07/will-trader/actions/runs/40965798762 — **sucesso**; PR CI: https://github.com/KaioBittencourt07/will-trader/actions/runs/40965802935 — **sucesso**, no commit `485bb0d1e92f92011aacd769084b1c281ea62c80`.
+- Os CIs dos PRs #8 e #9 passaram por testes do backend, regressão completa, build Docker e smoke test. Isto valida o código automatizado no commit testado, não conexão real de mercado nem rentabilidade.
+
 - CI #688 (push): https://github.com/KaioBittencourt07/will-trader/actions/runs/40934678540 — **sucesso**; CI #689 (pull request): https://github.com/KaioBittencourt07/will-trader/actions/runs/40934685470 — **sucesso**, ambos no commit `b1f26d93610706b5cadd1198ec42caee2660d8b1`.
 - A CI valida o patch de timestamp em `backtest/src/marketValidation.js` e `backtest/src/datasetManifest.js`; a causa de uma execução anterior falhar foi um regex com escape duplicado, corrigido antes da execução #688.
 - PR #2: escopo dos patches restrito aos caminhos solicitados; CI #676 aprovada. O ciclo de reparo segue dependente de adapter real para isolamento e execução, não deve ser chamado de agente autônomo completo.
-- Estado dos PRs #2, #5 e #6: abertos em draft, sem merge.
+- Estado dos PRs #2, #5, #6, #8 e #9: abertos em draft, sem merge.
 - Pendências bloqueantes continuam: validar o ambiente Windows local, provar feed real somente leitura, integrar/validar Avalon sem inventar cotação, coletar histórico somente após autorização de créditos, e executar PAPER prospectivo com custos/payout e proveniência.
 
 Atualizado em: 2026-10-29  
@@ -29,7 +33,7 @@ Este documento reúne o estado verificado no GitHub e prepara a próxima sessão
 - As duas execuções passaram pela etapa `Verify Twelve Data provider offline`, testes backend, regressão completa, build Docker e smoke test.
 - A verificação offline usa `node --check` no provider e testes focados com mocks. Não chama APIs externas nem consome créditos.
 - Issue de acompanhamento: https://github.com/KaioBittencourt07/will-trader/issues/7.
-- PRs relacionados: [#2 agente](https://github.com/KaioBittencourt07/will-trader/pull/2), [#5 replay/backtesting](https://github.com/KaioBittencourt07/will-trader/pull/5), [#6 verificação offline](https://github.com/KaioBittencourt07/will-trader/pull/6). Todos permanecem abertos em draft; não foram mesclados.
+- PRs relacionados: [#2 agente](https://github.com/KaioBittencourt07/will-trader/pull/2), [#5 replay/backtesting](https://github.com/KaioBittencourt07/will-trader/pull/5), [#6 verificação offline](https://github.com/KaioBittencourt07/will-trader/pull/6), [#8 validação de parâmetros](https://github.com/KaioBittencourt07/will-trader/pull/8), [#9 status das fontes + painel](https://github.com/KaioBittencourt07/will-trader/pull/9). Todos permanecem abertos em draft; não foram mesclados.
 
 ## O que CI verde NÃO comprova
 
@@ -61,8 +65,8 @@ Depois, testar o backend local de acordo com os scripts definidos no `backend/pa
 - [ ] Corrigir apenas erros reproduzíveis e adicionar teste de regressão para cada correção.
 
 ### B. Observabilidade de feeds (read-only)
-- [ ] Auditar `/api/market/sources` e estados de cada provedor.
-- [ ] Garantir estados honestos: `IMPLEMENTED_NOT_PROBED`, `NOT_CONNECTED`, `CONNECTED` só com evidência atual apropriada.
+- [x] Implementar `/api/market/sources` e painel de status; CI aprovado no PR #9. Ainda falta validar a resposta em runtime após eventual merge/execução autorizada.
+- [x] Preservar estados explícitos no código (`IMPLEMENTED_NOT_PROBED`, `NOT_CONNECTED`) e distinguir WebSocket conectado de tick fresco; CI aprovado. [ ] Confirmar em execução local com as configurações reais.
 - [ ] Implementar diagnóstico seguro com timestamp, símbolo, idade do dado, provedor, latência e erro sanitizado.
 - [ ] Não disparar chamadas reais de provider até existir autorização explícita para a política de créditos/credenciais.
 - [ ] Para Avalon, usar somente dados acessíveis legitimamente em modo read-only; não burlar autenticação, controles ou proteções da plataforma.
