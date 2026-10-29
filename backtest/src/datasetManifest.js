@@ -6,7 +6,7 @@ const TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-
 function parseExplicitTimestamp(value) {
   if (typeof value !== 'string' || !TIME_PATTERN.test(value)) return NaN;
   // Reject impossible wall-clock dates instead of trusting Date.parse normalization.
-  const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})/);
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
   if (!match) return NaN;
   const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
   const year = Number(yearText);
