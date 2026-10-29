@@ -84,6 +84,15 @@ export function getMarketDataEngine() {
   return marketDataEngine;
 }
 
+export function parseMarketOutputsize(raw, minimum = 12) {
+  if (raw === undefined || raw === null) return { value: 50 };
+  const text = String(raw).trim();
+  if (!/^\\d+$/.test(text)) return { error: 'MARKET_OUTPUTSIZE_INVALID' };
+  const parsed = Number(text);
+  if (!Number.isSafeInteger(parsed)) return { error: 'MARKET_OUTPUTSIZE_INVALID' };
+  return { value: Math.min(Math.max(parsed, minimum), 200) };
+}
+
 function withServerAttestation(snapshot) {
   const attestation = attestMarketSnapshot(snapshot);
   return Object.freeze({
@@ -97,7 +106,9 @@ function withServerAttestation(snapshot) {
 router.get('/market', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
   const timeframe = String(req.query.timeframe || '1min');
-  const outputsize = Math.min(Math.max(Number(req.query.outputsize || 50), 12), 200);
+  const parsedOutputsize = parseMarketOutputsize(req.query.outputsize, 12);
+  if (parsedOutputsize.error) return res.status(400).json({ ok: false, error: parsedOutputsize.error });
+  const outputsize = parsedOutputsize.value;
   const telemetry = createProviderEfficiencyTelemetry('api-market-request');
   try {
     const rawSnapshot = await getMarketDataEngine().getSnapshot(asset, timeframe, outputsize, { telemetry });
@@ -185,7 +196,9 @@ router.get('/market/diagnostic', async (req, res) => {
 router.get('/market/multi', async (req, res) => {
   const asset = String(req.query.asset || process.env.DEFAULT_ASSET || 'EUR/USD');
   const timeframes = String(req.query.timeframes || '1min,5min,15min').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 3);
-  const outputsize = Math.min(Math.max(Number(req.query.outputsize || 50), 20), 200);
+  const parsedOutputsize = parseMarketOutputsize(req.query.outputsize, 20);
+  if (parsedOutputsize.error) return res.status(400).json({ ok: false, error: parsedOutputsize.error });
+  const outputsize = parsedOutputsize.value;
   try {
     const snapshots = [];
     for (const timeframe of timeframes) {
