@@ -28,5 +28,24 @@ export function runBacktest({ candles = [], context = {}, expiryCandles = 1 } = 
     trades.push(settleTrade(trade, exit.price, exit.timestamp));
   }
 
-  return { decisions, trades, performance: calculatePerformance(trades) };
+  return {
+    schemaVersion: 'will-legacy-backtest-v1',
+    mode: 'LEGACY_CANDLE_PRICE_PROXY_NOT_EXECUTION_ACCURATE',
+    decisions,
+    trades,
+    performance: {
+      ...calculatePerformance(trades),
+      pnlSemantics: 'RAW_PRICE_DELTA_NOT_CASH_PNL',
+      winRateSemantics: 'OUTCOME_FREQUENCY_WITHOUT_PAYOUT_OR_COST_MODEL',
+      entryFillModel: 'CURRENT_CANDLE_PRICE_AT_DECISION_TIME_NOT_VERIFIED_BROKER_FILL',
+      expiryModel: 'CANDLE_INDEX_OFFSET_NOT_VERIFIED_BROKER_EXPIRY',
+      edgeProven: false
+    },
+    warnings: [
+      'Legacy compatibility backtest only; entry/fill and settlement rules are not an execution-accurate historical replay.',
+      'Performance.pnl is raw price movement, not account-currency or payout-aware financial PnL.',
+      'Use backtest/src/willStrategyReplay.js plus a verified historical dataset for strict point-in-time analysis.'
+    ],
+    edgeProven: false
+  };
 }

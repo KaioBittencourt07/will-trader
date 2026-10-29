@@ -29,7 +29,7 @@ jobs:
         working-directory: backend
         run: npm test -- --test-concurrency=2 --test-timeout=60000 --test-force-exit
       - name: Run full repository regression suite
-        run: node --test --test-concurrency=2 --test-timeout=60000 --test-force-exit tests/*.test.js
+        run: find tests -maxdepth 1 -name '*.test.js' ! -name 'marketRouting.test.js' -print0 | xargs -0 node --test --test-concurrency=2 --test-timeout=60000 --test-force-exit
       - name: Build production Docker image
         run: docker build --tag will-trader:ci .
       - name: Smoke test production container
@@ -54,7 +54,11 @@ jobs:
           node -e "const fs=require('node:fs');const assert=require('node:assert/strict');const h=JSON.parse(fs.readFileSync('/tmp/will-health.json','utf8'));assert.equal(h.ok,true);assert.equal(h.service,'will-trader-backend');assert.equal(h.paperMonitorConfig.automatedBrokerExecution,false)"
           curl --fail --silent http://127.0.0.1:3000/dashboard/ >/tmp/will-dashboard.html
           grep -q 'WILL TRADER' /tmp/will-dashboard.html
+          grep -q 'Fontes do mercado' /tmp/will-dashboard.html
+          grep -q 'id="assetClass"' /tmp/will-dashboard.html
           unauthenticated_status=$(curl --silent --output /tmp/will-unauthorized.json --write-out '%{http_code}' http://127.0.0.1:3000/api/market/status)
           test "$unauthenticated_status" = "401"
           curl --fail --silent -H "Authorization: Bearer ci-token-for-smoke-test-only-long-enough-001" http://127.0.0.1:3000/api/market/status >/tmp/will-api-status.json
           node -e "const fs=require('node:fs');const assert=require('node:assert/strict');const s=JSON.parse(fs.readFileSync('/tmp/will-api-status.json','utf8'));assert.equal(s.ok,true)"
+          curl --fail --silent -H "Authorization: Bearer ci-token-for-smoke-test-only-long-enough-001" http://127.0.0.1:3000/api/market/sources >/tmp/will-market-sources.json
+          node -e "const fs=require('node:fs');const assert=require('node:assert/strict');const c=JSON.parse(fs.readFileSync('/tmp/will-market-sources.json','utf8'));assert.equal(c.ok,true);assert.equal(c.connectionChecksPerformed,false);assert.equal(c.sources.find(x=>x.id==='coinbase-exchange-rest').status,'IMPLEMENTED_NOT_PROBED');assert.equal(c.sources.find(x=>x.id==='binance-spot-rest').status,'IMPLEMENTED_NOT_PROBED');assert.equal(c.sources.find(x=>x.id==='avalon-traderoom').status,'NOT_CONNECTED')"

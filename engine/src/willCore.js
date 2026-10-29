@@ -5,7 +5,7 @@ import { calibrateConfidence } from './confidence.js';
 import { evaluateNoTrade } from './noTrade.js';
 
 export function willCore(market, context = {}) {
-  const decision = decide(market);
+  const decision = decide(market, { nowMs: Number.isFinite(context.nowMs) ? context.nowMs : Date.now() });
   const regime = classifyRegime(market);
   const setup = classifySetup(market, regime.regime);
 

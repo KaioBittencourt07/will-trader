@@ -4,7 +4,7 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function validateMarketData(data) {
+function validateMarketData(data, nowMs = Date.now()) {
   const required = ['asset', 'timestamp', 'price', 'timeframe'];
   const missing = required.filter((key) => data?.[key] === undefined || data?.[key] === null || data?.[key] === '');
   if (missing.length) return { ok: false, reason: `Dados ausentes: ${missing.join(', ')}` };
@@ -13,7 +13,7 @@ function validateMarketData(data) {
   }
   const timestamp = Date.parse(data.timestamp);
   if (!Number.isFinite(timestamp)) return { ok: false, reason: 'Timestamp inválido.' };
-  const ageMs = Date.now() - timestamp;
+  const ageMs = nowMs - timestamp;
   if (ageMs < -60_000) return { ok: false, reason: 'Timestamp futuro/inconsistente.' };
   if (ageMs > 120_000) return { ok: false, reason: 'Dados atrasados.' };
   return { ok: true };
@@ -41,8 +41,9 @@ function analyzeTechnical(data) {
   return { direction, score, confirmations, riskFlags };
 }
 
-export function decide(data) {
-  const guard = validateMarketData(data);
+export function decide(data, { nowMs = Date.now() } = {}) {
+  const clock = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const guard = validateMarketData(data, clock);
   if (!guard.ok) {
     return {
       asset: data?.asset ?? null,

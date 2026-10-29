@@ -9,3 +9,7 @@ export { composeWsFreshnessRestOhlc, WS_REST_COMPOSITION_VERSION } from './wsRes
 export { createMultiProviderOhlc, MULTI_PROVIDER_OHLC_VERSION } from './multiProviderOhlc.js';
 export { transformOandaOffline, classifyOandaFailure, OANDA_QUALIFICATION, OANDA_OFFLINE_ADAPTER_VERSION, SECONDARY_PROVIDER_QUALIFICATION_VERSION } from './providers/oandaQualification.js';
 export { createOandaReadOnlyProvider, OANDA_LIVE_ADAPTER_VERSION } from './providers/oandaProvider.js';
+export { fetchTwelveHistoricalDataset, TWELVE_HISTORICAL_DATASET_VERSION, TWELVE_HISTORICAL_MAX_POINTS } from './providers/twelveHistoricalDataset.js';
+
+export { createCoinbaseExchangePublicProvider, COINBASE_PUBLIC_SPOT_PRODUCTS, coinbasePublicProductFor } from './providers/coinbaseExchangePublicProvider.js';
+export { createBinanceSpotPublicProvider, BINANCE_PUBLIC_SPOT_SYMBOLS, binancePublicSymbolFor } from './providers/binanceSpotPublicProvider.js';

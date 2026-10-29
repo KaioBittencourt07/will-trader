@@ -22,6 +22,12 @@ services:
         sync: false
       - key: MARKET_MAX_AGE_MS
         value: 10000
+      - key: MARKET_CREDITS_PER_MINUTE
+        value: 6
+      - key: MARKET_CREDITS_PER_DAY
+        value: 720
+      - key: MARKET_MIN_REQUEST_INTERVAL_MS
+        value: 60000
       - key: EXECUTION_DELAY_MS
         value: 0
       - key: EXECUTION_WINDOW_BEFORE_MS

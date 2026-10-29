@@ -1,26 +1,37 @@
 import { qualifyTwelveRestTimestampSemantic } from './twelveRestTimestampSemanticQualification.js';
 import { classifyTwelveTimestampAuthority } from './twelveTimestampAuthority.js';
+import { qualifyPublicExchangeTimestampAuthority } from './publicExchangeTimestampAuthority.js';
 
 export const MARKET_AUTHORITATIVE_FRESHNESS_VERSION = 'market-authoritative-freshness-v2';
 export const MARKET_FROZEN_FRESHNESS_CONTRACT_MS = 30_000;
 
 function deriveServerTimestampAuthorityEvidence(snapshot = {}) {
-  if (snapshot?.source !== 'twelvedata') return snapshot?.timestampAuthorityEvidence ?? null;
-
-  const fieldName = snapshot?.timestampOrigins?.quoteTimestampField;
-  const qualification = qualifyTwelveRestTimestampSemantic(fieldName);
-  return Object.freeze({
-    source: 'SERVER_TWELVE_REST_SEMANTIC_QUALIFICATION',
-    semanticVersion: qualification.version,
-    fieldName: qualification.fieldName,
-    semanticClassification: qualification.classification,
-    semanticReasonCodes: qualification.reasonCodes,
-    candidateAuthority: qualification.candidateAuthority,
-    provenanceVerified: qualification.provenanceVerified,
-    comparableToReceiveClock: qualification.comparableToReceiveClock,
-    observedBucketPattern: qualification.observedBucketPattern,
-    canEvaluateFrozenFreshness: qualification.canEvaluateFrozenFreshness
-  });
+  if (snapshot?.source === 'twelvedata') {
+    const fieldName = snapshot?.timestampOrigins?.quoteTimestampField;
+    const qualification = qualifyTwelveRestTimestampSemantic(fieldName);
+    return Object.freeze({
+      source: 'SERVER_TWELVE_REST_SEMANTIC_QUALIFICATION',
+      semanticVersion: qualification.version,
+      fieldName: qualification.fieldName,
+      semanticClassification: qualification.classification,
+      semanticReasonCodes: qualification.reasonCodes,
+      candidateAuthority: qualification.candidateAuthority,
+      provenanceVerified: qualification.provenanceVerified,
+      comparableToReceiveClock: qualification.comparableToReceiveClock,
+      observedBucketPattern: qualification.observedBucketPattern,
+      canEvaluateFrozenFreshness: qualification.canEvaluateFrozenFreshness
+    });
+  }
+  if (snapshot?.source === 'coinbase-exchange-rest' || snapshot?.source === 'binance-spot-rest') {
+    return qualifyPublicExchangeTimestampAuthority({
+      source: snapshot.source,
+      fieldName: snapshot?.timestampOrigins?.quoteTimestampField,
+      eventTimestamp: snapshot?.quoteTimestamp ?? snapshot?.timestamp,
+      receivedAt: snapshot?.providerReceivedAt,
+      quoteAgeMs: snapshot?.quoteAgeMs
+    });
+  }
+  return snapshot?.timestampAuthorityEvidence ?? null;
 }
 
 export function buildMarketAuthoritativeFreshness(snapshot = {}) {
@@ -30,13 +41,19 @@ export function buildMarketAuthoritativeFreshness(snapshot = {}) {
   const comparableToReceiveClock = evidence?.comparableToReceiveClock === true;
   const observedBucketPattern = evidence?.observedBucketPattern === true;
 
-  const authority = classifyTwelveTimestampAuthority({
-    candidateAuthority,
-    provenanceVerified,
-    comparableToReceiveClock,
-    observedBucketPattern,
-    freshnessContractMs: MARKET_FROZEN_FRESHNESS_CONTRACT_MS
-  });
+  const authority = evidence?.source === 'SERVER_PUBLIC_EXCHANGE_TIMESTAMP_QUALIFICATION'
+    ? {
+        classification: evidence.classification,
+        reasonCodes: evidence.reasonCodes,
+        canEvaluateFrozenFreshness: evidence.canEvaluateFrozenFreshness === true
+      }
+    : classifyTwelveTimestampAuthority({
+        candidateAuthority,
+        provenanceVerified,
+        comparableToReceiveClock,
+        observedBucketPattern,
+        freshnessContractMs: MARKET_FROZEN_FRESHNESS_CONTRACT_MS
+      });
 
   const rawAgeMs = snapshot?.ageMs;
   const finiteAge = typeof rawAgeMs === 'number' && Number.isFinite(rawAgeMs) && rawAgeMs >= 0
@@ -66,6 +83,10 @@ export function buildMarketAuthoritativeFreshness(snapshot = {}) {
     freshnessGate,
     freshnessContractMs: MARKET_FROZEN_FRESHNESS_CONTRACT_MS,
     eventAgeMs: finiteAge,
+    // Server-derived numeric event timestamp consumed by the canonical study contract.
+    eventTimestamp: Number.isFinite(Date.parse(snapshot?.quoteTimestamp ?? snapshot?.timestamp ?? ''))
+      ? Date.parse(snapshot?.quoteTimestamp ?? snapshot?.timestamp ?? '')
+      : null,
     blocker,
     arrivalTimeCanReplaceEventTime: false,
     bucketTimeCanBypassFreshness: false,

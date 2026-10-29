@@ -6,7 +6,7 @@ test('all-market scheduler rotates through forex, crypto and stocks with a bound
   const scheduler = createMarketUniverseScheduler();
   const first = scheduler.take({ assetClass: 'ALL', limit: 4 });
   const second = scheduler.take({ assetClass: 'ALL', limit: 4 });
-  assert.equal(first.totalAssets, MARKET_UNIVERSES.FOREX.length + MARKET_UNIVERSES.CRYPTO.length + MARKET_UNIVERSES.STOCKS.length);
+  assert.equal(first.totalAssets, Object.values(MARKET_UNIVERSES).reduce((total, assets) => total + assets.length, 0));
   assert.equal(first.assets.length, 4);
   assert.equal(new Set([...first.assets, ...second.assets]).size, 8);
   assert.equal(first.assetClass, 'ALL');
@@ -29,4 +29,18 @@ test('scheduler can prioritize a healthy forming setup without changing its univ
   const scheduler = createMarketUniverseScheduler({ universes: { FOREX: ['A', 'B', 'C'] } });
   scheduler.setPriority('C', 90);
   assert.deepEqual(scheduler.take({ assetClass: 'FOREX', limit: 1 }).assets, ['C']);
+});
+
+
+test('exposes separate, explicit watchlists for crypto quote currencies, ETFs, indices and commodities', () => {
+  const scheduler = createMarketUniverseScheduler();
+  for (const marketClass of ['CRYPTO_USDT', 'ETFS', 'INDICES', 'COMMODITIES']) {
+    const result = scheduler.take({ assetClass: marketClass, limit: 4 });
+    assert.equal(result.assetClass, marketClass);
+    assert.ok(result.assets.length > 0);
+    assert.ok(result.totalAssets >= result.assets.length);
+  }
+  assert.ok(MARKET_UNIVERSES.CRYPTO.includes('BTC/USD'));
+  assert.ok(MARKET_UNIVERSES.CRYPTO_USDT.includes('BTC/USDT'));
+  assert.notEqual(MARKET_UNIVERSES.CRYPTO[0], MARKET_UNIVERSES.CRYPTO_USDT[0]);
 });
