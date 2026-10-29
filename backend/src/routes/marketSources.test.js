@@ -65,7 +65,7 @@ test('market sources reports unverified states without probing external provider
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.mode, 'READ_ONLY_STATUS_NO_UPSTREAM_PROBES');
-  assert.match(body.checkedAt, /^\\d{4}-\\d{2}-\\d{2}T/);
+  assert.match(body.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
 
   const byId = Object.fromEntries(body.sources.map((source) => [source.id, source]));
   assert.equal(byId['twelvedata-rest'].state, 'UNCONFIGURED');
@@ -78,7 +78,7 @@ test('market sources reports unverified states without probing external provider
   assert.equal(byId['binance'].connected, false);
   assert.equal(byId['avalon'].state, 'NOT_CONNECTED');
   assert.equal(byId['avalon'].connected, false);
-  assert.ok(body.sources.every((source) => source.probePerformed === false || source.id === 'coinbase-temporal:BTC/USD'));
+  assert.ok(body.sources.every((source) => source.probePerformed === false));
   assert.ok(body.sources.every((source) => source.ordersExecuted === undefined || source.ordersExecuted === 0));
 });
 
