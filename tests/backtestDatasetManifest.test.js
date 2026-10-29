@@ -28,6 +28,14 @@ test('market dataset manifest hashes exact raw bytes and verifies reproducibly',
   assert.equal(verification.valid, true);
 });
 
+test('manifest refuses impossible calendar dates', () => {
+  assert.throws(() => createMarketDatasetManifest({
+    ...metadata,
+    rawBytes: Buffer.from('fixture'),
+    capturedAt: '2026-02-31T12:00:00.000Z'
+  }), /INVALID_DATASET_TIME_RANGE/);
+});
+
 test('manifest verification detects raw byte changes and metadata tampering', () => {
   const rawBytes = Buffer.from('fixture raw bytes v1', 'utf8');
   const manifest = createMarketDatasetManifest({ ...metadata, rawBytes });
