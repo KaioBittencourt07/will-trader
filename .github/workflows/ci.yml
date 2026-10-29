@@ -25,6 +25,8 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
+      - name: Verify Twelve Data provider offline
+        run: node scripts/verify-local-market-provider.mjs
       - name: Run backend-local tests
         working-directory: backend
         run: npm test -- --test-concurrency=2 --test-timeout=60000 --test-force-exit
