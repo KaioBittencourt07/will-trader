@@ -155,6 +155,24 @@ function ageMsFrom(timestamp, now = Date.now()) {
   return Number.isFinite(parsed) ? Math.max(0, now - parsed) : null;
 }
 
+export function classifyRestMarketSourceState(metrics = {}, now = Date.now()) {
+  const requests = Number(metrics.upstreamRequests ?? 0);
+  if (!Number.isFinite(requests) || requests <= 0) return 'CONFIGURED_NOT_PROBED';
+
+  const providerState = String(metrics.providerState ?? 'UNKNOWN');
+  if (['DEGRADED', 'OFFLINE', 'MISCONFIGURED', 'RATE_LIMITED', 'COOLDOWN'].includes(providerState)) {
+    return providerState;
+  }
+
+  const lastSuccessAt = metrics.lastSuccessAt ?? null;
+  const lastSuccessAgeMs = ageMsFrom(lastSuccessAt, now);
+  if (lastSuccessAt && lastSuccessAgeMs !== null) {
+    return lastSuccessAgeMs <= 30_000 ? 'OBSERVED_RECENT_SUCCESS' : 'OBSERVED_STALE_SUCCESS';
+  }
+  if (metrics.lastErrorAt) return 'PROBE_FAILED';
+  return 'PROBE_IN_PROGRESS';
+}
+
 function getRestSourceObservation(now = Date.now()) {
   const configured = Boolean(String(process.env.TWELVEDATA_API_KEY ?? '').trim());
   if (!configured) {
@@ -177,19 +195,7 @@ function getRestSourceObservation(now = Date.now()) {
     const lastSuccessAt = metrics.lastSuccessAt ?? null;
     const lastSuccessAgeMs = ageMsFrom(lastSuccessAt, now);
     const probePerformed = Number(metrics.upstreamRequests ?? 0) > 0;
-    let state = 'CONFIGURED_NOT_PROBED';
-
-    if (probePerformed) {
-      if (['DEGRADED', 'OFFLINE', 'MISCONFIGURED', 'RATE_LIMITED', 'COOLDOWN'].includes(metrics.providerState)) {
-        state = metrics.providerState;
-      } else if (lastSuccessAt && lastSuccessAgeMs !== null && lastSuccessAgeMs <= 30_000) {
-        state = 'OBSERVED_RECENT_SUCCESS';
-      } else if (lastSuccessAt) {
-        state = 'OBSERVED_STALE_SUCCESS';
-      } else {
-        state = 'PROBE_FAILED';
-      }
-    }
+    const state = classifyRestMarketSourceState(metrics, now);
 
     return {
       id: 'twelvedata-rest',
