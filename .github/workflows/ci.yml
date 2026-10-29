@@ -28,6 +28,8 @@ jobs:
       - name: Run backend-local tests
         working-directory: backend
         run: npm test -- --test-concurrency=2 --test-timeout=60000 --test-force-exit
+      - name: Check dashboard inline module syntax
+        run: node scripts/check-dashboard-syntax.mjs
       - name: Run full repository regression suite
         run: node --test --test-concurrency=2 --test-timeout=60000 --test-force-exit tests/*.test.js
       - name: Build production Docker image
