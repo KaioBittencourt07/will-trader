@@ -28,6 +28,8 @@ test('verified candidate is retained for human review only', async () => {
   assert.equal(result.decision, 'CANDIDATE_ELIGIBLE_FOR_HUMAN_REVIEW');
   assert.equal(result.acceptedAttempt, 1);
   assert.ok(adapter.calls.includes('retain:1'));
+  assert.ok(result.events.includes('candidate_retention_requested'));
+  assert.ok(result.events.includes('candidate_retained_for_human_review'));
   assert.equal(result.effects.autonomousMerge, false);
   assert.equal(result.effects.deployment, false);
   assert.equal(result.effects.brokerCalls, 0);
