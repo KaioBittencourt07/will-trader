@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseMarketOutputsize } from '../backend/src/routes/market.js';
+import { parseMarketOutputsize, parseMarketTimeframes } from '../backend/src/routes/market.js';
 
 test('defaults missing market outputsize to 50', () => {
   assert.deepEqual(parseMarketOutputsize(undefined), { value: 50 });
@@ -20,4 +20,22 @@ test('rejects malformed outputsize instead of passing NaN to market providers', 
 
 test('accepts zero as an integer and clamps it to the minimum', () => {
   assert.deepEqual(parseMarketOutputsize('0', 12), { value: 12 });
+});
+
+
+test('defaults missing or blank multi-timeframe input to the standard three periods', () => {
+  assert.deepEqual(parseMarketTimeframes(undefined), { value: ['1min', '5min', '15min'] });
+  assert.deepEqual(parseMarketTimeframes(''), { value: ['1min', '5min', '15min'] });
+  assert.deepEqual(parseMarketTimeframes('   '), { value: ['1min', '5min', '15min'] });
+});
+
+test('normalizes and accepts up to three supported unique timeframes', () => {
+  assert.deepEqual(parseMarketTimeframes(' 1MIN, 5min,15MIN '), { value: ['1min', '5min', '15min'] });
+  assert.deepEqual(parseMarketTimeframes('1h,4h,1day'), { value: ['1h', '4h', '1day'] });
+});
+
+test('rejects empty entries, unsupported periods, duplicates, and more than three periods', () => {
+  for (const value of [',,,', '1min,,5min', '0min', '2min', '1min,1MIN', '1min,5min,15min,30min']) {
+    assert.deepEqual(parseMarketTimeframes(value), { error: 'MARKET_TIMEFRAMES_INVALID' }, value);
+  }
 });
