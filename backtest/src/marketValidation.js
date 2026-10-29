@@ -5,7 +5,7 @@ function timestampMs(value) {
   if (typeof value !== 'string' || !ISO_TIMESTAMP_WITH_ZONE.test(value)) return NaN;
   // Date.parse can normalize impossible calendar dates (for example, Feb 31).
   // Validate the represented wall-clock fields before accepting the timestamp.
-  const match = value.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})/);
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
   if (!match) return NaN;
   const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
   const year = Number(yearText);
