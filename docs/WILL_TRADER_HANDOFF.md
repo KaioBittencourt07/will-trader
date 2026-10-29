@@ -2,7 +2,7 @@
 
 ## Atualização de auditoria — 2026-10-29 (última execução)
 
-- CI #688: https://github.com/KaioBittencourt07/will-trader/actions/runs/40934678540 — **sucesso** no commit `b1f26d93610706b5cadd1198ec42caee2660d8b1`.
+- CI #688 (push): https://github.com/KaioBittencourt07/will-trader/actions/runs/40934678540 — **sucesso**; CI #689 (pull request): https://github.com/KaioBittencourt07/will-trader/actions/runs/40934685470 — **sucesso**, ambos no commit `b1f26d93610706b5cadd1198ec42caee2660d8b1`.
 - A CI valida o patch de timestamp em `backtest/src/marketValidation.js` e `backtest/src/datasetManifest.js`; a causa de uma execução anterior falhar foi um regex com escape duplicado, corrigido antes da execução #688.
 - PR #2: escopo dos patches restrito aos caminhos solicitados; CI #676 aprovada. O ciclo de reparo segue dependente de adapter real para isolamento e execução, não deve ser chamado de agente autônomo completo.
 - Estado dos PRs #2, #5 e #6: abertos em draft, sem merge.
