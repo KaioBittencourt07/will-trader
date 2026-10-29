@@ -95,7 +95,7 @@ export function parseMarketOutputsize(raw, minimum = 12) {
 
 const SUPPORTED_MARKET_TIMEFRAMES = new Set([
   '1min', '5min', '15min', '30min', '45min',
-  '1h', '2h', '4h', '1day', '1week', '1month'
+  '1h', '2h', '4h', '8h', '1day', '1week', '1month'
 ]);
 const DEFAULT_MARKET_TIMEFRAMES = ['1min', '5min', '15min'];
 
