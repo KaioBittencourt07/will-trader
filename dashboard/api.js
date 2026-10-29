@@ -61,6 +61,7 @@ export const WILL_API = {
   healthPath: '/health',
   marketPath: '/api/market',
   marketStatusPath: '/api/market/status',
+  marketSourcesPath: '/api/market/sources',
   analyzePath: '/api/analyze',
   paperOrderPath: '/api/paper/order',
   historyPath: '/api/history',
@@ -108,6 +109,10 @@ export function getMarketSnapshot(asset = operationalAsset, timeframe = '1min') 
 
 export function getMarketStatus() {
   return request(`${WILL_API.baseUrl}${WILL_API.marketStatusPath}`);
+}
+
+export function getMarketSources() {
+  return request(`${WILL_API.baseUrl}${WILL_API.marketSourcesPath}`);
 }
 
 export function analyzeMarket(market, context = {}) {
