@@ -26,6 +26,18 @@ test('price observation validation requires explicit timezone, positive price an
   assert.ok(report.reasonCodes.includes('INVALID_PRICE'));
 });
 
+test('price observation validation rejects impossible calendar timestamps', () => {
+  const report = validatePriceObservations([
+    obs('EUR/USD', '2026-02-31T12:00:00.000Z', 1.1),
+    obs('GBP/USD', '2026-10-01T24:00:00.000Z', 1.3),
+    obs('USD/JPY', '2024-02-29T12:00:00.000Z', 150)
+  ]);
+  assert.equal(report.valid, false);
+  assert.equal(report.validCount, 1);
+  assert.equal(report.invalidRows, 2);
+  assert.ok(report.reasonCodes.includes('INVALID_TIMESTAMP_WITH_TIMEZONE'));
+});
+
 test('historical replay never fills with the same quote that generated a decision', () => {
   const report = runHistoricalReplay({
     decisions: [decision('buy-1', 'EUR/USD', 'BUY')],
