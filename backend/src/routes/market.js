@@ -87,7 +87,7 @@ export function getMarketDataEngine() {
 export function parseMarketOutputsize(raw, minimum = 12) {
   if (raw === undefined || raw === null) return { value: 50 };
   const text = String(raw).trim();
-  if (!/^\\d+$/.test(text)) return { error: 'MARKET_OUTPUTSIZE_INVALID' };
+  if (!/^\d+$/.test(text)) return { error: 'MARKET_OUTPUTSIZE_INVALID' };
   const parsed = Number(text);
   if (!Number.isSafeInteger(parsed)) return { error: 'MARKET_OUTPUTSIZE_INVALID' };
   return { value: Math.min(Math.max(parsed, minimum), 200) };
