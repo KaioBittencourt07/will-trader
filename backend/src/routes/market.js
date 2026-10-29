@@ -180,7 +180,7 @@ function getRestSourceObservation(now = Date.now()) {
     let state = 'CONFIGURED_NOT_PROBED';
 
     if (probePerformed) {
-      if (['DEGRADED', 'OFFLINE', 'MISCONFIGURED', 'RATE_LIMITED'].includes(metrics.providerState)) {
+      if (['DEGRADED', 'OFFLINE', 'MISCONFIGURED', 'RATE_LIMITED', 'COOLDOWN'].includes(metrics.providerState)) {
         state = metrics.providerState;
       } else if (lastSuccessAt && lastSuccessAgeMs !== null && lastSuccessAgeMs <= 30_000) {
         state = 'OBSERVED_RECENT_SUCCESS';
