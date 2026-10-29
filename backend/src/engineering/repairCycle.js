@@ -192,7 +192,7 @@ export async function runBoundedRepairCycle({
         }
       });
       if (gate.accepted) {
-        const safeReport = report('CANDIDATE_ELIGIBLE_FOR_HUMAN_REVIEW', {
+        const acceptedDetails = {
           acceptedAttempt: attemptNumber,
           branch,
           baselineCommit,
@@ -206,12 +206,14 @@ export async function runBoundedRepairCycle({
             testsWeakened: diff.testsWeakened === true
           }),
           reasons: Object.freeze([])
-        });
-        await adapter.retainForHumanReview({ workspace: activeWorkspace, report: safeReport });
+        };
+        events.push('candidate_retention_requested');
+        const reviewReport = report('CANDIDATE_ELIGIBLE_FOR_HUMAN_REVIEW', acceptedDetails);
+        await adapter.retainForHumanReview({ workspace: activeWorkspace, report: reviewReport });
         retained = true;
         activeWorkspace = null;
         events.push('candidate_retained_for_human_review');
-        return safeReport;
+        return report('CANDIDATE_ELIGIBLE_FOR_HUMAN_REVIEW', acceptedDetails);
       }
 
       rejectedAttempts.push(Object.freeze({
