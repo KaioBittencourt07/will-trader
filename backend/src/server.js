@@ -32,6 +32,7 @@ import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
 import { prepareHistoryContinuity } from './historyContinuity.js';
 import { scannerStudyRegistry } from './scannerStudyRegistry.js';
+import { MARKET_UNIVERSES, WILL_PHASE1_FX_CRYPTO } from '../../data/src/marketUniverse.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -52,7 +53,7 @@ const macroCacheTtlMs = Number(process.env.WILL_MACRO_CACHE_TTL_MS || 10 * 60_00
 const historyFilePath = process.env.WILL_HISTORY_FILE || path.join(process.cwd(), 'data', 'will-history.json');
 const historyContinuity = prepareHistoryContinuity({ filePath: historyFilePath });
 const coinbaseTemporalEnabled = process.env.WILL_COINBASE_TEMPORAL_ENABLED === 'true';
-const coinbaseTemporalSymbols = Object.freeze(['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD']);
+const coinbaseTemporalSymbols = Object.freeze(['BTC/USD', 'ETH/USD', 'SOL/USD']);
 const biquoteForexEnabled = process.env.WILL_BIQUOTE_FOREX_ENABLED === 'true';
 const biquotePollIntervalMs = Number(process.env.WILL_BIQUOTE_POLL_INTERVAL_MS || 10_000);
 const biquoteRequestTimeoutMs = Number(process.env.WILL_BIQUOTE_REQUEST_TIMEOUT_MS || 8_000);
@@ -215,6 +216,15 @@ app.get('/health', (_req, res) => {
     marketCredentialSource: runtimeSecrets.twelveData.source,
     coinbaseTemporalEnabled,
     coinbaseTemporalSymbols,
+    activeMarketUniverse: {
+      version: 'will-active-universe-v1',
+      assetClass: 'FX_CRYPTO',
+      assets: WILL_PHASE1_FX_CRYPTO,
+      forex: MARKET_UNIVERSES.FOREX,
+      crypto: Object.freeze(['BTC/USD', 'ETH/USD', 'SOL/USD']),
+      totalAssets: WILL_PHASE1_FX_CRYPTO.length,
+      scannerBatchSize: Math.min(Math.max(Number(process.env.MARKET_SCAN_MAX_SYMBOLS || 4), 1), 20)
+    },
     coinbaseTemporal,
     biquoteForexEnabled,
     biquoteForex: app.locals.biquoteForexFeed.health(),
