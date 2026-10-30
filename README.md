@@ -50,6 +50,15 @@ LEARNING ENGINE
 BACKTEST / EXPERIMENT LAB
 ```
 
+## Universo oficial de ativos
+
+O scanner `FX_CRYPTO` cobre em rotação, em lotes limitados, os 12 pares Forex configurados e as três criptomoedas oficiais:
+
+- Forex: EUR/USD, GBP/USD, USD/JPY, USD/CHF, AUD/USD, NZD/USD, USD/CAD, EUR/GBP, EUR/JPY, GBP/JPY, AUD/JPY e CAD/JPY.
+- Cripto: BTC/USD, ETH/USD e SOL/USD.
+
+A cobertura é rotativa: cada ciclo consulta um lote (padrão de até 4 ativos), não todos simultaneamente. Coinbase Temporal fica restrito a BTC, ETH e SOL. O feed Biquote fornece observações temporais para os oito pares que ele suporta; os demais pares Forex dependem da validação do provedor de mercado configurado (Twelve Data). Ativo sem suporte/cotação válida permanece indisponível e não recebe sinal. Ações não fazem parte do universo operacional FX_CRYPTO.
+
 ## Princípios
 
 - Nunca inventar cotação, candle, timestamp ou horário.
