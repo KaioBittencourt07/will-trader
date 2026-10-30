@@ -13,9 +13,11 @@ export const MARKET_UNIVERSES = Object.freeze({
   ])
 });
 
+// Official WILL TRADER operating universe: every configured FX pair plus BTC, ETH and SOL.
+// The scanner rotates this list in bounded batches; it never claims all assets were read at once.
 export const WILL_PHASE1_FX_CRYPTO = Object.freeze([
-  'BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD',
-  'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'NZD/USD', 'USD/CAD', 'GBP/JPY'
+  ...MARKET_UNIVERSES.FOREX,
+  'BTC/USD', 'ETH/USD', 'SOL/USD'
 ]);
 
 function className(value = 'ALL') {
@@ -53,8 +55,6 @@ export function createMarketUniverseScheduler({ universes = MARKET_UNIVERSES, no
     const assets = [];
     let cursor = start;
     const ordered = [...universe];
-    // Preserve deterministic round-robin when no observations exist. Once an
-    // asset is observed, only scan ordering changes; eligibility stays fixed.
     if ([...priorities.values()].some((priority) => priority > 0)) ordered.sort((left, right) => (priorities.get(right) ?? 0) - (priorities.get(left) ?? 0) || universe.indexOf(left) - universe.indexOf(right));
     for (let inspected = 0; inspected < ordered.length && assets.length < requested; inspected += 1) {
       const asset = ordered[cursor];
