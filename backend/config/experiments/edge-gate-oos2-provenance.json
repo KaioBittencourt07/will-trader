@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "edge-gate-oos2-provenance-v1",
+  "evidenceSource": "Operator-provided deterministic pre-OOS-2 reconstruction; no OOS-2 fitting",
+  "thresholdDerivationDataset": "IS exclusively",
+  "operatorSelection": "<= selected/confirmed retrospectively using IS + OOS-1",
+  "OOS1Interpretation": "Not independent prospective validation of this new gate",
+  "OOS2Interpretation": "First untouched prospective validation of this gate",
+  "metric": "MeanAbsMomentum",
+  "field": "metadata.featureSnapshot.momentum",
+  "recordTransform": "abs(momentum)",
+  "groupBy": "metadata.context.monitorCycleId",
+  "aggregation": "arithmetic mean",
+  "derivationRecords": 100,
+  "derivationSelection": "first 100 official chronological records",
+  "derivationCycles": 53,
+  "quantile": 0.5,
+  "quantileIndex": "floor(0.50 * (n - 1))",
+  "rawQ50": 0.599936477924654,
+  "frozenThreshold": 0.599936,
+  "roundingDecimals": 6,
+  "rawFrozenDifference": 4.77924653963235e-7,
+  "acceptOperator": "<=",
+  "rejectOperator": ">",
+  "freezeSha256": "1F0D03A1FFD2AB1ADC0397BDAFFCCBB30D1B3BC0ACBC5C87B7779B3E920B3564",
+  "IS": {
+    "accepted": { "cycles": 26, "WIN": 26, "LOSS": 18, "TIE": 2, "binaryN": 44, "winRatePercent": 59.09 },
+    "rejected": { "cycles": 27, "WIN": 27, "LOSS": 25, "TIE": 2, "binaryN": 52, "winRatePercent": 51.92 }
+  },
+  "OOS1": {
+    "accepted": { "cycles": 36, "WIN": 32, "LOSS": 31, "TIE": 4, "binaryN": 63, "winRatePercent": 50.79 },
+    "rejected": { "cycles": 15, "WIN": 8, "LOSS": 24, "TIE": 1, "binaryN": 32, "winRatePercent": 25.00 }
+  }
+}

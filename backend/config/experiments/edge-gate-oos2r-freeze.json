@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "edge-gate-oos2r-freeze-v1",
+  "policy": "IMMUTABLE_AFTER_FREEZE",
+  "experiment": "WILL Edge Gate OOS-2R",
+  "protocolId": "will-edge-gate-oos2r-v1",
+  "campaignId": "will-edge-gate-oos2r-20260918-v1",
+  "edgeCut": "2026-09-18T22:49:33.233Z",
+  "createdAt": "2026-09-18T22:49:33.233Z",
+  "sourceHead": "47913351eb3b391408f20fbebd2feac57f91ce11",
+  "mode": "PAPER_READ_ONLY",
+  "frozenThreshold": 0.599936,
+  "operator": "<=",
+  "metric": "MeanAbsMomentum",
+  "formula": {
+    "field": "metadata.featureSnapshot.momentum",
+    "transform": "abs",
+    "aggregation": "arithmetic mean",
+    "groupBy": "cycleId",
+    "population": "official PAPER_CONFIRMED W/L/T records with paper-outcome-settlement-v2 and paper-live-temporal-reference-v1; no substitution for invalid numeric momentum"
+  },
+  "thresholdProvenance": {
+    "dataset": "IS exclusively",
+    "rawQ50": 0.599936477924654,
+    "derivationRecords": 100,
+    "derivationCycles": 53,
+    "originalFreezeSha256": "1F0D03A1FFD2AB1ADC0397BDAFFCCBB30D1B3BC0ACBC5C87B7779B3E920B3564",
+    "operatorSelection": "retrospectively selected/confirmed with IS + OOS-1; OOS-1 is not independent prospective validation"
+  },
+  "baselineCount": 1095,
+  "baselineIdsSha256": "d9afa46842648e0fa5deb1fa2cf05717eb0be95eb606ff26eb01acfc502bb08d",
+  "historyFileSha256": "d5cd273a89a76ebf97dacb88a8b14a13fc8801493c04139d51f312f798128613",
+  "membership": {
+    "authority": "hash-chain-validated complete Manifest/WAL v1; matching history inventory",
+    "fields": [
+      "protocolId",
+      "campaignId",
+      "cycleId",
+      "writerGeneration"
+    ],
+    "eligibility": "openedAt > edgeCut",
+    "oldRecordIds": "no legacy adoption; membership comes only from authoritative prospective WAL creation, never baseline hash or IDs"
+  },
+  "checkpoint": {
+    "candidateCycles": 50,
+    "order": [
+      "WAL CYCLE_OPEN_COMMIT openedAt",
+      "cycleId lexicographic"
+    ],
+    "selection": "first 50 matching post-cut WAL opens before integrity/outcome/gate filtering",
+    "invalidSlots": "retained; never replaced",
+    "crossCut": "pre-cut opens excluded; candidate with temporally inconsistent record retains slot but is invalid",
+    "incompleteSlots": "retained",
+    "formal": "all first50 SEALED, exact inventory and terminal resolution; zero unorderable, zero membership ambiguity; baseline and freeze integrity PASS"
+  },
+  "terminal": {
+    "allowed": [
+      "WIN",
+      "LOSS",
+      "TIE",
+      "DATA_INVALID"
+    ],
+    "required": [
+      "status CLOSED",
+      "valid settledAt not before openedAt"
+    ],
+    "VOID": "not terminal for completeness; excluded from performance; remains blocked without new separately reviewed protocol"
+  },
+  "bootstrap": {
+    "unit": "monitorCycleId",
+    "method": "cluster bootstrap with replacement",
+    "replications": 10000,
+    "seed": 20260915,
+    "rng": "xorshift32",
+    "percentiles": [
+      0.025,
+      0.975
+    ],
+    "quantile": "linear interpolation at (validReplications-1)*p",
+    "zeroBinaryReplications": "exclude and report count",
+    "ties": "carried with cluster; excluded from binary denominator",
+    "implementation": "reuse unchanged evaluateOos2.js clusterBootstrap"
+  },
+  "performance": {
+    "primary": "accepted-cycle official W/L/T records; WR=W/(W+L)",
+    "dataInvalid": "reported separately, excluded from momentum and binary denominator",
+    "emptyOfficialCycle": "invalid metric, retained slot",
+    "groups": [
+      "asset",
+      "direction",
+      "regime",
+      "setup",
+      "UTC hour of WAL openedAt"
+    ],
+    "subgroups": "EXPLORATORY only",
+    "comparison": "descriptive frozen IS/OOS-1 reference only; no OOS-2 outcomes loaded",
+    "expectancy": "NOT_AVAILABLE",
+    "financialEdge": "NOT_AVAILABLE"
+  },
+  "noRetuning": true,
+  "noEarlyStopping": true,
+  "noAutomaticLivePromotion": true,
+  "activationAuthorized": false
+}
