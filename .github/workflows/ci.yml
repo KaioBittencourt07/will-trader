@@ -2,9 +2,9 @@ name: WILL CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
-    branches: [main]
+    branches: ['**']
 
 jobs:
   test:
@@ -19,6 +19,6 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
-      - name: Run tests
+      - name: Run backend tests
         working-directory: backend
-        run: npm test
+        run: npm test -- --test-concurrency=2 --test-timeout=60000 --test-force-exit
