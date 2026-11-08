@@ -16,10 +16,33 @@ let relayLastSuccessAt = null;
 let relayLastError = null;
 let relayLastAsset = null;
 
+export function resolveLocalRelayBaseUrl({ relayUrl = process.env.WILL_LOCAL_MARKET_RELAY, backendPort = process.env.PORT || 3000 } = {}) {
+  const configured = String(relayUrl ?? '').trim();
+  if (!configured) throw new Error('LOCAL_RELAY_NOT_CONFIGURED');
+  let parsed;
+  try { parsed = new URL(configured); } catch { throw new Error('LOCAL_RELAY_URL_INVALID'); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('LOCAL_RELAY_URL_INVALID');
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+  const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+  const currentBackendPort = Number(backendPort || 3000);
+  const loopback = ['localhost', '127.0.0.1', '::1', '0.0.0.0', '::'].includes(host);
+  if (loopback && port === currentBackendPort) throw new Error('LOCAL_RELAY_SELF_REFERENCE');
+  return parsed.toString().replace(/\\/+$/, '');
+}
+
+export function isLocalRelayFallbackEligible(error, { configured = Boolean(String(process.env.WILL_LOCAL_MARKET_RELAY ?? '').trim()) } = {}) {
+  if (!configured) return false;
+  return Number(error?.status) === 429 || error?.code === 'PROVIDER_COOLDOWN'
+    || /EACCES|network error|LOCAL_RELAY_REQUIRED/i.test(String(error?.message ?? error));
+}
+
 export function getLocalRelayStatus(now = Date.now()) {
   const cooldownMs = Math.max(0, nextRelayRequestAt - now);
   return {
-    mode: relayLastSuccessAt ? 'LOCAL_RELAY' : 'DIRECT_OR_IDLE',
+    configured: Boolean(String(process.env.WILL_LOCAL_MARKET_RELAY ?? '').trim()),
+    mode: relayLastSuccessAt ? 'LOCAL_RELAY' : String(process.env.WILL_LOCAL_MARKET_RELAY ?? '').trim() ? 'LOCAL_RELAY_CONFIGURED' : 'DIRECT_OR_IDLE',
     cacheEntries: relayCache.size,
     cooldownMs,
     coolingDown: cooldownMs > 0,
@@ -30,6 +53,7 @@ export function getLocalRelayStatus(now = Date.now()) {
 }
 
 export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsize = 50, { telemetry } = {}) {
+  const baseUrl = resolveLocalRelayBaseUrl();
   const key = `${String(asset).toUpperCase()}|${timeframe}|${outputsize}`;
   const now = Date.now();
   const cached = relayCache.get(key);
@@ -43,7 +67,6 @@ export async function getLocalRelaySnapshot(asset, timeframe = '1min', outputsiz
     relayLastError = message;
     throw new Error(message);
   }
-  const baseUrl = (process.env.WILL_LOCAL_MARKET_RELAY || 'http://127.0.0.1:3000').replace(/\/$/, '');
   const query = new URLSearchParams({ asset, timeframe, outputsize: String(outputsize) });
   let response;
   try {
