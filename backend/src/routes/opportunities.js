@@ -18,6 +18,7 @@ import { scannerStudyRegistry } from '../scannerStudyRegistry.js';
 import { deriveScannerRoundState } from '../scannerRoundState.js';
 import { composeCoinbaseTwelveOperationalSnapshot } from '../coinbaseTwelveOperationalSnapshot.js';
 import { composeBiquoteTwelveOperationalSnapshot } from '../biquoteTwelveOperationalSnapshot.js';
+import { buildScannerStudyView } from '../../../engine/src/scannerStudyView.js';
 
 const router = Router();
 const scheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
@@ -408,6 +409,7 @@ router.get('/opportunities', withCycleEvidenceRequest(async (req, res) => {
       coinbaseTemporal: coinbaseTemporalSnapshot(req.app),
       biquoteForex: req.app.locals.biquoteForexFeed?.health?.() ?? null,
       scanner: scannerTelemetry(candidates, { providerRequests: snapshots.length }),
+      studies: analyses.map((item) => buildScannerStudyView(item)),
       scannerStudyRegistry: scannerStudyRegistry.snapshot(),
       roundState,
       candidates,
