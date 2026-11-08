@@ -76,7 +76,7 @@ test('Avalon relay requires a secret, accepts only validated read-only events an
 
     const statusResponse = await fetch(url + '/api/avalon/status');
     const statusText = await statusResponse.text();
-    assert.match(statusResponse.headers.get('content-type') || '', /application\\/json/, 'unexpected Avalon status response: ' + statusText.slice(0, 240));
+    assert.match(statusResponse.headers.get('content-type') || '', /application\/json/, 'unexpected Avalon status response: ' + statusText.slice(0, 240));
     const status = JSON.parse(statusText);
     assert.equal(status.health.state, 'RECEIVING');
     assert.deepEqual(status.health.activeIds, [1857]);
