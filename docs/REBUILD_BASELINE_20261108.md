@@ -46,7 +46,7 @@ O .gitignore exclui /backend/data/; portanto, esses arquivos de runtime não faz
 
 ## 5. Avalon
 
-Foram localizadas branches experimentais separadas `feat/avalon-data-bridge` e `feat/avalon-live-readonly`, com documentação e protótipos próprios. O parser read-only reconhece `candle-generated` e `timeSync`, mapeando `active_id`, OHLC, bid/ask, volume, fase e timestamps. O capturador de navegador precisa ser instalado antes de recarregar a Traderoom; caso contrário, `__WILL_AVALON__` não existe. A branch-base atual não contém um adapter Avalon integrado ao pipeline principal. O Local Relay HTTP não é Avalon. A integração deve permanecer read-only/manual e só poderá ser considerada após auditoria das branches e validação explícita; não contornar autenticação nem automatizar cliques.
+Foram localizadas branches experimentais `feat/avalon-data-bridge` e `feat/avalon-live-readonly`. Nesta branch foi criado um parser `avalonReadOnlyFeed`, endpoint autenticado `/api/avalon/ingest`, status `/api/avalon/status` e script `tools/avalon-bridge.js`, com captura filtrada por host e apenas eventos `candle-generated`/`timeSync`. O parser valida OHLC e bid/ask, mas mantém `at/from/to/timeSync` como valores brutos com unidade `UNVERIFIED`. O feed permanece `SHADOW_ONLY`, sem impacto nas decisões e sem execução de ordens. O mapeamento de `active_id` para símbolo ainda não foi confirmado. O Local Relay HTTP é um mecanismo separado e não é Avalon. Instruções: `docs/AVALON_BRIDGE_SETUP.md`.
 
 ## 6. Divergência do workspace local — NÃO DESCARTAR
 
@@ -69,15 +69,15 @@ A primeira correção desta branch é fazer o CI executar as suítes raiz e back
 
 - O problema local recente inclui `RangeError: Invalid time value` em teste de Twelve Data ao interpretar `latestCandle.datetime`; a correção de timezone/timestamp precisa ser reproduzida na branch de reconstrução antes de ser considerada resolvida.
 - Histórico de HTTP 429 no scanner Twelve Data exige cache, deduplicação, cooldown e respeito a Retry-After; não usar dados coletados sob rate-limit para tuning.
-- A saúde de providers, a integração Avalon, a persistência do banco externo e a prontidão PAPER em runtime ainda precisam de evidência atual. Código presente não equivale a serviço operacional.
+- A saúde dos providers e a prontidão PAPER em runtime ainda precisam de evidência atual. A ponte Avalon está implementada em SHADOW, mas depende de token local, sessão autorizada, captura real, mapeamento dos active_id e validação das unidades de tempo. A persistência externa do WILL ainda não foi identificada. Código presente não equivale a serviço operacional.
 
 
 ## 9. Baseline de testes e correções comprovadas
 
 Na execução GitHub Actions de 2026-11-08, após corrigir o runner:
-- suíte raiz + data layer: 766/766 aprovados;
+- suíte raiz + data layer: 776/776 aprovados;
 - suíte backend: 22/22 aprovados;
-- total: 788 aprovados, zero falhas e zero cancelamentos.
+- total: 798 aprovados, zero falhas e zero cancelamentos.
 
 Causas corrigidas nesta branch:
 1. O arquivo OOS-2 congelado teve CRLF convertido para LF pelo Git, quebrando o SHA-256. O conteúdo original foi restaurado byte a byte e .gitattributes agora preserva -text para esse arquivo. Threshold, cutoff, amostra e política não foram alterados.
@@ -85,18 +85,21 @@ Causas corrigidas nesta branch:
 3. O parser Twelve Data agora valida formato, calendário, timezone e faixa dos timestamps de candles/quotes antes de chamar toISOString(). Datas inválidas viram erro controlado, não RangeError: Invalid time value.
 4. O Market Data Engine agora deduplica batches concorrentes idênticos antes de consumir outro slot do provider.
 5. O fallback Local Relay agora é opt-in, exige endpoint independente, bloqueia autorreferência para a porta do backend e não fica preso em um latch permanente após falha. Ele não é o feed Avalon.
+6. A integração Avalon SHADOW valida eventos, autentica o endpoint com token em tempo constante, restringe CORS ao endpoint de ingest e não assume unidades de timestamp.
+7. O dashboard agora expõe candles por ativo, revisão manual de sinal, métricas de desempenho e auditoria manual de IAs. A auditoria não grava uma segunda linha no histórico e só roda quando acionada.
+8. O CI também executa `node --check` nos módulos JavaScript do dashboard.
 
-Execução aprovada mais recente: 42516393149 — https://github.com/KaioBittencourt07/will-trader/actions/runs/42516393149.
+Execução aprovada: 42517946187 — https://github.com/KaioBittencourt07/will-trader/actions/runs/42517946187. A alteração posterior no teste de diagnóstico do endpoint Avalon aguarda nova execução.
 
 ## 10. Próximas ações
 
-1. Corrigir CI e obter execução real da suíte completa.
-2. Reconciliar os arquivos locais não commitados sem sobrescrevê-los.
-3. Executar baseline dos testes e classificar falhas preexistentes.
-4. Auditar persistência e identificar o banco externo mencionado.
-5. Auditar providers/timestamps e reproduzir o bug Twelve Data.
-6. Auditar dashboard e manter seu fluxo visual aprovado.
-7. Só então implementar correções por módulo, com commits pequenos e evidências.
+1. Preservar e recuperar os arquivos JSON locais e o canary de commissioning antes de qualquer deploy.
+2. Identificar com o operador qual serviço/projeto contém o banco externo mencionado; não criar ou migrar banco por suposição.
+3. Reconciliar o working tree Windows não commitado sem sobrescrevê-lo.
+4. Executar o bridge Avalon numa sessão autorizada, confirmar active_id por símbolo e validar unidades de tempo com fonte independente.
+5. Continuar auditoria de providers, integração de dados e comportamento do scanner em runtime.
+6. Validar dashboard com backend real, IA sob demanda e persistência recuperada.
+7. Fechar testes PAPER, risco e recuperação antes de qualquer operação real.
 
 ## 11. Critério de verdade
 
