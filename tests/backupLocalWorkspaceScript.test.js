@@ -6,7 +6,7 @@ const script = readFileSync(new URL('../scripts/backup-local-workspace.ps1', imp
 
 test('Windows workspace backup is copy-only and excludes secret files', () => {
   assert.match(script, /robocopy/);
-  assert.match(script, /git diff --binary HEAD/);
+  assert.match(script, /git -C \$source diff --binary HEAD/);
   assert.match(script, /\.env/);
   assert.match(script, /Sensitive files were intentionally excluded/);
   assert.match(script, /No source files were deleted or modified/);
