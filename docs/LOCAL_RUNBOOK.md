@@ -6,13 +6,13 @@ O workspace antigo pode conter alterações não commitadas, JSON de histórico 
 
 Faça uma cópia de segurança do workspace antigo com o script desta branch:
 
-    pwsh -ExecutionPolicy Bypass -File ./scripts/backup-local-workspace.ps1 -SourcePath "C:/Users/skdri/will-trader-git" -DestinationRoot "C:/Users/skdri"
+    powershell -ExecutionPolicy Bypass -File ./scripts/backup-local-workspace.ps1 -SourcePath "C:/Users/skdri/will-trader-git" -DestinationRoot "C:/Users/skdri"
 
 O script copia o workspace sem .git, node_modules e arquivos de segredo; registra status/diff/untracked e não modifica a origem. Os arquivos .env ficam no workspace original e não são copiados.
 
 Para uma cópia adicional dos dados JSON com verificação SHA-256, execute a partir da raiz desta branch:
 
-    npm run backup:runtime-data -- --source "C:/Users/skdri/will-trader-git/backend/data" --out "C:/Users/skdri"
+    npm.cmd run backup:runtime-data -- --source "C:/Users/skdri/will-trader-git/backend/data" --out "C:/Users/skdri"
 
 Não apagar o workspace antigo até verificar os dois backups.
 
@@ -26,8 +26,8 @@ Use uma pasta nova; não reaproveite a pasta antiga:
 ## 2. Configurar e verificar
 
     Copy-Item backend/.env.example backend/.env
-    npm ci --prefix backend
-    npm run verify
+    npm.cmd ci --prefix backend
+    npm.cmd run verify
 
 Edite backend/.env localmente e configure somente os providers para os quais você já tem credenciais. Não cole chaves no chat nem as versione no Git.
 
@@ -39,7 +39,7 @@ Coloque o resultado em WILL_AVALON_RELAY_TOKEN no backend/.env. Use o mesmo toke
 
 ## 3. Iniciar o backend e abrir o dashboard
 
-    npm run start:backend
+    npm.cmd run start:backend
 
 Abra http://127.0.0.1:3000/dashboard.
 
