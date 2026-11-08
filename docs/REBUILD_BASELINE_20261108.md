@@ -38,11 +38,11 @@ Regras preservadas:
 ## 4. Persistência: achado importante
 
 Na branch-base, a persistência observada é baseada em arquivos JSON:
-- histórico: `WILL_HISTORY_FILE`, padrão `data/will-history.json`;
-- memória de pesquisa: `WILL_RESEARCH_FILE`, padrão `data/will-research.json`;
-- estado do monitor PAPER: `WILL_PAPER_MONITOR_STATE_FILE`, padrão `data/will-paper-monitor-state.json`.
+- histórico: WILL_HISTORY_FILE, padrão data/will-history.json;
+- memória de pesquisa: WILL_RESEARCH_FILE, padrão data/will-research.json;
+- estado do monitor PAPER: WILL_PAPER_MONITOR_STATE_FILE, padrão data/will-paper-monitor-state.json.
 
-Não foi encontrada integração SQL/ORM, schema ou migration do WILL nessa árvore. Nas conexões de banco atualmente disponíveis, o projeto Supabase visível é `remote-link` e o projeto Neon visível é `logicore-ai-production`; nenhum deles está identificado como banco do WILL. Portanto, **não conectar, substituir, criar ou migrar banco nesta fase**. O banco externo mencionado pelo operador ainda precisa ser identificado antes de qualquer alteração de persistência. Os arquivos JSON existentes também não devem ser apagados.
+O .gitignore exclui /backend/data/; portanto, esses arquivos de runtime não fazem parte do Git tree e não foram copiados para a branch nova. Eles podem conter o histórico real do usuário e precisam ser preservados/verificados separadamente antes de qualquer deploy ou migração. Não foi encontrada integração SQL/ORM, schema ou migration do WILL nessa árvore. Nas conexões de banco atualmente disponíveis, o projeto Supabase visível é `remote-link` e o projeto Neon visível é `logicore-ai-production`; nenhum deles está identificado como banco do WILL. Portanto, **não conectar, substituir, criar ou migrar banco nesta fase**. O banco externo mencionado pelo operador ainda precisa ser identificado antes de qualquer alteração de persistência. Os arquivos JSON existentes também não devem ser apagados.
 
 ## 5. Avalon
 
@@ -71,7 +71,22 @@ A primeira correção desta branch é fazer o CI executar as suítes raiz e back
 - Histórico de HTTP 429 no scanner Twelve Data exige cache, deduplicação, cooldown e respeito a Retry-After; não usar dados coletados sob rate-limit para tuning.
 - A saúde de providers, a integração Avalon, a persistência do banco externo e a prontidão PAPER em runtime ainda precisam de evidência atual. Código presente não equivale a serviço operacional.
 
-## 9. Próximas ações
+
+## 9. Baseline de testes e correções comprovadas
+
+Na execução GitHub Actions de 2026-11-08, após corrigir o runner:
+- suíte raiz + data layer: 763/763 aprovados;
+- suíte backend: 22/22 aprovados;
+- total: 785 aprovados, zero falhas e zero cancelamentos.
+
+Causas corrigidas nesta branch:
+1. O arquivo OOS-2 congelado teve CRLF convertido para LF pelo Git, quebrando o SHA-256. O conteúdo original foi restaurado byte a byte e .gitattributes agora preserva -text para esse arquivo. Threshold, cutoff, amostra e política não foram alterados.
+2. O teste local de handshake WebSocket aguardava indefinidamente o evento close, que não é emitido em todos os runtimes Node quando o upgrade é rejeitado. O teste agora tem prazo curto, aceita somente os eventos observados e classifica ausência de status/close como inconclusiva.
+3. O parser Twelve Data agora valida formato, calendário, timezone e faixa dos timestamps de candles/quotes antes de chamar toISOString(). Datas inválidas viram erro controlado, não RangeError: Invalid time value.
+
+Execução aprovada: 42515840612 — https://github.com/KaioBittencourt07/will-trader/actions/runs/42515840612.
+
+## 10. Próximas ações
 
 1. Corrigir CI e obter execução real da suíte completa.
 2. Reconciliar os arquivos locais não commitados sem sobrescrevê-los.
@@ -81,6 +96,6 @@ A primeira correção desta branch é fazer o CI executar as suítes raiz e back
 6. Auditar dashboard e manter seu fluxo visual aprovado.
 7. Só então implementar correções por módulo, com commits pequenos e evidências.
 
-## 10. Critério de verdade
+## 11. Critério de verdade
 
 Nenhuma fase será marcada como concluída apenas por existir código. A conclusão exige teste executado, resultado do CI, contrato documentado, diff revisado e limitações explícitas.
