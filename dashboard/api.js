@@ -38,7 +38,7 @@ export function getHealth() {
 }
 
 export function getMarketSnapshot(asset = operationalAsset, timeframe = '1min') {
-  const query = new URLSearchParams({ asset, timeframe, outputsize: '50' });
+  const query = new URLSearchParams({ asset, timeframe, outputsize: '55' });
   return request(`${WILL_API.baseUrl}${WILL_API.marketPath}?${query}`);
 }
 
