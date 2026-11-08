@@ -153,3 +153,31 @@ test('concurrent diagnostic and one-symbol scanner requests coalesce before prov
   assert.equal(calls, 1);
   assert.equal(engine.getMetrics().deduplicated, 1);
 });
+
+test('deduplicates identical concurrent batch scans before consuming another provider slot', async () => {
+  let calls = 0;
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const engine = createMarketDataEngine({
+    provider: {
+      getSnapshot: async () => null,
+      getSnapshots: async (assets) => {
+        calls += 1;
+        await pending;
+        return assets.map((asset) => ({ asset, snapshot: { asset, valid: true }, error: null }));
+      }
+    },
+    minRequestIntervalMs: 0
+  });
+
+  const first = engine.getSnapshots(['EUR/USD', 'GBP/USD'], '1min', 50);
+  const second = engine.getSnapshots(['GBP/USD', 'EUR/USD'], '1min', 50);
+  release();
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+
+  assert.equal(calls, 1);
+  assert.deepEqual(firstResult.map((item) => item.asset).sort(), ['EUR/USD', 'GBP/USD']);
+  assert.deepEqual(secondResult.map((item) => item.asset).sort(), ['EUR/USD', 'GBP/USD']);
+  assert.equal(engine.getMetrics().upstreamRequests, 1);
+  assert.equal(engine.getMetrics().deduplicated, 2);
+});
