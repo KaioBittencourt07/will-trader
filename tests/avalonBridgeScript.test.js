@@ -11,7 +11,7 @@ test('Avalon browser bridge is read-only, host-filtered and sends only allowlist
   assert.match(bridge, /parsed\?\.name === 'timeSync'/);
   assert.match(bridge, /parsed\?\.name !== 'candle-generated'/);
   assert.match(bridge, /const allowed = \['active_id'.*'phase'\]/);
-  const executable = bridge.replace(/^\\s*\\/\\/.*$/gm, '');
+  const executable = bridge.split('\\n').filter((line) => !line.trimStart().startsWith('//')).join('\\n');
   assert.doesNotMatch(executable, /document\\.cookie|localStorage|Authorization|password/i);
   assert.match(bridge, /window\.__WILL_AVALON_BRIDGE__/);
   assert.match(bridge, /window\.WebSocket = NativeWebSocket/);
