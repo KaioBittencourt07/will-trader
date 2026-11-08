@@ -43,7 +43,9 @@ router.post('/analyze', async (req, res) => {
     let rawMarket = payload.market ?? payload;
     const context = payload.context ?? {};
     let persistenceContext = context;
-    const respond = (body) => res.json(persistAnalyzeDecision(req, body, persistenceContext));
+    const respond = (body) => context.aiAuditOnly === true
+      ? res.json({ ...body, auditMode: 'AI_AUDIT_ONLY', persisted: false })
+      : res.json(persistAnalyzeDecision(req, body, persistenceContext));
 
     const normalized = normalizeMarketSnapshot(rawMarket, {
       maxAgeMs: Number(process.env.MARKET_MAX_AGE_MS || 30_000)
