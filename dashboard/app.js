@@ -1,6 +1,6 @@
-import {getHealth,getMarketStatus,scanOpportunities,getHistory,getMetrics,registerOutcome,confirmExecution} from './api.js';
+import {getHealth,getMarketStatus,scanOpportunities,getHistory,getMetrics,registerOutcome,confirmExecution,getMarketSnapshot,analyzeMarket} from './api.js';
 const $=id=>document.getElementById(id);
-let running=false,busy=false,timer=null,lastRecommendation=null,activeHistoryId=null,openSignals=[],lastMetrics=null,lastStudies=[],reviewedStudyAsset=null;
+let running=false,busy=false,timer=null,lastRecommendation=null,activeHistoryId=null,openSignals=[],lastMetrics=null,lastStudies=[],reviewedStudyAsset=null,aiProvidersConfigured=0;
 let rounds=Number(sessionStorage.getItem('will.validRounds')||0);
 let sessionValid=Number(sessionStorage.getItem('will.validStudies')||0);
 const NORMAL_COOLDOWN=20,EMPTY_COOLDOWN=20;
@@ -87,7 +87,7 @@ function renderSelectedStudy(){
   const asset=$('studyAsset').value;
   const study=lastStudies.find(item=>item.asset===asset);
   if(!study){
-    $('studyStatus').textContent='Nenhum estudo válido disponível nesta rodada.';$('reviewStudy').disabled=true;$('reviewStudy').textContent='REVISAR SINAL DO ATIVO';
+    $('studyStatus').textContent='Nenhum estudo válido disponível nesta rodada.';$('reviewStudy').disabled=true;$('reviewStudy').textContent='REVISAR SINAL DO ATIVO';$('auditStudyAI').disabled=true;
     $('studyPrice').textContent='—';$('studyTrend').textContent='—';$('studyMomentum').textContent='—';$('studyVolatility').textContent='—';$('studyConfirmations').textContent='—';
     $('studyDecision').textContent='Aguardando um ativo passar pelos filtros de qualidade de dados.';
     $('studyDecision').className='studyDecision wait';
@@ -103,6 +103,7 @@ function renderSelectedStudy(){
   $('studyConfirmations').textContent=indicators.confirmations===null||indicators.confirmations===undefined||indicators.confirmations===''?'—':Number.isFinite(Number(indicators.confirmations))?String(Number(indicators.confirmations)):'—';
   const reviewed=reviewedStudyAsset===study.asset;
   $('reviewStudy').disabled=false;
+  $('auditStudyAI').disabled=aiProvidersConfigured===0;
   $('reviewStudy').textContent=reviewed?'SINAL REVISADO':'REVISAR SINAL DO ATIVO';
   if(reviewed){
     const reasons=Array.isArray(decision.blockReasons)?decision.blockReasons.join(', '):'';
@@ -131,6 +132,34 @@ function renderStudies(studies=[]){
   select.value=lastStudies.some(study=>study.asset===previous)?previous:lastStudies[0].asset;
   renderSelectedStudy();
 }
+async function auditSelectedStudyWithAI(){
+  const asset=$('studyAsset').value;
+  if(!asset)return;
+  const button=$('auditStudyAI');
+  button.disabled=true;
+  $('aiAuditResult').textContent='Buscando snapshot novo e consultando revisores configurados…';
+  $('aiAuditResult').className='studyDecision wait';
+  try{
+    const market=await getMarketSnapshot(asset,'1min');
+    if(!market?.ok||!market.snapshot)throw new Error(market?.error||'Snapshot de mercado indisponível.');
+    const result=await analyzeMarket(market.snapshot,{aiAuditOnly:true,expirySeconds:60});
+    const decision=result.decision||{};
+    const advisors=Array.isArray(decision.advisors)?decision.advisors:[];
+    const details=advisors.map(item=>item.source+': '+item.direction+' ('+item.confidence+'%)').join(' · ');
+    let headline='WILL DETERMINÍSTICO NÃO LIBEROU SINAL; IA NÃO ACIONADA';
+    if(result.source==='will-advisor-consensus')headline='CONSENSO DE IAs CONFIRMADO';
+    else if(result.source==='will-advisor-veto')headline='REVISÃO DE IA VETOU · WAIT';
+    else if(result.source==='will-deterministic-fallback')headline='IA INDISPONÍVEL · FALLBACK DETERMINÍSTICO';
+    else if(result.source==='data-guard'||result.source==='snapshot-attestation-guard'||result.source==='temporal-authority-guard')headline='BLOQUEIO DE DADOS/TEMPO · SEM AUDITORIA IA';
+    $('aiAuditResult').textContent=headline+' · Direção: '+(decision.direction||'WAIT')+(details?' · '+details:' · Nenhum revisor respondeu ou o sinal não era executável.')+(decision.reason?' · '+decision.reason:'');
+    $('aiAuditResult').className='studyDecision '+(result.source==='will-advisor-consensus'?'buy':result.source==='will-advisor-veto'?'sell':'wait');
+  }catch(error){
+    $('aiAuditResult').textContent='Auditoria IA: '+error.message;
+    $('aiAuditResult').className='studyDecision wait';
+  }finally{
+    button.disabled=aiProvidersConfigured===0||!lastStudies.some(study=>study.asset===asset);
+  }
+}
 function renderPerformance(result={}){
   const latency=result.latency||{},stages=latency.stages||{},provider=result.providerEfficiency||{};
   $('scanLatency').textContent=Number.isFinite(Number(latency.totalMs))?Math.round(Number(latency.totalMs))+' ms':'—';
@@ -151,5 +180,5 @@ async function executeRound(){if(!running||busy)return;busy=true;setState('ANALI
 function startAuto(){if(running)return;running=true;$('auto').disabled=true;$('stop').disabled=false;$('review').disabled=true;setState('INICIANDO');$('reason').textContent='AUTO SCAN iniciado. Procurando estudos válidos…';executeRound().catch(()=>{})}
 async function confirmActual(){if(!activeHistoryId)return;$('confirmExecution').disabled=true;try{await confirmExecution(activeHistoryId,{actualClickTime:$('actualClick').value,actualEntryPrice:$('actualPrice').value,notes:'operator-manual-external-broker'});$('reason').textContent='Entrada manual registrada. Quando encerrar, marque WIN ou LOSS.';await refreshLearning()}catch(error){$('reason').textContent=`Entrada: ${error.message}`;$('confirmExecution').disabled=false}}
 async function settle(outcome){if(!activeHistoryId)return;$('win').disabled=true;$('loss').disabled=true;try{const result=await registerOutcome(activeHistoryId,outcome,{source:'operator-manual',recordedBy:'operator'});const learning=result.learning||{},metrics=learning.metrics||{};$('reason').textContent=`${outcome} registrado. Evidência: ${metrics.wins||0} WIN / ${metrics.losses||0} LOSS.`;activeHistoryId=null;await refreshLearning()}catch(error){$('reason').textContent=`Resultado: ${error.message}`}finally{$('win').disabled=false;$('loss').disabled=false}}
-async function status(){try{const [h,m]=await Promise.all([getHealth(),getMarketStatus()]);$('status').textContent=h.marketConfigured?'ONLINE · ANALYSIS':'SEM FEED';const relay=m.relay||{};$('feed').textContent=relay.coolingDown?`aguardando ${Math.ceil(Number(relay.cooldownMs||0)/1000)}s`:relay.mode==='LOCAL_RELAY'?'relay ativo':'pronto'}catch{$('status').textContent='BACKEND OFFLINE';$('feed').textContent='indisponível'}}
-$('studyAsset').onchange=renderSelectedStudy;$('reviewStudy').onclick=()=>{reviewedStudyAsset=$('studyAsset').value;renderSelectedStudy();};$('auto').onclick=startAuto;$('stop').onclick=()=>stopAuto();$('review').onclick=review;$('outcomeSignal').onchange=e=>{activeHistoryId=e.target.value;updateOutcomeTab()};$('confirmExecution').onclick=confirmActual;$('win').onclick=()=>settle('WIN');$('loss').onclick=()=>settle('LOSS');persistSession();status();refreshLearning();setInterval(status,30000);setInterval(refreshLearning,30000);
+async function status(){try{const [h,m]=await Promise.all([getHealth(),getMarketStatus()]);$('status').textContent=h.marketConfigured?'ONLINE · ANALYSIS':'SEM FEED';const relay=m.relay||{};$('feed').textContent=relay.coolingDown?'aguardando '+Math.ceil(Number(relay.cooldownMs||0)/1000)+'s':relay.mode==='LOCAL_RELAY'?'relay ativo':relay.configured?'relay configurado':'direto';const ai=h.aiAdvisors||{};const active=Object.entries(ai).filter(([,enabled])=>enabled).map(([name])=>name.toUpperCase());aiProvidersConfigured=active.length;$('aiProviders').textContent=active.length?active.join(' + '):'não configuradas';if(lastStudies.length)$('auditStudyAI').disabled=aiProvidersConfigured===0}catch{$('status').textContent='BACKEND OFFLINE';$('feed').textContent='indisponível';$('aiProviders').textContent='indisponível';aiProvidersConfigured=0;$('auditStudyAI').disabled=true}}
+$('studyAsset').onchange=renderSelectedStudy;$('reviewStudy').onclick=()=>{reviewedStudyAsset=$('studyAsset').value;renderSelectedStudy();};$('auditStudyAI').onclick=auditSelectedStudyWithAI;$('auto').onclick=startAuto;$('stop').onclick=()=>stopAuto();$('review').onclick=review;$('outcomeSignal').onchange=e=>{activeHistoryId=e.target.value;updateOutcomeTab()};$('confirmExecution').onclick=confirmActual;$('win').onclick=()=>settle('WIN');$('loss').onclick=()=>settle('LOSS');persistSession();status();refreshLearning();setInterval(status,30000);setInterval(refreshLearning,30000);
