@@ -142,11 +142,44 @@ export function deriveTechnical(values) {
   };
 }
 
+function isoFromMilliseconds(value) {
+  if (!Number.isFinite(value)) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 function parseQuoteTimestamp(value) {
   const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) return new Date(numeric * 1_000).toISOString();
-  const parsed = Date.parse(value ?? '');
-  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+  if (Number.isFinite(numeric) && numeric > 0) return isoFromMilliseconds(numeric * 1_000);
+  return isoFromMilliseconds(Date.parse(value ?? ''));
+}
+
+function parseCandleTimestamp(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:?\d{2})?$/i.exec(raw);
+  if (!match) return null;
+
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw, fractionRaw, zoneRaw] = match;
+  const year = Number(yearRaw), month = Number(monthRaw), day = Number(dayRaw);
+  const hour = Number(hourRaw), minute = Number(minuteRaw), second = Number(secondRaw);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (calendarDate.getUTCFullYear() !== year || calendarDate.getUTCMonth() !== month - 1 ||
+      calendarDate.getUTCDate() !== day || hour > 23 || minute > 59 || second > 59) return null;
+
+  let zone = 'Z';
+  if (zoneRaw && zoneRaw.toUpperCase() !== 'Z') {
+    const sign = zoneRaw[0];
+    const digits = zoneRaw.slice(1).replace(':', '');
+    const offsetHours = Number(digits.slice(0, 2));
+    const offsetMinutes = Number(digits.slice(2, 4));
+    if (offsetHours > 23 || offsetMinutes > 59) return null;
+    zone = `${sign}${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+  }
+
+  const milliseconds = (fractionRaw ?? '').padEnd(3, '0').slice(0, 3);
+  const timestamp = Date.parse(`${yearRaw}-${monthRaw}-${dayRaw}T${hourRaw}:${minuteRaw}:${secondRaw}.${milliseconds}${zone}`);
+  return isoFromMilliseconds(timestamp);
 }
 
 function selectQuoteTimestamp(quote = {}) {
@@ -168,9 +201,7 @@ function snapshotFromApi(asset, timeframe, quote, series, maxAgeMs, receivedAtMs
   const price = num(quote?.close ?? quote?.price);
   if (!price || !Array.isArray(series?.values) || !series.values.length) throw new Error('Twelve Data retornou snapshot incompleto.');
   const candleDate = series.values[0]?.datetime;
-  const candleTimestamp = candleDate
-    ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(candleDate) ? candleDate : `${candleDate.replace(' ', 'T')}Z`).toISOString()
-    : null;
+  const candleTimestamp = parseCandleTimestamp(candleDate);
   const selectedQuoteTime = selectQuoteTimestamp(quote);
   const quoteTimestamp = selectedQuoteTime.timestamp;
   if (!candleTimestamp || !quoteTimestamp) throw new Error('Twelve Data não retornou timestamp válido.');
