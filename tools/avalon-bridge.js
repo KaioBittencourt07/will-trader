@@ -7,7 +7,11 @@
   const token = String(prompt('Token local WILL_AVALON_RELAY_TOKEN') || '');
   if (!relayBase || !token) throw new Error('URL do backend e token local são necessários.');
 
-  const endpoint = new URL('/api/avalon/ingest', relayBase).toString();
+  const relayUrl = new URL(relayBase);
+  const relayHost = relayUrl.hostname.toLowerCase().replace('[', '').replace(']', '');
+  const localRelay = ['localhost', '127.0.0.1', '::1'].includes(relayHost);
+  if (relayUrl.protocol !== 'https:' && !localRelay) throw new Error('Backend remoto deve usar HTTPS.');
+  const endpoint = new URL('/api/avalon/ingest', relayUrl).toString();
   const NativeWebSocket = window.WebSocket;
   let matchingSockets = 0;
   let sent = 0;
