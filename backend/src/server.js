@@ -211,6 +211,11 @@ app.get('/health', (_req, res) => {
     ok: true,
     service: 'will-trader-backend',
     openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+    aiAdvisors: {
+      openai: Boolean(process.env.OPENAI_API_KEY),
+      grok: Boolean(process.env.GROK_API_KEY && process.env.GROK_MODEL),
+      claude: Boolean(process.env.CLAUDE_API_KEY && process.env.CLAUDE_MODEL)
+    },
     marketProvider: 'twelvedata',
     marketConfigured: runtimeSecrets.twelveData.configured,
     marketCredentialSource: runtimeSecrets.twelveData.source,
