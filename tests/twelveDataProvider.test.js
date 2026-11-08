@@ -83,3 +83,69 @@ test('captures only safe rate-limit timing evidence from provider headers', asyn
     return true;
   });
 });
+
+test('rejects malformed candle datetime without leaking a RangeError', async () => {
+  const nowMs = Date.UTC(2026, 10, 8, 16, 0, 5);
+  const series = seriesBody(nowMs);
+  series.values[0].datetime = 'not-a-provider-timestamp';
+  const provider = createTwelveDataProvider({
+    apiKey: 'test',
+    now: () => nowMs,
+    maxAgeMs: 120_000,
+    fetchImpl: async (url) => ({
+      ok: true,
+      json: async () => url.includes('/quote?')
+        ? { close: '1.1700', timestamp: Math.floor((nowMs - 5_000) / 1000) }
+        : series
+    })
+  });
+
+  await assert.rejects(() => provider.getSnapshot('EUR/USD', '1min', 20), (error) => {
+    assert.equal(error.message, 'Twelve Data não retornou timestamp válido.');
+    assert.equal(error instanceof RangeError, false);
+    return true;
+  });
+});
+
+test('interprets timezone-less Twelve Data candle datetime as UTC', async () => {
+  const nowMs = Date.UTC(2026, 10, 8, 16, 0, 5);
+  const series = seriesBody(nowMs);
+  series.values[0].datetime = '2026-11-08 15:59:00';
+  const provider = createTwelveDataProvider({
+    apiKey: 'test',
+    now: () => nowMs,
+    maxAgeMs: 120_000,
+    fetchImpl: async (url) => ({
+      ok: true,
+      json: async () => url.includes('/quote?')
+        ? { close: '1.1700', timestamp: Math.floor((nowMs - 5_000) / 1000) }
+        : series
+    })
+  });
+
+  const result = await provider.getSnapshot('EUR/USD', '1min', 20);
+  assert.equal(result.candleTimestamp, '2026-11-08T15:59:00.000Z');
+});
+
+test('normalizes explicit candle timezone offsets and rejects impossible calendar dates', async () => {
+  const nowMs = Date.UTC(2026, 10, 8, 16, 0, 5);
+  const series = seriesBody(nowMs);
+  series.values[0].datetime = '2026-11-08T11:59:00-0400';
+  const provider = createTwelveDataProvider({
+    apiKey: 'test',
+    now: () => nowMs,
+    maxAgeMs: 120_000,
+    fetchImpl: async (url) => ({
+      ok: true,
+      json: async () => url.includes('/quote?')
+        ? { close: '1.1700', timestamp: Math.floor((nowMs - 5_000) / 1000) }
+        : series
+    })
+  });
+
+  const result = await provider.getSnapshot('EUR/USD', '1min', 20);
+  assert.equal(result.candleTimestamp, '2026-11-08T15:59:00.000Z');
+
+  series.values[0].datetime = '2026-02-31 15:59:00';
+  await assert.rejects(() => provider.getSnapshot('EUR/USD', '1min', 20), /timestamp válido/);
+});
