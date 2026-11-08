@@ -46,7 +46,7 @@ O .gitignore exclui /backend/data/; portanto, esses arquivos de runtime não faz
 
 ## 5. Avalon
 
-Foram localizadas branches experimentais separadas `feat/avalon-data-bridge` e `feat/avalon-live-readonly`, com documentação e protótipos próprios. A branch-base atual não contém um adapter Avalon integrado ao pipeline principal. A integração deve permanecer read-only/manual e só poderá ser considerada após auditoria das branches e validação explícita; não contornar autenticação nem automatizar cliques.
+Foram localizadas branches experimentais separadas `feat/avalon-data-bridge` e `feat/avalon-live-readonly`, com documentação e protótipos próprios. O parser read-only reconhece `candle-generated` e `timeSync`, mapeando `active_id`, OHLC, bid/ask, volume, fase e timestamps. O capturador de navegador precisa ser instalado antes de recarregar a Traderoom; caso contrário, `__WILL_AVALON__` não existe. A branch-base atual não contém um adapter Avalon integrado ao pipeline principal. O Local Relay HTTP não é Avalon. A integração deve permanecer read-only/manual e só poderá ser considerada após auditoria das branches e validação explícita; não contornar autenticação nem automatizar cliques.
 
 ## 6. Divergência do workspace local — NÃO DESCARTAR
 
@@ -75,16 +75,18 @@ A primeira correção desta branch é fazer o CI executar as suítes raiz e back
 ## 9. Baseline de testes e correções comprovadas
 
 Na execução GitHub Actions de 2026-11-08, após corrigir o runner:
-- suíte raiz + data layer: 763/763 aprovados;
+- suíte raiz + data layer: 766/766 aprovados;
 - suíte backend: 22/22 aprovados;
-- total: 785 aprovados, zero falhas e zero cancelamentos.
+- total: 788 aprovados, zero falhas e zero cancelamentos.
 
 Causas corrigidas nesta branch:
 1. O arquivo OOS-2 congelado teve CRLF convertido para LF pelo Git, quebrando o SHA-256. O conteúdo original foi restaurado byte a byte e .gitattributes agora preserva -text para esse arquivo. Threshold, cutoff, amostra e política não foram alterados.
 2. O teste local de handshake WebSocket aguardava indefinidamente o evento close, que não é emitido em todos os runtimes Node quando o upgrade é rejeitado. O teste agora tem prazo curto, aceita somente os eventos observados e classifica ausência de status/close como inconclusiva.
 3. O parser Twelve Data agora valida formato, calendário, timezone e faixa dos timestamps de candles/quotes antes de chamar toISOString(). Datas inválidas viram erro controlado, não RangeError: Invalid time value.
+4. O Market Data Engine agora deduplica batches concorrentes idênticos antes de consumir outro slot do provider.
+5. O fallback Local Relay agora é opt-in, exige endpoint independente, bloqueia autorreferência para a porta do backend e não fica preso em um latch permanente após falha. Ele não é o feed Avalon.
 
-Execução aprovada: 42515840612 — https://github.com/KaioBittencourt07/will-trader/actions/runs/42515840612.
+Execução aprovada mais recente: 42516393149 — https://github.com/KaioBittencourt07/will-trader/actions/runs/42516393149.
 
 ## 10. Próximas ações
 
