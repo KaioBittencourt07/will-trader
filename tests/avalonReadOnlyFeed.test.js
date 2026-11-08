@@ -27,6 +27,8 @@ test('Avalon read-only feed accepts sanitized OHLC and quote events in shadow mo
   assert.equal(snapshot.assets[0].timestampUnit, 'UNVERIFIED');
   assert.equal(snapshot.assets[0].serverTimeRaw, 1_794_153_600_000);
   assert.equal(snapshot.assets[0].receivedAtMs, nowMs);
+  assert.equal(feed.health().latestQuotes[0].close, 1.0805);
+  assert.equal(feed.health().latestQuotes[0].activeId, 1857);
   assert.equal(feed.health().decisionImpact, 'NONE');
   assert.equal(feed.health().ordersExecuted, 0);
 });
