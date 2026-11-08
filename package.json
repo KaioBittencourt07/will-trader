@@ -4,6 +4,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test --test-concurrency=2 --test-timeout=60000 --test-force-exit tests/*.test.js data/src/*.test.js",
-    "backup:runtime-data": "node scripts/backup-runtime-data.mjs"
+    "backup:runtime-data": "node scripts/backup-runtime-data.mjs",
+    "test:backend": "npm test --prefix backend",
+    "check:dashboard": "node --check dashboard/api.js && node --check dashboard/app.js",
+    "start:backend": "npm start --prefix backend",
+    "verify": "npm test && npm run test:backend && npm run check:dashboard"
   }
 }
