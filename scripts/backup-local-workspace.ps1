@@ -27,7 +27,7 @@ $git = Get-Command git -ErrorAction SilentlyContinue
 if ($git) {
   & git -C $source status --short --branch 2>&1 | Out-File -LiteralPath (Join-Path $backup 'git-status.txt') -Encoding utf8
   & git -C $source rev-parse HEAD 2>&1 | Out-File -LiteralPath (Join-Path $backup 'git-head.txt') -Encoding utf8
-  & git -C $source diff --binary HEAD 2>&1 | Out-File -LiteralPath (Join-Path $backup 'git-diff.patch') -Encoding utf8
+  & git -C $source diff --binary HEAD 2>&1 | Out-File -LiteralPath (Join-Path $backup 'git-diff-report.txt') -Encoding utf8
   & git -C $source ls-files --others --exclude-standard 2>&1 | Out-File -LiteralPath (Join-Path $backup 'untracked-files.txt') -Encoding utf8
 } else {
   'git executable not found; source file copy still proceeds.' | Out-File -LiteralPath (Join-Path $backup 'git-status.txt') -Encoding utf8
@@ -46,7 +46,7 @@ $sensitiveFiles = Get-ChildItem -LiteralPath $source -Recurse -File -Force | Whe
   $_.Name -eq '.env' -or $_.Name -like '.env.*' -or $_.Name -like '*.pem' -or
   $_.Name -like '*.key' -or $_.Name -like '*.p12' -or $_.Name -like '*.pfx' -or
   $_.Name -like '*.crt' -or $_.Name -eq 'credentials.json' -or $_.Name -eq 'secrets.json'
-} | ForEach-Object { $_.FullName.Substring($source.Length).TrimStart('\', '/') }
+} | ForEach-Object { $_.FullName.Substring($source.Length).TrimStart([char[]]@('\', '/')) }
 $sensitiveFiles | Out-File -LiteralPath (Join-Path $backup 'sensitive-files-excluded.txt') -Encoding utf8
 
 @(
