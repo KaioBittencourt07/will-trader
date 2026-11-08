@@ -2,13 +2,19 @@ name: WILL CI
 
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: will-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,9 +22,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
+
       - name: Install backend dependencies
-        working-directory: backend
-        run: npm ci
-      - name: Run tests
-        working-directory: backend
+        run: npm ci --prefix backend
+
+      - name: Run root regression suite
         run: npm test
+
+      - name: Run backend-local regression suite
+        run: npm --prefix backend test -- --test-concurrency=2 --test-timeout=60000 --test-force-exit
