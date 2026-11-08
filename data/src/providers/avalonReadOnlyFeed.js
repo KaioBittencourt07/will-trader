@@ -111,6 +111,7 @@ export function createAvalonReadOnlyFeed({ now = () => Date.now(), maxAssets = 6
   }
 
   function health() {
+    const currentTime = now();
     const snapshot = getSnapshot();
     return Object.freeze({
       version: snapshot.version,
