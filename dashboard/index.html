@@ -20,7 +20,7 @@
 .studyMetrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:11px}
 .studyMetrics .box{min-width:0}
 .studyMetrics b{font-size:15px;overflow-wrap:anywhere}
-.studyDecision{margin:12px 0 0;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);color:var(--muted);font-weight:800}
+.studyReviewButton{width:100%;margin-top:12px}.studyDecision{margin:12px 0 0;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel2);color:var(--muted);font-weight:800}
 .studyDecision.buy{color:var(--ok)}
 .studyDecision.sell{color:var(--bad)}
 .studyDecision.wait{color:var(--wait)}
@@ -48,6 +48,7 @@
 <div class="box"><span class="label">Volatilidade</span><b id="studyVolatility">—</b></div>
 <div class="box"><span class="label">Confirmações</span><b id="studyConfirmations">—</b></div>
 </div>
+<button id="reviewStudy" class="secondary studyReviewButton" disabled>REVISAR SINAL DO ATIVO</button>
 <p id="studyDecision" class="studyDecision wait">Aguardando um ativo passar pelos filtros de qualidade de dados.</p>
 </article>
 <article class="card"><div class="label">Ranking da rodada válida</div><div class="title">Ativos estudados</div><ul id="ranking" class="ranking"><li><span>—</span><span class="muted">Aguardando primeiro estudo válido.</span><span class="tag">—</span></li></ul></article>
