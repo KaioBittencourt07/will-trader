@@ -10,6 +10,7 @@ import opportunitiesRouter from './routes/opportunities.js';
 import researchRouter from './routes/research.js';
 import intelligenceRouter from './routes/intelligence.js';
 import oos2CollectionRouter from './routes/oos2Collection.js';
+import avalonRouter from './routes/avalon.js';
 import { createManualExecutionGateway } from './execution/manualGateway.js';
 import { config } from './config.js';
 import { hydrateRuntimeSecrets } from './runtimeSecrets.js';
@@ -28,6 +29,7 @@ import { resolvePaperMonitorRequestTimeout } from '../../learning/src/paperMonit
 import { runPaperMonitorCycle } from './paperMonitorCycle.js';
 import { settleDuePaperCampaignOutcomes, PAPER_OUTCOME_SETTLEMENT_VERSION } from './paperOutcomeSettlement.js';
 import { createTwelveWebSocketFeed } from '../../data/src/providers/twelveWebSocketFeed.js';
+import { createAvalonReadOnlyFeed } from '../../data/src/providers/avalonReadOnlyFeed.js';
 import { createCoinbaseTemporalFeed } from './coinbaseTemporalFeed.js';
 import { createBiquoteForexRuntimeFeed } from './biquoteForexRuntimeFeed.js';
 import { prepareHistoryContinuity } from './historyContinuity.js';
@@ -59,6 +61,7 @@ const biquotePollIntervalMs = Number(process.env.WILL_BIQUOTE_POLL_INTERVAL_MS |
 const biquoteRequestTimeoutMs = Number(process.env.WILL_BIQUOTE_REQUEST_TIMEOUT_MS || 8_000);
 
 const app = express();
+app.locals.avalonFeed = createAvalonReadOnlyFeed();
 app.locals.twelveWebSocketFeed = createTwelveWebSocketFeed({
   enabled: process.env.WILL_TWELVE_WS_ENABLED === 'true',
   apiKey: process.env.TWELVEDATA_API_KEY,
@@ -181,10 +184,20 @@ app.locals.macroContextAdapter = macroContextEnabled
 app.locals.marketContextProvider = createMarketContextProvider({ macroAdapter: app.locals.macroContextAdapter, newsAdapter: null });
 
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', config.dashboardOrigin);
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const origin = req.headers.origin;
+  const dashboardAllowed = Boolean(origin) && (config.dashboardOrigin === '*' || origin === config.dashboardOrigin);
+  const avalonIngestAllowed = req.path === '/api/avalon/ingest' && origin === 'https://trade.avalonbroker.com';
+  if (origin && (dashboardAllowed || avalonIngestAllowed)) {
+    res.setHeader('Access-Control-Allow-Origin', config.dashboardOrigin === '*' && !avalonIngestAllowed ? '*' : origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-WILL-RELAY-TOKEN');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  if (avalonIngestAllowed) res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  if (req.method === 'OPTIONS') {
+    if (origin && !dashboardAllowed && !avalonIngestAllowed) return res.sendStatus(403);
+    return res.sendStatus(204);
+  }
   next();
 });
 
@@ -216,6 +229,8 @@ app.get('/health', (_req, res) => {
       grok: Boolean(process.env.GROK_API_KEY && process.env.GROK_MODEL),
       claude: Boolean(process.env.CLAUDE_API_KEY && process.env.CLAUDE_MODEL)
     },
+    avalonRelayEnabled: Boolean(process.env.WILL_AVALON_RELAY_TOKEN),
+    avalonReadOnly: app.locals.avalonFeed.health(),
     marketProvider: 'twelvedata',
     marketConfigured: runtimeSecrets.twelveData.configured,
     marketCredentialSource: runtimeSecrets.twelveData.source,
@@ -276,6 +291,7 @@ app.use('/api', executionRouter);
 app.use('/api', opportunitiesRouter);
 app.use('/api', researchRouter);
 app.use('/api', oos2CollectionRouter);
+app.use('/api', avalonRouter);
 
 const server = app.listen(config.port, () => {
   console.log(`WILL TRADER backend running on port ${config.port}`);
