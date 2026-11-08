@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { withCycleEvidenceRequest } from '../cycleEvidenceRequest.js';
-import { getMarketDataEngine, getLocalRelaySnapshot } from './market.js';
+import { getMarketDataEngine, getLocalRelaySnapshot, isLocalRelayFallbackEligible } from './market.js';
 import { runWillPipeline } from '../../../engine/src/pipeline.js';
 import { selectBestOpportunity } from '../../../engine/src/opportunityEngine.js';
 import { createAuditEntry } from '../../../engine/src/auditLog.js';
@@ -22,7 +22,6 @@ import { composeBiquoteTwelveOperationalSnapshot } from '../biquoteTwelveOperati
 const router = Router();
 const scheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
 const relayScheduler = createMarketUniverseScheduler({ universes: MARKET_UNIVERSES });
-let localRelayRequired = false;
 
 function scanLimit() {
   return Math.min(Math.max(Number(process.env.MARKET_SCAN_MAX_SYMBOLS || 4), 1), 20);
@@ -181,13 +180,11 @@ router.get('/opportunities', withCycleEvidenceRequest(async (req, res) => {
     let relayMode = false;
 
     try {
-      if (localRelayRequired) throw new Error('LOCAL_RELAY_REQUIRED');
       snapshots = await latency.stage('marketFetchMs', () =>
         getMarketDataEngine().getSnapshots(selection.assets, timeframe, 55, { telemetry: providerTelemetry })
       );
     } catch (error) {
-      if (!/EACCES|network error|LOCAL_RELAY_REQUIRED/i.test(error.message)) throw error;
-      localRelayRequired = true;
+      if (!isLocalRelayFallbackEligible(error)) throw error;
       activeSelection = explicitAssets
         ? {
             assetClass: 'CUSTOM',
