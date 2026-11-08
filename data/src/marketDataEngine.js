@@ -9,6 +9,7 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   if (!provider || typeof provider.getSnapshot !== 'function') throw new Error('provider.getSnapshot é obrigatório.');
   const cache = new Map();
   const inFlight = new Map();
+  const batchInFlight = new Map();
   let nextRequestAt = 0;
   const metrics = {
     cacheHits: 0,
@@ -202,9 +203,7 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
   async function getSnapshots(assets = [], timeframe = '1min', outputsize = 50, { telemetry } = {}) {
     const uniqueAssets = [...new Set(assets.map((asset) => String(asset).trim().toUpperCase()).filter(Boolean))];
     if (!uniqueAssets.length) return [];
-    // The diagnostic and one-symbol scanner use the same canonical request.
-    // Route both through getSnapshot so they share cache, in-flight coalescing
-    // and the centralized cooldown instead of racing two provider operations.
+    // One-symbol requests share the exact same cache and in-flight slot as diagnostics.
     if (uniqueAssets.length === 1) {
       const asset = uniqueAssets[0];
       try { return [{ asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }]; }
@@ -212,10 +211,11 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
     }
     if (typeof provider.getSnapshots !== 'function') {
       return Promise.all(uniqueAssets.map(async (asset) => {
-          try { return { asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }; }
+        try { return { asset, snapshot: await getSnapshot(asset, timeframe, outputsize, { telemetry }), error: null }; }
         catch (error) { return { asset, snapshot: null, error: error.message }; }
       }));
     }
+
     const fresh = [];
     const missing = [];
     for (const asset of uniqueAssets) {
@@ -225,35 +225,50 @@ export function createMarketDataEngine({ provider, cacheTtlMs = Number(process.e
         metrics.cacheHits += 1;
         addProviderEfficiency(telemetry, { cacheHits: 1 });
         fresh.push({ asset, snapshot: refreshMarketSnapshotFreshness(cached.snapshot, { now: now(), cacheStoredAt: cached.storedAt }), error: null });
-      } else missing.push(asset);
+      } else {
+        missing.push(asset);
+      }
     }
     if (!missing.length) return uniqueAssets.map((asset) => fresh.find((entry) => entry.asset === asset));
-    assertReady(telemetry);
-    metrics.cacheMisses += missing.length;
-    addProviderEfficiency(telemetry, { cacheMisses: missing.length });
-    const delay = Math.max(0, nextRequestAt - now());
-    if (delay) {
-      metrics.rateLimitWaitMsTotal += delay;
-      metrics.rateLimitWaitCount += 1;
-      addProviderEfficiency(telemetry, { limiterWaitMs: delay });
-      await wait(delay);
-      assertReady(telemetry);
+
+    // Identical concurrent batches share one upstream operation, including its limiter slot.
+    const batchKey = `${missing.slice().sort().join(',')}|${timeframe}|${outputsize}`;
+    let batchRequest = batchInFlight.get(batchKey);
+    if (batchRequest) {
+      metrics.deduplicated += missing.length;
+      addProviderEfficiency(telemetry, { deduplicated: missing.length });
+    } else {
+      metrics.cacheMisses += missing.length;
+      addProviderEfficiency(telemetry, { cacheMisses: missing.length });
+      batchRequest = (async () => {
+        assertReady(telemetry);
+        const delay = Math.max(0, nextRequestAt - now());
+        if (delay) {
+          metrics.rateLimitWaitMsTotal += delay;
+          metrics.rateLimitWaitCount += 1;
+          addProviderEfficiency(telemetry, { limiterWaitMs: delay });
+          await wait(delay);
+          assertReady(telemetry);
+        }
+        nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
+        metrics.upstreamRequests += 1;
+        const fetched = await timedProviderRequest(() => telemetry
+          ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
+          : provider.getSnapshots(missing, timeframe, outputsize), telemetry);
+        for (const entry of fetched) {
+          if (entry?.error) recordProviderError(entry.error, telemetry);
+          if (entry?.snapshot) cache.set(keyFor(entry.asset, timeframe, outputsize), { snapshot: entry.snapshot, storedAt: now() });
+        }
+        return fetched;
+      })();
+      batchInFlight.set(batchKey, batchRequest);
     }
-    nextRequestAt = now() + Math.max(0, minRequestIntervalMs);
-    metrics.upstreamRequests += 1;
+
     let fetched;
     try {
-      fetched = await timedProviderRequest(() => telemetry
-        ? provider.getSnapshots(missing, timeframe, outputsize, { telemetry })
-        : provider.getSnapshots(missing, timeframe, outputsize), telemetry);
-    } catch (error) {
-      throw error;
-    }
-    for (const entry of fetched) {
-      if (entry?.error) recordProviderError(entry.error, telemetry);
-    }
-    for (const entry of fetched) {
-      if (entry?.snapshot) cache.set(keyFor(entry.asset, timeframe, outputsize), { snapshot: entry.snapshot, storedAt: now() });
+      fetched = await batchRequest;
+    } finally {
+      if (batchInFlight.get(batchKey) === batchRequest) batchInFlight.delete(batchKey);
     }
     const all = [...fresh, ...fetched];
     return uniqueAssets.map((asset) => all.find((entry) => entry.asset === asset) ?? { asset, snapshot: null, error: 'Ativo não retornado pelo provedor.' });
