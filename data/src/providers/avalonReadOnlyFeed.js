@@ -125,6 +125,15 @@ export function createAvalonReadOnlyFeed({ now = () => Date.now(), maxAssets = 6
       rejectedMessages: snapshot.rejectedMessages,
       ignoredMessages: snapshot.ignoredMessages,
       lastRejectReason: snapshot.lastRejectReason,
+      latestQuotes: Object.freeze(snapshot.assets.map((asset) => Object.freeze({
+        activeId: asset.activeId,
+        bid: asset.bid,
+        ask: asset.ask,
+        close: asset.close,
+        phase: asset.phase,
+        receivedAtMs: asset.receivedAtMs,
+        ageMs: Math.max(0, currentTime - asset.receivedAtMs)
+      }))),
       decisionImpact: 'NONE',
       ordersExecuted: 0
     });
