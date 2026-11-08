@@ -82,14 +82,18 @@ export async function backupRuntimeData({
   }
 }
 
-function parseDestinationArgument(args) {
-  const index = args.indexOf('--out');
-  return index >= 0 && args[index + 1] ? path.resolve(args[index + 1]) : path.resolve(process.cwd(), '..');
+function parseArgument(args, name, fallback) {
+  const index = args.indexOf(name);
+  return index >= 0 && args[index + 1] ? path.resolve(args[index + 1]) : fallback;
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   try {
-    const result = await backupRuntimeData({ destinationRoot: parseDestinationArgument(process.argv.slice(2)) });
+    const args = process.argv.slice(2);
+    const result = await backupRuntimeData({
+      sourceDir: parseArgument(args, '--source', path.resolve(process.cwd(), 'backend/data')),
+      destinationRoot: parseArgument(args, '--out', path.resolve(process.cwd(), '..'))
+    });
     process.stdout.write(JSON.stringify({
       backupDir: result.backupDir,
       fileCount: result.fileCount,
