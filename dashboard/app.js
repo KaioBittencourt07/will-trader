@@ -40,6 +40,7 @@ function svgNode(name,attributes={},text=''){
   return node;
 }
 function priceText(value){
+  if(value===null||value===undefined||value==='')return '—';
   const number=Number(value);
   if(!Number.isFinite(number))return '—';
   return number.toLocaleString('pt-BR',{maximumFractionDigits:number>=100?2:5});
@@ -77,11 +78,11 @@ function renderCandlestickChart(study){
     svg.append(svgNode('rect',{x:x-bodyWidth/2,y:top,width:bodyWidth,height:bodyHeight,rx:1,class:up?'candleUp':'candleDown'}));
   });
   svg.append(svgNode('text',{x:pad,y:18,class:'chartAxis'},priceText(maximum)));
-  svg.append(svgNode('text',{x:pad,y:height-6,class:'chartAxis'},priceText(minimum)));
   const first=candles[0].timestamp,last=candles[candles.length-1].timestamp;
   svg.append(svgNode('text',{x:pad,y:height-6,dx:58,class:'chartAxis'},fmt(first)));
   svg.append(svgNode('text',{x:width-pad,y:height-6,'text-anchor':'end',class:'chartAxis'},fmt(last)));
 }
+function metricText(value){return value===null||value===undefined||value===''?'—':Number.isFinite(Number(value))?Number(value).toFixed(2):'—';}
 function renderSelectedStudy(){
   const asset=$('studyAsset').value;
   const study=lastStudies.find(item=>item.asset===asset);
@@ -96,10 +97,10 @@ function renderSelectedStudy(){
   const decision=study.decision||{},indicators=study.indicators||{};
   $('studyStatus').textContent=(study.source||'feed')+' · '+(study.timeframe||'—')+' · '+study.candles.length+' candles · '+fmt(study.timestamp);
   $('studyPrice').textContent=priceText(study.price);
-  $('studyTrend').textContent=Number.isFinite(Number(indicators.trend))?Number(indicators.trend).toFixed(2):'—';
-  $('studyMomentum').textContent=Number.isFinite(Number(indicators.momentum))?Number(indicators.momentum).toFixed(2):'—';
-  $('studyVolatility').textContent=Number.isFinite(Number(indicators.volatility))?Number(indicators.volatility).toFixed(2):'—';
-  $('studyConfirmations').textContent=Number.isFinite(Number(indicators.confirmations))?String(indicators.confirmations):'—';
+  $('studyTrend').textContent=metricText(indicators.trend);
+  $('studyMomentum').textContent=metricText(indicators.momentum);
+  $('studyVolatility').textContent=metricText(indicators.volatility);
+  $('studyConfirmations').textContent=indicators.confirmations===null||indicators.confirmations===undefined||indicators.confirmations===''?'—':Number.isFinite(Number(indicators.confirmations))?String(Number(indicators.confirmations)):'—';
   const reasons=Array.isArray(decision.blockReasons)?decision.blockReasons.join(', '):'';
   $('studyDecision').textContent=decision.direction+' · '+decision.setup+' · '+decision.regime+' · Score '+(decision.score??'—')+' · Confiança heurística '+(decision.confidence??'—')+'%'+(reasons?' · '+reasons:'');
   $('studyDecision').className='studyDecision '+String(decision.direction||'WAIT').toLowerCase();
