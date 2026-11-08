@@ -1,6 +1,6 @@
 import {getHealth,getMarketStatus,scanOpportunities,getHistory,getMetrics,registerOutcome,confirmExecution} from './api.js';
 const $=id=>document.getElementById(id);
-let running=false,busy=false,timer=null,lastRecommendation=null,activeHistoryId=null,openSignals=[],lastMetrics=null,lastStudies=[];
+let running=false,busy=false,timer=null,lastRecommendation=null,activeHistoryId=null,openSignals=[],lastMetrics=null,lastStudies=[],reviewedStudyAsset=null;
 let rounds=Number(sessionStorage.getItem('will.validRounds')||0);
 let sessionValid=Number(sessionStorage.getItem('will.validStudies')||0);
 const NORMAL_COOLDOWN=20,EMPTY_COOLDOWN=20;
@@ -87,7 +87,7 @@ function renderSelectedStudy(){
   const asset=$('studyAsset').value;
   const study=lastStudies.find(item=>item.asset===asset);
   if(!study){
-    $('studyStatus').textContent='Nenhum estudo válido disponível nesta rodada.';
+    $('studyStatus').textContent='Nenhum estudo válido disponível nesta rodada.';$('reviewStudy').disabled=true;$('reviewStudy').textContent='REVISAR SINAL DO ATIVO';
     $('studyPrice').textContent='—';$('studyTrend').textContent='—';$('studyMomentum').textContent='—';$('studyVolatility').textContent='—';$('studyConfirmations').textContent='—';
     $('studyDecision').textContent='Aguardando um ativo passar pelos filtros de qualidade de dados.';
     $('studyDecision').className='studyDecision wait';
@@ -101,13 +101,22 @@ function renderSelectedStudy(){
   $('studyMomentum').textContent=metricText(indicators.momentum);
   $('studyVolatility').textContent=metricText(indicators.volatility);
   $('studyConfirmations').textContent=indicators.confirmations===null||indicators.confirmations===undefined||indicators.confirmations===''?'—':Number.isFinite(Number(indicators.confirmations))?String(Number(indicators.confirmations)):'—';
-  const reasons=Array.isArray(decision.blockReasons)?decision.blockReasons.join(', '):'';
-  $('studyDecision').textContent=decision.direction+' · '+decision.setup+' · '+decision.regime+' · Score '+(decision.score??'—')+' · Confiança heurística '+(decision.confidence??'—')+'%'+(reasons?' · '+reasons:'');
-  $('studyDecision').className='studyDecision '+String(decision.direction||'WAIT').toLowerCase();
+  const reviewed=reviewedStudyAsset===study.asset;
+  $('reviewStudy').disabled=false;
+  $('reviewStudy').textContent=reviewed?'SINAL REVISADO':'REVISAR SINAL DO ATIVO';
+  if(reviewed){
+    const reasons=Array.isArray(decision.blockReasons)?decision.blockReasons.join(', '):'';
+    $('studyDecision').textContent=decision.direction+' · '+decision.setup+' · '+decision.regime+' · Score '+(decision.score??'—')+' · Confiança heurística '+(decision.confidence??'—')+'%'+(reasons?' · '+reasons:'');
+    $('studyDecision').className='studyDecision '+String(decision.direction||'WAIT').toLowerCase();
+  }else{
+    $('studyDecision').textContent='Direção e sinal ocultos até sua revisão manual. Os dados técnicos e candles já estão disponíveis.';
+    $('studyDecision').className='studyDecision wait';
+  }
   renderCandlestickChart(study);
 }
 function renderStudies(studies=[]){
   lastStudies=Array.isArray(studies)?studies:[];
+  reviewedStudyAsset=null;
   const select=$('studyAsset');
   const previous=select.value;
   select.replaceChildren();
@@ -132,7 +141,7 @@ function renderPerformance(result={}){
 }
 
 function stageRecommendation(r={}){lastRecommendation=r.recommendation||null;if(!lastRecommendation){$('asset').textContent='Nenhum candidato nesta rodada válida';$('direction').textContent='WAIT';$('direction').className='direction wait';$('detail').textContent='Os filtros estratégicos não liberaram candidato. A rotação continua.';$('review').disabled=true;return}$('asset').textContent=lastRecommendation.decision?.asset||lastRecommendation.snapshot?.asset||'Candidato disponível';$('direction').textContent='CANDIDATO';$('direction').className='direction wait';$('detail').textContent='O scanner encontrou uma oportunidade para revisão. A direção permanece oculta até sua ação.';$('review').disabled=false}
-function review(){if(!lastRecommendation)return;const d=lastRecommendation.decision||{};const dir=d.direction||'WAIT';$('direction').textContent=dir;$('direction').className=`direction ${dir==='BUY'?'buy':dir==='SELL'?'sell':'wait'}`;$('asset').textContent=d.asset||lastRecommendation.snapshot?.asset||'—';$('detail').textContent=dir==='WAIT'?'Os filtros atuais não liberaram entrada.':'Análise exibida para sua avaliação; nenhuma execução é automática.';activeHistoryId=lastRecommendation.historyId||null;refreshLearning()}
+function review(){if(!lastRecommendation)return;const reviewedAsset=lastRecommendation.asset||lastRecommendation.snapshot?.asset;if(reviewedAsset){reviewedStudyAsset=reviewedAsset;const select=$('studyAsset');if([...select.options].some(option=>option.value===reviewedAsset))select.value=reviewedAsset;renderSelectedStudy();}const d=lastRecommendation.decision||{};const dir=d.direction||'WAIT';$('direction').textContent=dir;$('direction').className=`direction ${dir==='BUY'?'buy':dir==='SELL'?'sell':'wait'}`;$('asset').textContent=d.asset||lastRecommendation.snapshot?.asset||'—';$('detail').textContent=dir==='WAIT'?'Os filtros atuais não liberaram entrada.':'Análise exibida para sua avaliação; nenhuma execução é automática.';activeHistoryId=lastRecommendation.historyId||null;refreshLearning()}
 function localInput(iso){if(!iso)return'';const date=new Date(iso);date.setMinutes(date.getMinutes()-date.getTimezoneOffset());return date.toISOString().slice(0,16)}
 function updateOutcomeTab(){const select=$('outcomeSignal');select.replaceChildren();if(!openSignals.length){select.append(new Option('Nenhuma operação aberta',''));select.disabled=true;activeHistoryId=null;$('outcomeLabel').textContent='Depois de revisar uma análise e executar manualmente, a operação aparecerá aqui.';$('actualClick').value='';$('actualClick').disabled=true;$('actualPrice').value='';$('actualPrice').disabled=true;$('confirmExecution').disabled=true;$('win').disabled=true;$('loss').disabled=true;return}for(const item of openSignals){const click=item.clickTime?` · entrada ${fmt(item.clickTime)}`:'';select.append(new Option(`${item.asset} · ${item.direction} · ${item.confidence}%${click}`,item.id))}const preferred=openSignals.find(item=>item.id===activeHistoryId)||openSignals[0];activeHistoryId=preferred.id;select.value=activeHistoryId;select.disabled=false;const execution=preferred.execution||{};const confirmed=execution.status==='CONFIRMED';$('actualClick').value=localInput(execution.actualClickTime);$('actualClick').disabled=confirmed;$('actualPrice').value=execution.actualEntryPrice??'';$('actualPrice').disabled=confirmed;$('confirmExecution').disabled=confirmed;$('win').disabled=!confirmed;$('loss').disabled=!confirmed;$('outcomeLabel').textContent=confirmed?`${preferred.asset} · ${preferred.direction}. Entrada confirmada em ${fmt(execution.actualClickTime)}. Agora registre WIN ou LOSS.`:`${preferred.asset} · ${preferred.direction}. Informe a entrada realmente executada.`}
 async function refreshLearning(){try{const [h,mr]=await Promise.all([getHistory(250),getMetrics()]);const m=mr.metrics||{},e=evidenceView(m);$('signals').textContent=e.valid;$('waits').textContent=e.strategyWaits;$('outcomes').textContent=m.total?`${m.wins||0} / ${m.losses||0}`:'—';const completed=Number(m.total||0),wins=Number(m.wins||0);$('winRate').textContent=completed?`${((wins/completed)*100).toFixed(1)}%`:'—';$('learningStatus').textContent=completed?`Base válida: ${e.valid} estudo(s) e ${completed} resultado(s) concluído(s).`:`Base válida: ${e.valid} estudo(s), ${e.strategyWaits} WAIT(s) estratégico(s). Ainda faltam WIN/LOSS reais para medir desempenho.`;const validRecords=(h.records||[]).filter(isValidRecord);openSignals=validRecords.filter(record=>record.status==='OPEN');updateOutcomeTab();const list=$('history');list.replaceChildren();if(!validRecords.length){list.innerHTML='<li class="muted">Sem estudos válidos registrados.</li>';lastMetrics=m;return m}for(const r of validRecords.slice(0,8)){const li=document.createElement('li');li.textContent=`${r.asset||'—'} · ${r.direction||'WAIT'} · ${r.confidence??'—'}% · ${r.outcome||r.status||'—'}`;list.append(li)}lastMetrics=m;return m}catch{$('learningStatus').textContent='Base de resultados temporariamente indisponível. O scanner continuará tentando.';return lastMetrics}}
@@ -143,4 +152,4 @@ function startAuto(){if(running)return;running=true;$('auto').disabled=true;$('s
 async function confirmActual(){if(!activeHistoryId)return;$('confirmExecution').disabled=true;try{await confirmExecution(activeHistoryId,{actualClickTime:$('actualClick').value,actualEntryPrice:$('actualPrice').value,notes:'operator-manual-external-broker'});$('reason').textContent='Entrada manual registrada. Quando encerrar, marque WIN ou LOSS.';await refreshLearning()}catch(error){$('reason').textContent=`Entrada: ${error.message}`;$('confirmExecution').disabled=false}}
 async function settle(outcome){if(!activeHistoryId)return;$('win').disabled=true;$('loss').disabled=true;try{const result=await registerOutcome(activeHistoryId,outcome,{source:'operator-manual',recordedBy:'operator'});const learning=result.learning||{},metrics=learning.metrics||{};$('reason').textContent=`${outcome} registrado. Evidência: ${metrics.wins||0} WIN / ${metrics.losses||0} LOSS.`;activeHistoryId=null;await refreshLearning()}catch(error){$('reason').textContent=`Resultado: ${error.message}`}finally{$('win').disabled=false;$('loss').disabled=false}}
 async function status(){try{const [h,m]=await Promise.all([getHealth(),getMarketStatus()]);$('status').textContent=h.marketConfigured?'ONLINE · ANALYSIS':'SEM FEED';const relay=m.relay||{};$('feed').textContent=relay.coolingDown?`aguardando ${Math.ceil(Number(relay.cooldownMs||0)/1000)}s`:relay.mode==='LOCAL_RELAY'?'relay ativo':'pronto'}catch{$('status').textContent='BACKEND OFFLINE';$('feed').textContent='indisponível'}}
-$('studyAsset').onchange=renderSelectedStudy;$('auto').onclick=startAuto;$('stop').onclick=()=>stopAuto();$('review').onclick=review;$('outcomeSignal').onchange=e=>{activeHistoryId=e.target.value;updateOutcomeTab()};$('confirmExecution').onclick=confirmActual;$('win').onclick=()=>settle('WIN');$('loss').onclick=()=>settle('LOSS');persistSession();status();refreshLearning();setInterval(status,30000);setInterval(refreshLearning,30000);
+$('studyAsset').onchange=renderSelectedStudy;$('reviewStudy').onclick=()=>{reviewedStudyAsset=$('studyAsset').value;renderSelectedStudy();};$('auto').onclick=startAuto;$('stop').onclick=()=>stopAuto();$('review').onclick=review;$('outcomeSignal').onchange=e=>{activeHistoryId=e.target.value;updateOutcomeTab()};$('confirmExecution').onclick=confirmActual;$('win').onclick=()=>settle('WIN');$('loss').onclick=()=>settle('LOSS');persistSession();status();refreshLearning();setInterval(status,30000);setInterval(refreshLearning,30000);
