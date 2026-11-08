@@ -117,3 +117,49 @@ test('POST /api/analyze persists invalid WAIT durably, deduplicates it, and keep
     });
   }
 });
+
+test('POST /api/analyze with aiAuditOnly returns a review without persisting a second history record', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'will-ai-audit-only-'));
+  const port = 44_000 + (process.pid % 1_000);
+  const url = `http://127.0.0.1:${port}`;
+  const historyFile = path.join(directory, 'history.json');
+  const child = spawn(process.execPath, ['src/server.js'], {
+    cwd: backend,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      WILL_HISTORY_FILE: historyFile,
+      WILL_PAPER_MONITOR_STATE_FILE: path.join(directory, 'monitor.json'),
+      WILL_PAPER_MONITOR_ENABLED: 'false',
+      WILL_TWELVE_WS_ENABLED: 'false',
+      TWELVEDATA_API_KEY: ''
+    },
+    stdio: 'ignore'
+  });
+
+  try {
+    await waitForHealth(url, child);
+    const response = await fetch(`${url}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        market: { asset: 'CONTRACT_INVALID', timeframe: '1min', timestamp: 'invalid', price: 0 },
+        context: { aiAuditOnly: true, decisionId: 'ai-audit-only:1' }
+      })
+    });
+    const body = await response.json();
+    assert.equal(body.auditMode, 'AI_AUDIT_ONLY');
+    assert.equal(body.persisted, false);
+    assert.equal(body.history, undefined);
+    assert.equal(body.decision.direction, 'WAIT');
+
+    const persisted = fs.existsSync(historyFile) ? JSON.parse(fs.readFileSync(historyFile, 'utf8')) : [];
+    assert.equal(persisted.length, 0);
+  } finally {
+    if (child.exitCode === null && !child.killed) child.kill('SIGTERM');
+    if (child.exitCode === null) {
+      await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(3000)]);
+    }
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
