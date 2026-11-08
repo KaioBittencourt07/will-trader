@@ -26,6 +26,9 @@ jobs:
       - name: Install backend dependencies
         run: npm ci --prefix backend
 
+      - name: Check dashboard JavaScript syntax
+        run: node --check dashboard/api.js && node --check dashboard/app.js
+
       - name: Run root regression suite
         run: npm test
 
