@@ -24,12 +24,14 @@ export function resolveLocalRelayBaseUrl({ relayUrl = process.env.WILL_LOCAL_MAR
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error('LOCAL_RELAY_URL_INVALID');
   }
-  const host = parsed.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+  const host = parsed.hostname.toLowerCase().replace('[', '').replace(']', '');
   const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
   const currentBackendPort = Number(backendPort || 3000);
   const loopback = ['localhost', '127.0.0.1', '::1', '0.0.0.0', '::'].includes(host);
   if (loopback && port === currentBackendPort) throw new Error('LOCAL_RELAY_SELF_REFERENCE');
-  return parsed.toString().replace(/\\/+$/, '');
+  let baseUrl = parsed.toString();
+  while (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+  return baseUrl;
 }
 
 export function isLocalRelayFallbackEligible(error, { configured = Boolean(String(process.env.WILL_LOCAL_MARKET_RELAY ?? '').trim()) } = {}) {
